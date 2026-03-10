@@ -483,6 +483,8 @@ function useTruck() {
   actor.truckCount -= 1;
   actor.isTrucking = true;
   actor.truckTimer = 0.85;
+  actor.vx = Math.max(actor.vx + 620, 820); // big forward burst
+  actor.vy *= 0.25;                           // kill vertical so he goes flat
   spawnParticles(actor.x, actor.y, 28, "#ffcd3c");
   spawnParticles(actor.x, actor.y, 14, "#ff9b72");
   tone(220, 0.08, "square", 0.1);
