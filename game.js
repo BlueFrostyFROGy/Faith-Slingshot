@@ -65,7 +65,7 @@ const characters = [
     gravityMult: 0.88,
     launchBoost: 1.34,
     unlockAt: 0,
-    ability: "spin",
+    ability: "rocket",
   },
   {
     id: "anthony",
@@ -300,6 +300,7 @@ function resetActor() {
   actor.truckCount = 3;
   actor.isTrucking = false;
   actor.truckTimer = 0;
+  actor.rocketSpiked = false;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -450,6 +451,31 @@ function useAbility() {
       tone(540, 0.08, "square", 0.07);
       spawnParticles(actor.x, actor.y, 18, "#7cc2ff");
       break;
+    case "rocket": {
+      const goingUp = actor.vy < 0;
+      if (goingUp) {
+        // Rocket fires: big forward + amplify upward momentum
+        actor.vx += 480;
+        actor.vy *= 1.55;
+        tone(680, 0.09, "sawtooth", 0.1);
+        tone(440, 0.07, "sawtooth", 0.08);
+        spawnParticles(actor.x, actor.y, 32, "#ff4d00");
+        spawnParticles(actor.x, actor.y, 16, "#ffcd3c");
+        startScreenShake(10, 0.22);
+      } else {
+        // Fired downward — rocket drives him into the ground
+        actor.vy += 900;
+        actor.vx *= 0.4;
+        tone(160, 0.12, "sawtooth", 0.12);
+        tone(100, 0.1, "triangle", 0.09);
+        spawnParticles(actor.x, actor.y, 28, "#ff4d00");
+        spawnParticles(actor.x, actor.y, 14, "#333");
+        startScreenShake(18, 0.40);
+        // Flag him as ground-spiked — finishRun triggers on next ground hit
+        actor.rocketSpiked = true;
+      }
+      break;
+    }
     case "slam":
       actor.vy -= 680;
       actor.vx += 200;
@@ -574,6 +600,15 @@ function update(dt) {
     const ground = terrainY(actor.x);
     if (actor.y + actor.radius >= ground) {
       actor.y = ground - actor.radius;
+      if (actor.rocketSpiked) {
+        actor.rocketSpiked = false;
+        spawnParticles(actor.x, actor.y, 36, "#ff4d00");
+        spawnParticles(actor.x, actor.y, 20, "#333");
+        tone(120, 0.14, "sawtooth", 0.1);
+        startScreenShake(20, 0.42);
+        finishRun("Run ended: Hunter rocketed into the ground.");
+        return;
+      }
       if (Math.abs(actor.vy) > 80) {
         let bounceFactor = Math.max(0.62, actor.bounce * 1.22);
         if (selectedCharacter.id === "anthony") {
@@ -632,6 +667,8 @@ function getAbilityLabel(character) {
       return "snack boost";
     case "spin":
       return "spin burst";
+    case "rocket":
+      return "rocket (↑ good, ↓ crash)";
     case "slam":
       return "power slam";
     case "warp":
@@ -654,6 +691,16 @@ function updateAbilityHint() {
       ? `Double-Space: truck (${actor.truckCount} left)`
       : "No trucks left";
     abilityHint.textContent = `${slamText}  |  ${truckText}`;
+    return;
+  }
+
+  if (selectedCharacter.id === "hunter" && actor.state === "flying") {
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `Rocket recharging: ${actor.abilityCooldown.toFixed(1)}s`;
+      return;
+    }
+    const dir = actor.vy < 0 ? "↑ GOOD — fire now!" : "↓ DANGER — will crash!";
+    abilityHint.textContent = `Space: rocket  ${dir}`;
     return;
   }
 
