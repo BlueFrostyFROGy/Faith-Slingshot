@@ -2,6 +2,7 @@ const STORAGE_KEY = "faith-flight-best";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const appRoot = document.getElementById("app");
 
 const menuScreen = document.getElementById("menuScreen");
 const characterScreen = document.getElementById("characterScreen");
@@ -59,10 +60,10 @@ const characters = [
     initials: "H",
     mass: 0.82,
     radius: 23,
-    drag: 0.08,
+    drag: 0.07,
     bounce: 0.44,
     gravityMult: 0.88,
-    launchBoost: 1.20,
+    launchBoost: 1.34,
     unlockAt: 0,
     ability: "spin",
   },
@@ -70,15 +71,15 @@ const characters = [
     id: "anthony",
     name: "Anthony",
     trait: "Heavy impact",
-    bio: "Big and heavy. Hits hard, bounces huge, loses distance fast.",
+    bio: "Big body with huge launch carry. Massive jump burst and heavy impact.",
     imageBase: "assets/images/anthony",
     initials: "A",
     mass: 1.8,
     radius: 34,
-    drag: 0.22,
-    bounce: 0.65,
-    gravityMult: 1.45,
-    launchBoost: 0.80,
+    drag: 0.10,
+    bounce: 1.14,
+    gravityMult: 0.88,
+    launchBoost: 1.44,
     unlockAt: 0,
     ability: "slam",
   },
@@ -103,6 +104,12 @@ const characters = [
 let selectedCharacter = characters[0];
 let cameraX = 0;
 let particles = [];
+let impactBursts = [];
+let screenShakeTime = 0;
+let screenShakeStrength = 0;
+let screenShakeX = 0;
+let screenShakeY = 0;
+let lastSpaceTime = 0;
 
 // Slingshot drag state
 let isDragging = false;
@@ -119,16 +126,17 @@ const actor = {
   vy: 0,
   radius: 26,
   mass: 1,
-  drag: 0.14,
-  bounce: 0.4,
+  drag: 0.13,
+  bounce: 0.88,
   gravityMult: 1.0,
   state: "ready",
-  usedAbility: false,
-  launchAngle: 45,
-  launchPower: 65,
   maxX: world.launchX,
+  usedAbility: false,
   abilityCooldown: 0,
   stoppedTimer: 0,
+  truckCount: 3,
+  isTrucking: false,
+  truckTimer: 0,
 };
 
 const obstacles = [];
@@ -289,8 +297,12 @@ function resetActor() {
   actor.abilityCooldown = 0;
   actor.stoppedTimer = 0;
   actor.maxX = world.launchX;
+  actor.truckCount = 3;
+  actor.isTrucking = false;
+  actor.truckTimer = 0;
   cameraX = 0;
   particles.length = 0;
+  impactBursts.length = 0;
 
   // Clear drag state
   isDragging = false;
@@ -333,6 +345,62 @@ function updateParticles(dt) {
     p.y += p.vy * dt;
   });
   particles = particles.filter((p) => p.life > 0);
+}
+
+function spawnImpactBurst(x, y, intensity = 1) {
+  impactBursts.push({
+    x,
+    y,
+    life: 0.42,
+    maxLife: 0.42,
+    radius: 16,
+    maxRadius: 72 + intensity * 24,
+  });
+
+  spawnParticles(x, y, Math.round(22 + intensity * 10), "#ff9b72");
+  spawnParticles(x, y, Math.round(14 + intensity * 8), "#ffd86a");
+  tone(95, 0.09, "sawtooth", 0.09);
+  tone(145, 0.07, "triangle", 0.07);
+}
+
+function updateImpactBursts(dt) {
+  impactBursts.forEach((b) => {
+    b.life -= dt;
+    const t = Math.max(0, 1 - b.life / b.maxLife);
+    b.radius = b.maxRadius * t;
+  });
+  impactBursts = impactBursts.filter((b) => b.life > 0);
+}
+
+function startScreenShake(strength = 8, duration = 0.24) {
+  screenShakeStrength = Math.max(screenShakeStrength, strength);
+  screenShakeTime = Math.max(screenShakeTime, duration);
+}
+
+function updateScreenShake(dt) {
+  if (screenShakeTime <= 0) {
+    screenShakeX = 0;
+    screenShakeY = 0;
+    if (appRoot) appRoot.style.transform = "";
+    return;
+  }
+
+  screenShakeTime = Math.max(0, screenShakeTime - dt);
+  // Hold full amplitude then quick taper at the very end
+  const decay = Math.min(1, screenShakeTime * 7);
+  const amplitude = screenShakeStrength * decay;
+  screenShakeX = (Math.random() * 2 - 1) * amplitude;
+  screenShakeY = (Math.random() * 2 - 1) * amplitude * 0.8;
+  const rotDeg = (Math.random() * 2 - 1) * (amplitude * 0.15);
+
+  if (appRoot) {
+    appRoot.style.transform = `translate(${screenShakeX}px, ${screenShakeY}px) rotate(${rotDeg}deg)`;
+  }
+
+  if (screenShakeTime <= 0) {
+    screenShakeStrength = 0;
+    if (appRoot) appRoot.style.transform = "";
+  }
 }
 
 function launch() {
@@ -383,10 +451,11 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 18, "#7cc2ff");
       break;
     case "slam":
-      actor.vy += 520;
-      actor.vx += 80;
+      actor.vy -= 1400;
+      actor.vx += 340;
       tone(140, 0.1, "triangle", 0.08);
-      spawnParticles(actor.x, actor.y, 24, "#ff9b72");
+      spawnParticles(actor.x, actor.y, 30, "#ff9b72");
+      startScreenShake(32, 0.45);
       break;
     case "warp":
       actor.x += 130;
@@ -403,6 +472,25 @@ function useAbility() {
   updateAbilityHint();
 }
 
+function useTruck() {
+  if (selectedCharacter.id !== "anthony") return;
+  if (actor.state === "ready" || actor.state === "ended") return;
+  if (actor.truckCount <= 0) {
+    tone(120, 0.06, "sine", 0.05);
+    return;
+  }
+
+  actor.truckCount -= 1;
+  actor.isTrucking = true;
+  actor.truckTimer = 0.85;
+  spawnParticles(actor.x, actor.y, 28, "#ffcd3c");
+  spawnParticles(actor.x, actor.y, 14, "#ff9b72");
+  tone(220, 0.08, "square", 0.1);
+  tone(160, 0.06, "square", 0.08);
+  startScreenShake(12, 0.28);
+  updateAbilityHint();
+}
+
 function collideRect(rect) {
   const y = terrainY(rect.x) - rect.yOffset;
   const nearestX = Math.max(rect.x, Math.min(actor.x, rect.x + rect.w));
@@ -411,6 +499,15 @@ function collideRect(rect) {
   const dy = actor.y - nearestY;
   if (dx * dx + dy * dy <= actor.radius * actor.radius) {
     if (rect.fatal) {
+      if (actor.isTrucking) {
+        actor.vx += 220;
+        spawnParticles(actor.x, actor.y, 40, "#ffcd3c");
+        spawnParticles(actor.x, actor.y, 20, "#ff9b72");
+        tone(280, 0.08, "square", 0.1);
+        tone(180, 0.06, "square", 0.08);
+        startScreenShake(18, 0.35);
+        return;
+      }
       actor.y = y - actor.radius;
       spawnParticles(actor.x, actor.y, 24, "#ff7d5f");
       tone(120, 0.12, "sawtooth", 0.08);
@@ -434,8 +531,18 @@ function collideBouncePad(pad) {
 
   if (onPad && actor.vy > -200) {
     actor.y = y - actor.radius;
-    actor.vy = -Math.max(620, Math.abs(actor.vy) * pad.boost);
-    actor.vx *= 1.07;
+    const isSal = selectedCharacter.id === "anthony";
+    const verticalBoost = isSal ? pad.boost * 1.38 : pad.boost;
+    const horizontalBoost = isSal ? 1.30 : 1.07;
+
+    actor.vy = -Math.max(isSal ? 860 : 620, Math.abs(actor.vy) * verticalBoost);
+    actor.vx *= horizontalBoost;
+
+    if (isSal) {
+      spawnImpactBurst(actor.x, actor.y + actor.radius * 0.25, 1.4);
+      startScreenShake(7, 0.2);
+    }
+
     spawnParticles(actor.x, actor.y, 16, "#ff7aa8");
     tone(620, 0.06, "triangle", 0.07);
   }
@@ -444,6 +551,13 @@ function collideBouncePad(pad) {
 function update(dt) {
   if (actor.state !== "ready" && actor.state !== "ended") {
     actor.abilityCooldown = Math.max(0, actor.abilityCooldown - dt);
+    if (actor.isTrucking) {
+      actor.truckTimer -= dt;
+      if (actor.truckTimer <= 0) {
+        actor.isTrucking = false;
+        actor.truckTimer = 0;
+      }
+    }
     actor.vy += world.gravity * actor.gravityMult * dt;
     actor.vx -= actor.vx * actor.drag * dt;
     actor.x += actor.vx * dt;
@@ -459,7 +573,14 @@ function update(dt) {
     if (actor.y + actor.radius >= ground) {
       actor.y = ground - actor.radius;
       if (Math.abs(actor.vy) > 80) {
-        actor.vy = -Math.abs(actor.vy) * Math.max(0.62, actor.bounce * 1.22);
+        let bounceFactor = Math.max(0.62, actor.bounce * 1.22);
+        if (selectedCharacter.id === "anthony") {
+          const impactIntensity = Math.min(2.4, Math.abs(actor.vy) / 420);
+          spawnImpactBurst(actor.x, actor.y + actor.radius * 0.35, impactIntensity);
+          bounceFactor *= 1.42;
+          startScreenShake(22 + impactIntensity * 6.0, 0.45);
+        }
+        actor.vy = -Math.abs(actor.vy) * bounceFactor;
         actor.vx *= 0.965;
         spawnParticles(actor.x, actor.y, 9, "#f5e8b2");
         tone(190, 0.04, "sine", 0.05);
@@ -495,6 +616,8 @@ function update(dt) {
   }
 
   updateParticles(dt);
+  updateImpactBursts(dt);
+  updateScreenShake(dt);
 }
 
 function updateHighScoreUI() {
@@ -517,13 +640,23 @@ function getAbilityLabel(character) {
 }
 
 function updateAbilityHint() {
-  if (actor.state === "ready") {
-    abilityHint.textContent = `Press Space for ${selectedCharacter.name}'s ${getAbilityLabel(selectedCharacter)}.`;
+  if (actor.state === "ended") {
+    abilityHint.textContent = "Run ended. Press Restart Run to launch again.";
     return;
   }
 
-  if (actor.state === "ended") {
-    abilityHint.textContent = "Run ended. Press Restart Run to launch again.";
+  if (selectedCharacter.id === "anthony") {
+    const slamReady = actor.abilityCooldown <= 0;
+    const slamText = slamReady ? "Space: slam" : `Slam: ${actor.abilityCooldown.toFixed(1)}s`;
+    const truckText = actor.truckCount > 0
+      ? `Double-Space: truck (${actor.truckCount} left)`
+      : "No trucks left";
+    abilityHint.textContent = `${slamText}  |  ${truckText}`;
+    return;
+  }
+
+  if (actor.state === "ready") {
+    abilityHint.textContent = `Press Space for ${selectedCharacter.name}'s ${getAbilityLabel(selectedCharacter)}.`;
     return;
   }
 
@@ -544,7 +677,7 @@ function drawBackground() {
   grad.addColorStop(0, "#90d9ff");
   grad.addColorStop(1, "#dbf6ff");
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
 
   ctx.fillStyle = "#fff9b1";
   ctx.beginPath();
@@ -732,6 +865,23 @@ function drawActor() {
 }
 
 function drawParticles() {
+  impactBursts.forEach((b) => {
+    const alpha = Math.max(0, b.life / b.maxLife);
+    ctx.globalAlpha = alpha * 0.65;
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "#ffb067";
+    ctx.beginPath();
+    ctx.arc(b.x - cameraX, b.y, b.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.globalAlpha = alpha * 0.35;
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = "#ff6e5a";
+    ctx.beginPath();
+    ctx.arc(b.x - cameraX, b.y, b.radius * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
   particles.forEach((p) => {
     ctx.globalAlpha = Math.max(0, p.life);
     ctx.fillStyle = p.color;
@@ -778,6 +928,9 @@ function drawSlingshotBands() {
 }
 
 function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(screenShakeX, screenShakeY);
   drawBackground();
   drawGround();
   drawMapDecor();
@@ -786,6 +939,7 @@ function draw() {
   drawTrajectory();
   drawActor();
   drawParticles();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
 let last = performance.now();
@@ -922,7 +1076,14 @@ restartBtn.addEventListener("click", () => {
 window.addEventListener("keydown", (ev) => {
   if (ev.code === "Space") {
     ev.preventDefault();
-    useAbility();
+    const now = performance.now();
+    if (selectedCharacter.id === "anthony" && now - lastSpaceTime < 320) {
+      useTruck();
+      lastSpaceTime = 0; // reset so triple-tap doesn't double-trigger
+    } else {
+      useAbility();
+      lastSpaceTime = now;
+    }
   }
 });
 
