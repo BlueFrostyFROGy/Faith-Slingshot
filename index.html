@@ -72,6 +72,30 @@
       </main>
     </div>
 
-    <script src="game.js"></script>
-  </body>
-</html>
+    <!-- Firebase -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+      import { getDatabase, ref, push, query, orderByChild, limitToFirst, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyAm6BFv8mhh9_4O0Q7JX_VkYhKj5V_q1V0",
+        authDomain: "faith-flight-frenzy.firebaseapp.com",
+        databaseURL: "https://faith-flight-frenzy-default-rtdb.firebaseio.com",
+        projectId: "faith-flight-frenzy",
+        storageBucket: "faith-flight-frenzy.appspot.com",
+        messagingSenderId: "123456789",
+        appId: "1:123456789:web:abc123def456"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const database = getDatabase(app);
+      
+      window.firebaseDB = database;
+      window.firebaseRef = ref;
+      window.firebasePush = push;
+      window.firebaseOnValue = onValue;
+      window.firebaseQuery = query;
+      window.firebaseOrderByChild = orderByChild;
+      window.firebaseLimitToFirst = limitToFirst;
+    </script>
+

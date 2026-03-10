@@ -133,10 +133,10 @@ const characters = [
     initials: "E",
     mass: 0.72,
     radius: 22,
-    drag: 0.065,
-    bounce: 0.78,
-    gravityMult: 0.82,
-    launchBoost: 1.26,
+    drag: 0.095,
+    bounce: 0.48,
+    gravityMult: 0.94,
+    launchBoost: 1.16,
     unlockAt: 0,
     ability: "backflip",
   },
@@ -575,7 +575,9 @@ function useAbility() {
   if (selectedCharacter.id === "manning") {
     actor.abilityCooldown = 5.0;
   } else if (selectedCharacter.id === "eli") {
-    actor.abilityCooldown = 4.5;
+    actor.abilityCooldown = 6.5;
+  } else if (selectedCharacter.id === "hunter") {
+    actor.abilityCooldown = 4.0;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -620,18 +622,18 @@ function useAbility() {
     case "rocket": {
       const goingUp = actor.vy < 0;
       if (goingUp) {
-        // Rocket fires: big forward + amplify upward momentum
-        actor.vx += 480;
-        actor.vy *= 1.55;
+        // Rocket fires: reduced forward + reduced upward boost
+        actor.vx += 320;
+        actor.vy *= 1.28;
         tone(680, 0.09, "sawtooth", 0.1);
         tone(440, 0.07, "sawtooth", 0.08);
         spawnParticles(actor.x, actor.y, 32, "#ff4d00");
         spawnParticles(actor.x, actor.y, 16, "#ffcd3c");
         startScreenShake(10, 0.22);
       } else {
-        // Fired downward — rocket drives him into the ground
-        actor.vy += 900;
-        actor.vx *= 0.4;
+        // Fired downward — rocket drives him into the ground HARD
+        actor.vy += 1200;
+        actor.vx *= 0.2;
         tone(160, 0.12, "sawtooth", 0.12);
         tone(100, 0.1, "triangle", 0.09);
         spawnParticles(actor.x, actor.y, 28, "#ff4d00");
@@ -659,8 +661,9 @@ function useAbility() {
       break;
     case "backflip":
       // Eli's powered backflip - massive upward boost
-      actor.vy -= 960;
-      actor.vx += 200;
+      actor.vy -= 700;
+      actor.vx += 120;
+      actor.vx *= 0.92;
       actor.backflipActive = true;
       actor.backflipRotation = 0;
       tone(600, 0.08, "triangle", 0.1);
@@ -893,9 +896,11 @@ function update(dt) {
           spawnImpactBurst(actor.x, actor.y + actor.radius * 0.35, impactIntensity);
           bounceFactor = Math.min(bounceFactor, 0.82);
           startScreenShake(22 + impactIntensity * 6.0, 0.45);
+        } else if (selectedCharacter.id === "eli") {
+          bounceFactor *= 0.9;
         }
         actor.vy = -Math.abs(actor.vy) * bounceFactor;
-        actor.vx *= 0.965;
+        actor.vx *= selectedCharacter.id === "eli" ? 0.9 : 0.965;
         spawnParticles(actor.x, actor.y, 9, "#f5e8b2");
         tone(190, 0.04, "sine", 0.05);
         
@@ -1028,23 +1033,75 @@ function updateAbilityHint() {
   abilityHint.textContent = `Ability ready — press Space for ${getAbilityLabel(selectedCharacter)}.`;
 }
 
+let cachedLeaderboard = [];
+
 function loadLeaderboard() {
-  const stored = localStorage.getItem(LEADERBOARD_KEY);
-  return stored ? JSON.parse(stored) : [];
+  // Return cached version (updated via Firebase in real-time)
+  return cachedLeaderboard;
 }
 
 function saveLeaderboard(scores) {
   localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(scores));
+  cachedLeaderboard = scores;
 }
 
-function addScoreToLeaderboard(playerName, distance) {
-  const leaderboard = loadLeaderboard();
+async function addScoreToLeaderboard(playerName, distance) {
   const travelled = parseFloat((distance / 10).toFixed(1));
+  
+  // Save to localStorage first
+  const leaderboard = loadLeaderboard();
   leaderboard.push({ name: playerName, distance: travelled, date: new Date().toLocaleDateString() });
   leaderboard.sort((a, b) => b.distance - a.distance);
   const topScores = leaderboard.slice(0, MAX_LEADERBOARD_ENTRIES);
   saveLeaderboard(topScores);
+  
+  // Try to save to Firebase if available
+  if (window.firebaseDB) {
+    try {
+      const db = window.firebaseDB;
+      const ref = window.firebaseRef;
+      const push = window.firebasePush;
+      const scoresRef = ref(db, "leaderboard");
+      await push(scoresRef, {
+        name: playerName,
+        distance: travelled,
+        timestamp: Date.now(),
+        date: new Date().toLocaleDateString()
+      });
+    } catch (err) {
+      console.error("Firebase error:", err);
+    }
+  }
+  
   return topScores;
+}
+
+function subscribeToLeaderboard() {
+  if (!window.firebaseDB) return;
+  
+  try {
+    const db = window.firebaseDB;
+    const ref = window.firebaseRef;
+    const onValue = window.firebaseOnValue;
+    const query = window.firebaseQuery;
+    const orderByChild = window.firebaseOrderByChild;
+    const limitToFirst = window.firebaseLimitToFirst;
+    
+    const scoresRef = ref(db, "leaderboard");
+    const topScoresQuery = query(scoresRef, orderByChild("distance"), limitToFirst(MAX_LEADERBOARD_ENTRIES * 3));
+    
+    onValue(topScoresQuery, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const scores = Object.values(data).sort((a, b) => b.distance - a.distance).slice(0, MAX_LEADERBOARD_ENTRIES);
+        cachedLeaderboard = scores;
+      }
+    }, (err) => {
+      console.error("Firebase subscription error:", err);
+    });
+  } catch (err) {
+    console.error("Firebase setup error:", err);
+  }
 }
 
 function displayLeaderboard() {
@@ -1752,6 +1809,7 @@ canvas.addEventListener("mouseleave", () => {
 
 preloadCharacterImages();
 updateHighScoreUI();
+subscribeToLeaderboard();
 showMenu();
 resetActor();
 
