@@ -189,6 +189,7 @@ const fatalObstacleImageCandidates = [
 
 let fatalObstacleImg = null;
 let spencerBombImg = null;
+let manningFishingRodImg = null;
 
 const spencerBombImageCandidates = [
   "Spencers Bomb.png",
@@ -196,6 +197,14 @@ const spencerBombImageCandidates = [
   "assets/images/spencer-bomb.png",
   "assets/images/spencers-bomb.jpg",
   "assets/images/spencer-bomb.jpg",
+];
+
+const manningFishingRodImageCandidates = [
+  "Mannings Fishing Rod.png",
+  "assets/images/mannings-fishing-rod.png",
+  "assets/images/manning-fishing-rod.png",
+  "assets/images/mannings-fishing-rod.jpg",
+  "assets/images/manning-fishing-rod.jpg",
 ];
 
 function seededNoise(seed) {
@@ -1107,28 +1116,39 @@ function drawFishingRod() {
   const maxDist = Math.max(1, dist);
   const dirX = dx / maxDist;
   const dirY = dy / maxDist;
-  const rodLength = 92;
+  const angle = Math.atan2(dirY, dirX);
+  const rodLength = 110;
   const rodEndX = sx + dirX * rodLength;
   const rodEndY = sy + dirY * rodLength;
 
-  ctx.lineWidth = 8;
-  ctx.strokeStyle = "#8B6914";
-  ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  ctx.lineTo(rodEndX, rodEndY);
-  ctx.stroke();
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(angle);
 
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = "#DAA520";
-  ctx.beginPath();
-  ctx.moveTo(sx, sy);
-  ctx.lineTo(rodEndX, rodEndY);
-  ctx.stroke();
+  if (manningFishingRodImg && manningFishingRodImg.complete && manningFishingRodImg.naturalWidth > 10) {
+    const rodWidth = 40;
+    const rodHeight = Math.max(90, rodLength * 0.9);
+    ctx.drawImage(manningFishingRodImg, 0, -rodHeight / 2, rodWidth, rodHeight);
+  } else {
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = "#8B6914";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(rodLength, 0);
+    ctx.stroke();
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#DAA520";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(rodLength, 0);
+    ctx.stroke();
+    ctx.fillStyle = "#FFD700";
+    ctx.beginPath();
+    ctx.arc(rodLength, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
-  ctx.fillStyle = "#FFD700";
-  ctx.beginPath();
-  ctx.arc(rodEndX, rodEndY, 7, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.restore();
 }
 
 function drawParticles() {
@@ -1350,6 +1370,16 @@ function preloadCharacterImages() {
     }
   };
   spencerBombImg.src = spencerBombImageCandidates[bombIndex];
+
+  manningFishingRodImg = new Image();
+  let rodIndex = 0;
+  manningFishingRodImg.onerror = () => {
+    rodIndex += 1;
+    if (rodIndex < manningFishingRodImageCandidates.length) {
+      manningFishingRodImg.src = manningFishingRodImageCandidates[rodIndex];
+    }
+  };
+  manningFishingRodImg.src = manningFishingRodImageCandidates[rodIndex];
 }
 
 angleSlider.addEventListener("input", () => {
