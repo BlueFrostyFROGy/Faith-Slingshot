@@ -44,10 +44,10 @@ const characters = [
     initials: "M",
     mass: 1.1,
     radius: 28,
-    drag: 0.10,
-    bounce: 0.38,
-    gravityMult: 1.0,
-    launchBoost: 1.05,
+    drag: 0.12,
+    bounce: 0.34,
+    gravityMult: 1.04,
+    launchBoost: 1.00,
     unlockAt: 0,
     ability: "boost",
   },
@@ -60,10 +60,10 @@ const characters = [
     initials: "H",
     mass: 0.82,
     radius: 23,
-    drag: 0.07,
-    bounce: 0.74,
-    gravityMult: 0.88,
-    launchBoost: 1.34,
+    drag: 0.08,
+    bounce: 0.66,
+    gravityMult: 0.92,
+    launchBoost: 1.28,
     unlockAt: 0,
     ability: "rocket",
   },
@@ -76,10 +76,10 @@ const characters = [
     initials: "A",
     mass: 1.8,
     radius: 34,
-    drag: 0.14,
-    bounce: 0.68,
-    gravityMult: 1.04,
-    launchBoost: 1.18,
+    drag: 0.16,
+    bounce: 0.60,
+    gravityMult: 1.09,
+    launchBoost: 1.10,
     unlockAt: 0,
     ability: "slam",
   },
@@ -92,12 +92,28 @@ const characters = [
     initials: "N",
     mass: 0.58,
     radius: 20,
-    drag: 0.058,
-    bounce: 0.68,
-    gravityMult: 0.80,
-    launchBoost: 1.38,
+    drag: 0.074,
+    bounce: 0.56,
+    gravityMult: 0.92,
+    launchBoost: 1.22,
     unlockAt: 0,
     ability: "warp",
+  },
+  {
+    id: "spencer",
+    name: "Spencer",
+    trait: "Bomb sprinter",
+    bio: "Starts fast. Space for jump, double-Space for bomb. Bombs destroy Janet but slow him down.",
+    imageBase: "Spencer",
+    initials: "S",
+    mass: 0.86,
+    radius: 24,
+    drag: 0.06,
+    bounce: 0.52,
+    gravityMult: 0.90,
+    launchBoost: 1.48,
+    unlockAt: 0,
+    ability: "jumpbomb",
   },
 ];
 
@@ -110,6 +126,9 @@ let screenShakeStrength = 0;
 let screenShakeX = 0;
 let screenShakeY = 0;
 let lastSpaceTime = 0;
+let pendingSpencerJumpTimeout = null;
+let bombs = [];
+const destroyedJanets = new Set();
 
 // Slingshot drag state
 let isDragging = false;
@@ -137,6 +156,7 @@ const actor = {
   truckCount: 3,
   isTrucking: false,
   truckTimer: 0,
+  spencerBombsUsed: 0,
 };
 
 const obstacles = [];
@@ -166,6 +186,15 @@ const fatalObstacleImageCandidates = [
 ];
 
 let fatalObstacleImg = null;
+let spencerBombImg = null;
+
+const spencerBombImageCandidates = [
+  "Spencers Bomb.png",
+  "assets/images/spencers-bomb.png",
+  "assets/images/spencer-bomb.png",
+  "assets/images/spencers-bomb.jpg",
+  "assets/images/spencer-bomb.jpg",
+];
 
 function seededNoise(seed) {
   const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453123;
@@ -219,6 +248,7 @@ function createJanet(index) {
   const yOffset = 58 + Math.floor(seededNoise(index + 202) * 16);
 
   return {
+    index,
     x: baseX + offset,
     yOffset,
     w: JANET_BASE.w,
@@ -245,6 +275,7 @@ function getJanetsInRange(startX, endX) {
 
   for (let index = firstIndex; index <= lastIndex; index += 1) {
     const janet = getJanet(index);
+    if (destroyedJanets.has(janet.index)) continue;
     if (janet.x + janet.w >= startX && janet.x <= endX) {
       janets.push(janet);
     }
@@ -301,9 +332,16 @@ function resetActor() {
   actor.isTrucking = false;
   actor.truckTimer = 0;
   actor.rocketSpiked = false;
+  actor.spencerBombsUsed = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
+  bombs.length = 0;
+  destroyedJanets.clear();
+  if (pendingSpencerJumpTimeout) {
+    clearTimeout(pendingSpencerJumpTimeout);
+    pendingSpencerJumpTimeout = null;
+  }
 
   // Clear drag state
   isDragging = false;
@@ -519,6 +557,92 @@ function useTruck() {
   updateAbilityHint();
 }
 
+function useSpencerJump() {
+  if (selectedCharacter.id !== "spencer") return;
+  if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
+
+  const jumpPower = Math.max(220, 560 - actor.spencerBombsUsed * 95);
+  actor.vy -= jumpPower;
+  actor.vx += 110;
+  actor.usedAbility = true;
+  actor.abilityCooldown = 0.55;
+  tone(520, 0.07, "triangle", 0.08);
+  spawnParticles(actor.x, actor.y, 16, "#99ddff");
+  updateAbilityHint();
+}
+
+function explodeBomb(bomb) {
+  if (bomb.exploded) return;
+  bomb.exploded = true;
+  bomb.life = -0.2;
+
+  const blastRadius = 130;
+  let kills = 0;
+  const nearbyJanets = getJanetsInRange(bomb.x - 220, bomb.x + 220);
+
+  nearbyJanets.forEach((janet) => {
+    const centerX = janet.x + janet.w * 0.5;
+    const centerY = terrainY(janet.x) - janet.yOffset + janet.h * 0.5;
+    const dx = centerX - bomb.x;
+    const dy = centerY - bomb.y;
+    const hitRadius = blastRadius + Math.max(janet.w, janet.h) * 0.4;
+    if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+      destroyedJanets.add(janet.index);
+      kills += 1;
+    }
+  });
+
+  spawnImpactBurst(bomb.x, bomb.y, 1.1 + kills * 0.45);
+  spawnParticles(bomb.x, bomb.y, 36, "#ff4d00");
+  spawnParticles(bomb.x, bomb.y, 20, "#333333");
+  tone(120, 0.1, "sawtooth", 0.1);
+  tone(85, 0.08, "triangle", 0.08);
+  startScreenShake(10 + kills * 4, 0.24 + kills * 0.08);
+}
+
+function useSpencerBomb() {
+  if (selectedCharacter.id !== "spencer") return;
+  if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
+
+  bombs.push({
+    x: actor.x,
+    y: actor.y + actor.radius * 0.25,
+    vx: actor.vx * 0.7 + 90,
+    vy: actor.vy * 0.35 + 140,
+    life: 1.35,
+    radius: 18,
+    exploded: false,
+  });
+
+  actor.spencerBombsUsed += 1;
+  actor.vx *= 0.78;
+  actor.vy = Math.max(actor.vy, -120);
+  actor.usedAbility = true;
+  actor.abilityCooldown = 1.05;
+
+  spawnParticles(actor.x, actor.y, 22, "#ffbf66");
+  tone(250, 0.06, "square", 0.09);
+  updateAbilityHint();
+}
+
+function updateBombs(dt) {
+  bombs.forEach((bomb) => {
+    if (bomb.exploded) return;
+    bomb.life -= dt;
+    bomb.vy += world.gravity * 0.9 * dt;
+    bomb.x += bomb.vx * dt;
+    bomb.y += bomb.vy * dt;
+
+    const ground = terrainY(bomb.x);
+    if (bomb.y + bomb.radius >= ground || bomb.life <= 0) {
+      bomb.y = Math.min(bomb.y, ground - bomb.radius * 0.3);
+      explodeBomb(bomb);
+    }
+  });
+
+  bombs = bombs.filter((bomb) => !(bomb.exploded && bomb.life <= -0.15));
+}
+
 function collideRect(rect) {
   const y = terrainY(rect.x) - rect.yOffset;
   const nearestX = Math.max(rect.x, Math.min(actor.x, rect.x + rect.w));
@@ -577,6 +701,8 @@ function collideBouncePad(pad) {
 }
 
 function update(dt) {
+  updateBombs(dt);
+
   if (actor.state !== "ready" && actor.state !== "ended") {
     actor.abilityCooldown = Math.max(0, actor.abilityCooldown - dt);
     if (actor.isTrucking) {
@@ -673,6 +799,8 @@ function getAbilityLabel(character) {
       return "power slam";
     case "warp":
       return "blink warp";
+    case "jumpbomb":
+      return "jump / bomb";
     default:
       return "ability";
   }
@@ -701,6 +829,20 @@ function updateAbilityHint() {
     }
     const dir = actor.vy < 0 ? "↑ GOOD — fire now!" : "↓ DANGER — will crash!";
     abilityHint.textContent = `Space: rocket  ${dir}`;
+    return;
+  }
+
+  if (selectedCharacter.id === "spencer") {
+    if (actor.state === "ready") {
+      abilityHint.textContent = "Space: jump  |  Double-Space: bomb (kills Janet, slows you)";
+      return;
+    }
+    const jumpPower = Math.max(220, 560 - actor.spencerBombsUsed * 95);
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `Recharging: ${actor.abilityCooldown.toFixed(1)}s | Jump power: ${Math.round(jumpPower)}`;
+      return;
+    }
+    abilityHint.textContent = `Space: jump (${Math.round(jumpPower)})  |  Double-Space: bomb  |  Bombs used: ${actor.spencerBombsUsed}`;
     return;
   }
 
@@ -941,6 +1083,32 @@ function drawParticles() {
   ctx.globalAlpha = 1;
 }
 
+function drawBombs() {
+  bombs.forEach((bomb) => {
+    if (bomb.exploded) return;
+    const sx = bomb.x - cameraX;
+    if (sx < -120 || sx > canvas.width + 120) return;
+
+    if (spencerBombImg && spencerBombImg.complete && spencerBombImg.naturalWidth > 10) {
+      const size = bomb.radius * 2.2;
+      ctx.save();
+      ctx.translate(sx, bomb.y);
+      ctx.rotate((bomb.vx * 0.002 + bomb.vy * 0.001) * 0.6);
+      ctx.drawImage(spencerBombImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#2b2b2b";
+      ctx.beginPath();
+      ctx.arc(sx, bomb.y, bomb.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffb347";
+      ctx.beginPath();
+      ctx.arc(sx + 4, bomb.y - 5, bomb.radius * 0.28, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
 function drawTrajectory() {
   if (!isDragging || !launchVector) return;
   
@@ -987,6 +1155,7 @@ function draw() {
   drawSlingshotBands();
   drawTrajectory();
   drawActor();
+  drawBombs();
   drawParticles();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
@@ -1094,6 +1263,16 @@ function preloadCharacterImages() {
     }
   };
   fatalObstacleImg.src = fatalObstacleImageCandidates[fatalIndex];
+
+  spencerBombImg = new Image();
+  let bombIndex = 0;
+  spencerBombImg.onerror = () => {
+    bombIndex += 1;
+    if (bombIndex < spencerBombImageCandidates.length) {
+      spencerBombImg.src = spencerBombImageCandidates[bombIndex];
+    }
+  };
+  spencerBombImg.src = spencerBombImageCandidates[bombIndex];
 }
 
 angleSlider.addEventListener("input", () => {
@@ -1126,6 +1305,23 @@ window.addEventListener("keydown", (ev) => {
   if (ev.code === "Space") {
     ev.preventDefault();
     const now = performance.now();
+
+    if (selectedCharacter.id === "spencer") {
+      if (pendingSpencerJumpTimeout && now - lastSpaceTime < 300) {
+        clearTimeout(pendingSpencerJumpTimeout);
+        pendingSpencerJumpTimeout = null;
+        useSpencerBomb();
+        lastSpaceTime = 0;
+      } else {
+        lastSpaceTime = now;
+        pendingSpencerJumpTimeout = setTimeout(() => {
+          pendingSpencerJumpTimeout = null;
+          useSpencerJump();
+        }, 220);
+      }
+      return;
+    }
+
     if (selectedCharacter.id === "anthony" && now - lastSpaceTime < 320) {
       useTruck();
       lastSpaceTime = 0; // reset so triple-tap doesn't double-trigger
