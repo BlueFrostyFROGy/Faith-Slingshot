@@ -76,10 +76,10 @@ const characters = [
     initials: "A",
     mass: 1.8,
     radius: 34,
-    drag: 0.10,
-    bounce: 1.14,
-    gravityMult: 0.88,
-    launchBoost: 1.44,
+    drag: 0.11,
+    bounce: 1.05,
+    gravityMult: 0.97,
+    launchBoost: 1.38,
     unlockAt: 0,
     ability: "slam",
   },
@@ -451,8 +451,8 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 18, "#7cc2ff");
       break;
     case "slam":
-      actor.vy -= 1400;
-      actor.vx += 340;
+      actor.vy -= 1050;
+      actor.vx += 280;
       tone(140, 0.1, "triangle", 0.08);
       spawnParticles(actor.x, actor.y, 30, "#ff9b72");
       startScreenShake(32, 0.45);
@@ -532,10 +532,10 @@ function collideBouncePad(pad) {
   if (onPad && actor.vy > -200) {
     actor.y = y - actor.radius;
     const isSal = selectedCharacter.id === "anthony";
-    const verticalBoost = isSal ? pad.boost * 1.38 : pad.boost;
-    const horizontalBoost = isSal ? 1.30 : 1.07;
+    const verticalBoost = isSal ? pad.boost * 1.18 : pad.boost;
+    const horizontalBoost = isSal ? 1.18 : 1.07;
 
-    actor.vy = -Math.max(isSal ? 860 : 620, Math.abs(actor.vy) * verticalBoost);
+    actor.vy = -Math.max(isSal ? 740 : 620, Math.abs(actor.vy) * verticalBoost);
     actor.vx *= horizontalBoost;
 
     if (isSal) {
