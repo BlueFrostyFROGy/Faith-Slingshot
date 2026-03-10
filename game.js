@@ -475,12 +475,12 @@ function useAbility() {
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
   actor.usedAbility = true;
-  actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
+  actor.abilityCooldown = selectedCharacter.id === "manning" ? 5.0 : ABILITY_COOLDOWN_SECONDS;
   ensureAudio();
 
   switch (selectedCharacter.ability) {
     case "fishingrod": {
-      // Fishing rod: boost toward mouse cursor direction
+      // Fishing rod: boost toward mouse cursor direction with power
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
@@ -492,14 +492,14 @@ function useAbility() {
       const maxDist = Math.max(1, dist);
       const dirX = dx / maxDist;
       const dirY = dy / maxDist;
-      const boostStr = 520;
+      const boostStr = 680;
       actor.vx += dirX * boostStr;
-      actor.vy += dirY * boostStr * 0.85;
-      tone(380, 0.08, "triangle", 0.1);
-      tone(280, 0.06, "square", 0.08);
-      spawnParticles(actor.x, actor.y, 28, "#66ccff");
-      spawnParticles(actor.x, actor.y, 14, "#ffffff");
-      startScreenShake(8, 0.18);
+      actor.vy += dirY * boostStr * 1.05;
+      tone(480, 0.1, "triangle", 0.12);
+      tone(340, 0.08, "square", 0.1);
+      spawnParticles(actor.x, actor.y, 36, "#00d4ff");
+      spawnParticles(actor.x, actor.y, 20, "#ffffff");
+      startScreenShake(12, 0.25);
       break;
     }
     case "boost":
@@ -1091,6 +1091,46 @@ function drawActor() {
   ctx.stroke();
 }
 
+function drawFishingRod() {
+  if (selectedCharacter.id !== "manning" || actor.state === "ready" || actor.state === "ended") return;
+
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mouseWorldX = lastMouseX * scaleX + cameraX;
+  const mouseWorldY = lastMouseY * scaleY;
+  const dx = mouseWorldX - sx;
+  const dy = mouseWorldY - sy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const maxDist = Math.max(1, dist);
+  const dirX = dx / maxDist;
+  const dirY = dy / maxDist;
+  const rodLength = 92;
+  const rodEndX = sx + dirX * rodLength;
+  const rodEndY = sy + dirY * rodLength;
+
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = "#8B6914";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(rodEndX, rodEndY);
+  ctx.stroke();
+
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "#DAA520";
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(rodEndX, rodEndY);
+  ctx.stroke();
+
+  ctx.fillStyle = "#FFD700";
+  ctx.beginPath();
+  ctx.arc(rodEndX, rodEndY, 7, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawParticles() {
   impactBursts.forEach((b) => {
     const alpha = Math.max(0, b.life / b.maxLife);
@@ -1191,6 +1231,7 @@ function draw() {
   drawSlingshotBands();
   drawTrajectory();
   drawActor();
+  drawFishingRod();
   drawBombs();
   drawParticles();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
