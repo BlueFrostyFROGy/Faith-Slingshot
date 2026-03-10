@@ -77,7 +77,7 @@ const characters = [
     mass: 1.8,
     radius: 34,
     drag: 0.14,
-    bounce: 0.92,
+    bounce: 0.68,
     gravityMult: 1.04,
     launchBoost: 1.18,
     unlockAt: 0,
@@ -577,7 +577,7 @@ function update(dt) {
         if (selectedCharacter.id === "anthony") {
           const impactIntensity = Math.min(2.4, Math.abs(actor.vy) / 420);
           spawnImpactBurst(actor.x, actor.y + actor.radius * 0.35, impactIntensity);
-          bounceFactor *= 1.10;
+          bounceFactor = Math.min(bounceFactor, 0.82);
           startScreenShake(22 + impactIntensity * 6.0, 0.45);
         }
         actor.vy = -Math.abs(actor.vy) * bounceFactor;
