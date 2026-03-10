@@ -61,7 +61,7 @@ const characters = [
     mass: 0.82,
     radius: 23,
     drag: 0.07,
-    bounce: 0.44,
+    bounce: 0.62,
     gravityMult: 0.88,
     launchBoost: 1.34,
     unlockAt: 0,
