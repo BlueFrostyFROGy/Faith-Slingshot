@@ -44,10 +44,10 @@ const characters = [
     initials: "M",
     mass: 1.1,
     radius: 28,
-    drag: 0.12,
-    bounce: 0.34,
-    gravityMult: 1.04,
-    launchBoost: 1.00,
+    drag: 0.08,
+    bounce: 0.38,
+    gravityMult: 0.96,
+    launchBoost: 1.12,
     unlockAt: 0,
     ability: "fishingrod",
   },
@@ -501,9 +501,9 @@ function useAbility() {
       const maxDist = Math.max(1, dist);
       const dirX = dx / maxDist;
       const dirY = dy / maxDist;
-      const boostStr = 680;
+      const boostStr = 920;
       actor.vx += dirX * boostStr;
-      actor.vy += dirY * boostStr * 1.05;
+      actor.vy += dirY * boostStr * 1.15;
       tone(480, 0.1, "triangle", 0.12);
       tone(340, 0.08, "square", 0.1);
       spawnParticles(actor.x, actor.y, 36, "#00d4ff");
