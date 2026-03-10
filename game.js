@@ -49,7 +49,7 @@ const characters = [
     gravityMult: 1.04,
     launchBoost: 1.00,
     unlockAt: 0,
-    ability: "boost",
+    ability: "fishingrod",
   },
   {
     id: "hunter",
@@ -127,6 +127,8 @@ let screenShakeX = 0;
 let screenShakeY = 0;
 let lastSpaceTime = 0;
 let pendingSpencerJumpTimeout = null;
+let lastMouseX = canvas.width / 2;
+let lastMouseY = canvas.height / 2;
 let bombs = [];
 const destroyedJanets = new Set();
 
@@ -477,6 +479,29 @@ function useAbility() {
   ensureAudio();
 
   switch (selectedCharacter.ability) {
+    case "fishingrod": {
+      // Fishing rod: boost toward mouse cursor direction
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseWorldX = lastMouseX * scaleX + cameraX;
+      const mouseWorldY = lastMouseY * scaleY;
+      const dx = mouseWorldX - actor.x;
+      const dy = mouseWorldY - actor.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const maxDist = Math.max(1, dist);
+      const dirX = dx / maxDist;
+      const dirY = dy / maxDist;
+      const boostStr = 520;
+      actor.vx += dirX * boostStr;
+      actor.vy += dirY * boostStr * 0.85;
+      tone(380, 0.08, "triangle", 0.1);
+      tone(280, 0.06, "square", 0.08);
+      spawnParticles(actor.x, actor.y, 28, "#66ccff");
+      spawnParticles(actor.x, actor.y, 14, "#ffffff");
+      startScreenShake(8, 0.18);
+      break;
+    }
     case "boost":
       actor.vx += 360;
       actor.vy -= 90;
@@ -789,6 +814,8 @@ function updateHighScoreUI() {
 
 function getAbilityLabel(character) {
   switch (character.ability) {
+    case "fishingrod":
+      return "fishing rod (point & boost)";
     case "boost":
       return "snack boost";
     case "spin":
@@ -809,6 +836,15 @@ function getAbilityLabel(character) {
 function updateAbilityHint() {
   if (actor.state === "ended") {
     abilityHint.textContent = "Run ended. Press Restart Run to launch again.";
+    return;
+  }
+
+  if (selectedCharacter.id === "manning" && actor.state === "flying") {
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `Rod recharging: ${actor.abilityCooldown.toFixed(1)}s`;
+      return;
+    }
+    abilityHint.textContent = "Space: cast rod (point cursor to aim)";
     return;
   }
 
@@ -1357,6 +1393,9 @@ canvas.addEventListener("mousedown", (ev) => {
 });
 
 canvas.addEventListener("mousemove", (ev) => {
+  lastMouseX = ev.clientX - canvas.getBoundingClientRect().left;
+  lastMouseY = ev.clientY - canvas.getBoundingClientRect().top;
+
   if (!isDragging || actor.state !== "ready") return;
 
   const { wx, wy } = canvasCoords(ev);
