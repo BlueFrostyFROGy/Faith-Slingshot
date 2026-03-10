@@ -1,4 +1,6 @@
 const STORAGE_KEY = "faith-flight-best";
+const LEADERBOARD_KEY = "faith-flight-leaderboard";
+const MAX_LEADERBOARD_ENTRIES = 10;
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -7,6 +9,7 @@ const appRoot = document.getElementById("app");
 const menuScreen = document.getElementById("menuScreen");
 const characterScreen = document.getElementById("characterScreen");
 const controlsPanel = document.getElementById("controlsPanel");
+const leaderboardScreen = document.getElementById("leaderboardScreen");
 const characterGrid = document.getElementById("characterGrid");
 
 const toSelectBtn = document.getElementById("toSelectBtn");
@@ -22,6 +25,12 @@ const abilityHint = document.getElementById("abilityHint");
 const distanceValue = document.getElementById("distanceValue");
 const highScoreValue = document.getElementById("highScoreValue");
 const runStateLabel = document.getElementById("runStateLabel");
+
+const playerNameInput = document.getElementById("playerNameInput");
+const submitScoreBtn = document.getElementById("submitScoreBtn");
+const playAgainBtn = document.getElementById("playAgainBtn");
+const finalScore = document.getElementById("finalScore");
+const leaderboardList = document.getElementById("leaderboardList");
 
 const world = {
   width: 12000,
@@ -115,6 +124,22 @@ const characters = [
     unlockAt: 0,
     ability: "jumpbomb",
   },
+  {
+    id: "eli",
+    name: "Eli Ailshie",
+    trait: "Backflip master",
+    bio: "Nimble acrobat. Backflips on every bounce. Space for powered backflip.",
+    imageBase: "Eli Ailshie",
+    initials: "E",
+    mass: 0.72,
+    radius: 22,
+    drag: 0.065,
+    bounce: 0.78,
+    gravityMult: 0.82,
+    launchBoost: 1.26,
+    unlockAt: 0,
+    ability: "backflip",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -159,9 +184,12 @@ const actor = {
   isTrucking: false,
   truckTimer: 0,
   spencerBombsUsed: 0,
+  backflipRotation: 0,
+  backflipActive: false,
 };
 
 const obstacles = [];
+const confetti = [];
 
 const bouncePadCache = new Map();
 const janetCache = new Map();
@@ -344,6 +372,10 @@ function resetActor() {
   actor.truckTimer = 0;
   actor.rocketSpiked = false;
   actor.spencerBombsUsed = 0;
+  actor.backflipRotation = 0;
+  actor.backflipActive = false;
+  actor.backflipRotation = 0;
+  actor.backflipActive = false;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -413,6 +445,57 @@ function spawnImpactBurst(x, y, intensity = 1) {
   tone(145, 0.07, "triangle", 0.07);
 }
 
+function triggerConfetti() {
+  // Create confetti particles at random positions across the canvas
+  for (let i = 0; i < 40; i++) {
+    const x = Math.random() * canvas.width;
+    const y = -20 - Math.random() * 50;
+    const vx = (Math.random() - 0.5) * 400;
+    const vy = Math.random() * 200 + 150;
+    const colors = ["#ff7d5f", "#5f7bff", "#ffd180", "#80ff8f", "#ff80e0"];
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const rotation = Math.random() * Math.PI * 2;
+    const rotVel = (Math.random() - 0.5) * 12;
+    
+    confetti.push({
+      x, y, vx, vy, color, rotation, rotVel,
+      life: 2.5,
+      maxLife: 2.5,
+      size: Math.random() * 6 + 4
+    });
+  }
+}
+
+function updateConfetti(dt) {
+  for (let i = confetti.length - 1; i >= 0; i--) {
+    const c = confetti[i];
+    c.x += c.vx * dt;
+    c.y += c.vy * dt;
+    c.rotation += c.rotVel * dt;
+    c.vy += 800 * dt; // gravity
+    c.life -= dt;
+    
+    if (c.life <= 0) {
+      confetti.splice(i, 1);
+    }
+  }
+}
+
+function drawConfetti() {
+  confetti.forEach(c => {
+    const alpha = Math.max(0, c.life / c.maxLife);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rotation);
+    
+    ctx.fillStyle = c.color;
+    ctx.fillRect(-c.size / 2, -c.size / 2, c.size, c.size);
+    
+    ctx.restore();
+  });
+}
+
 function updateImpactBursts(dt) {
   impactBursts.forEach((b) => {
     b.life -= dt;
@@ -478,13 +561,24 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
   actor.vx = 0;
   actor.vy = 0;
   updateAbilityHint();
+  
+  // Show leaderboard screen after a short delay so they see the final position
+  setTimeout(() => {
+    showLeaderboardScreen(actor.maxX - world.launchX);
+  }, 800);
 }
 
 function useAbility() {
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
   actor.usedAbility = true;
-  actor.abilityCooldown = selectedCharacter.id === "manning" ? 5.0 : ABILITY_COOLDOWN_SECONDS;
+  if (selectedCharacter.id === "manning") {
+    actor.abilityCooldown = 5.0;
+  } else if (selectedCharacter.id === "eli") {
+    actor.abilityCooldown = 4.5;
+  } else {
+    actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
+  }
   ensureAudio();
 
   switch (selectedCharacter.ability) {
@@ -562,6 +656,18 @@ function useAbility() {
       tone(620, 0.07, "square", 0.08);
       tone(330, 0.07, "square", 0.06);
       spawnParticles(actor.x, actor.y, 30, "#d39cff");
+      break;
+    case "backflip":
+      // Eli's powered backflip - massive upward boost
+      actor.vy -= 960;
+      actor.vx += 200;
+      actor.backflipActive = true;
+      actor.backflipRotation = 0;
+      tone(600, 0.08, "triangle", 0.1);
+      tone(420, 0.06, "square", 0.08);
+      spawnParticles(actor.x, actor.y, 32, "#ff66ff");
+      spawnParticles(actor.x, actor.y, 16, "#ffaaff");
+      startScreenShake(11, 0.26);
       break;
     default:
       break;
@@ -736,9 +842,20 @@ function collideBouncePad(pad) {
 
 function update(dt) {
   updateBombs(dt);
+  updateConfetti(dt);
 
   if (actor.state !== "ready" && actor.state !== "ended") {
     actor.abilityCooldown = Math.max(0, actor.abilityCooldown - dt);
+    
+    // Animate backflip rotation
+    if (selectedCharacter.id === "eli" && actor.backflipActive) {
+      actor.backflipRotation += dt * 12; // 12 radians per second = ~2 full rotations/sec
+      if (actor.backflipRotation >= Math.PI * 2) {
+        actor.backflipRotation = 0;
+        actor.backflipActive = false;
+      }
+    }
+    
     if (actor.isTrucking) {
       actor.truckTimer -= dt;
       if (actor.truckTimer <= 0) {
@@ -781,6 +898,12 @@ function update(dt) {
         actor.vx *= 0.965;
         spawnParticles(actor.x, actor.y, 9, "#f5e8b2");
         tone(190, 0.04, "sine", 0.05);
+        
+        // Auto-backflip for Eli on every bounce
+        if (selectedCharacter.id === "eli") {
+          actor.backflipActive = true;
+          actor.backflipRotation = 0;
+        }
       } else {
         actor.vy = 0;
         actor.vx *= 0.975;
@@ -837,6 +960,8 @@ function getAbilityLabel(character) {
       return "blink warp";
     case "jumpbomb":
       return "jump / bomb";
+    case "backflip":
+      return "powered backflip";
     default:
       return "ability";
   }
@@ -872,8 +997,7 @@ function updateAbilityHint() {
       abilityHint.textContent = `Rocket recharging: ${actor.abilityCooldown.toFixed(1)}s`;
       return;
     }
-    const dir = actor.vy < 0 ? "↑ GOOD — fire now!" : "↓ DANGER — will crash!";
-    abilityHint.textContent = `Space: rocket  ${dir}`;
+    abilityHint.textContent = `Space: rocket`;
     return;
   }
 
@@ -902,6 +1026,79 @@ function updateAbilityHint() {
   }
 
   abilityHint.textContent = `Ability ready — press Space for ${getAbilityLabel(selectedCharacter)}.`;
+}
+
+function loadLeaderboard() {
+  const stored = localStorage.getItem(LEADERBOARD_KEY);
+  return stored ? JSON.parse(stored) : [];
+}
+
+function saveLeaderboard(scores) {
+  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(scores));
+}
+
+function addScoreToLeaderboard(playerName, distance) {
+  const leaderboard = loadLeaderboard();
+  const travelled = parseFloat((distance / 10).toFixed(1));
+  leaderboard.push({ name: playerName, distance: travelled, date: new Date().toLocaleDateString() });
+  leaderboard.sort((a, b) => b.distance - a.distance);
+  const topScores = leaderboard.slice(0, MAX_LEADERBOARD_ENTRIES);
+  saveLeaderboard(topScores);
+  return topScores;
+}
+
+function displayLeaderboard() {
+  const scores = loadLeaderboard();
+  leaderboardList.innerHTML = "";
+  if (scores.length === 0) {
+    leaderboardList.innerHTML = "<p>No scores yet. Be the first!</p>";
+    return;
+  }
+  scores.forEach((score, idx) => {
+    const entry = document.createElement("div");
+    entry.style.padding = "10px 12px";
+    entry.style.display = "flex";
+    entry.style.justifyContent = "space-between";
+    entry.style.alignItems = "center";
+    entry.style.borderBottom = "1px solid #e0e0ff";
+    entry.style.fontSize = "0.95rem";
+    entry.style.fontWeight = idx < 3 ? "600" : "400";
+    
+    const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
+    const nameSpan = document.createElement("span");
+    nameSpan.textContent = `${medal} ${idx + 1}. ${score.name}`;
+    
+    const distSpan = document.createElement("span");
+    distSpan.textContent = `${score.distance}m`;
+    distSpan.style.color = idx < 3 ? "#5f7bff" : "#666";
+    distSpan.style.fontWeight = "700";
+    
+    entry.appendChild(nameSpan);
+    entry.appendChild(distSpan);
+    leaderboardList.appendChild(entry);
+  });
+}
+
+function showLeaderboardScreen(distance) {
+  menuScreen.classList.remove("active");
+  characterScreen.classList.remove("active");
+  controlsPanel.classList.add("hidden");
+  leaderboardScreen.classList.add("active");
+  
+  const travelled = (distance / 10).toFixed(1);
+  finalScore.textContent = `Your Score: ${travelled}m`;
+  playerNameInput.value = "";
+  playerNameInput.focus();
+  
+  // Check if top 3 and trigger confetti
+  const scores = loadLeaderboard();
+  const tempScore = parseFloat(travelled);
+  const isTop3 = scores.slice(0, 3).some(s => Math.abs(s.distance - tempScore) < 0.1) || scores.length < 3;
+  if (isTop3 && scores.length > 0) {
+    triggerConfetti();
+  }
+  
+  displayLeaderboard();
 }
 
 function getCharacterImageCandidates(character) {
@@ -1075,6 +1272,14 @@ function drawActor() {
   const image = selectedCharacter._img;
 
   ctx.save();
+  
+  // Apply backflip rotation for Eli
+  if (selectedCharacter.id === "eli" && actor.backflipRotation > 0) {
+    ctx.translate(sx, sy);
+    ctx.rotate(actor.backflipRotation);
+    ctx.translate(-sx, -sy);
+  }
+  
   ctx.beginPath();
   ctx.arc(sx, sy, actor.radius, 0, Math.PI * 2);
   ctx.closePath();
@@ -1255,6 +1460,7 @@ function draw() {
   drawBombs();
   drawParticles();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawConfetti();
 }
 
 let last = performance.now();
@@ -1548,4 +1754,27 @@ preloadCharacterImages();
 updateHighScoreUI();
 showMenu();
 resetActor();
+
+submitScoreBtn.addEventListener("click", () => {
+  const name = playerNameInput.value.trim();
+  if (!name) {
+    alert("Please enter your name!");
+    return;
+  }
+  const distance = actor.maxX - world.launchX;
+  addScoreToLeaderboard(name, distance);
+  displayLeaderboard();
+  submitScoreBtn.disabled = true;
+  playerNameInput.disabled = true;
+  playerNameInput.value = "Score submitted!";
+});
+
+playAgainBtn.addEventListener("click", () => {
+  leaderboardScreen.classList.remove("active");
+  showMenu();
+  world.bestDistance = Math.max(world.bestDistance, actor.maxX - world.launchX);
+  localStorage.setItem(STORAGE_KEY, String(world.bestDistance));
+  updateHighScoreUI();
+});
+
 requestAnimationFrame(frame);
