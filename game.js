@@ -262,6 +262,7 @@ const actor = {
   burgerCount: 0,
   jacksonFootballCount: 0,
   jacksonSkySmashesUsed: 0,
+  jacksonSkyModeTimer: 0,
   jacksonDiveActive: false,
   jacksonDiveDelay: 0,
   jacksonDiveTargetIndex: null,
@@ -702,6 +703,7 @@ function resetActor() {
   actor.burgerCount = 0;
   actor.jacksonFootballCount = 0;
   actor.jacksonSkySmashesUsed = 0;
+  actor.jacksonSkyModeTimer = 0;
   actor.jacksonDiveActive = false;
   actor.jacksonDiveDelay = 0;
   actor.jacksonDiveTargetIndex = null;
@@ -903,17 +905,14 @@ function findNearestHughAhead() {
 
 function triggerJacksonSkySmash() {
   if (actor.jacksonSkySmashesUsed >= 5) return;
-  const target = findNearestHughAhead();
-  if (!target) return;
-
   actor.jacksonSkySmashesUsed += 1;
-  actor.jacksonDiveActive = true;
-  actor.jacksonDiveDelay = 0.35;
-  actor.jacksonDiveTargetIndex = target.index;
+  actor.jacksonSkyModeTimer = 5.0;
+  actor.jacksonDiveActive = false;
+  actor.jacksonDiveTargetIndex = null;
   actor.vy -= 1350;
-  actor.vx += 230;
+  actor.vx += 260;
   startScreenShake(14, 0.36);
-  spawnParticles(actor.x, actor.y, 40, "#ffe199");
+  spawnParticles(actor.x, actor.y, 48, "#f4d03f");
   tone(170, 0.08, "square", 0.08);
 }
 
@@ -1310,6 +1309,14 @@ function collideRect(rect) {
         startScreenShake(10, 0.22);
         return;
       }
+      if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
+        destroyedJanets.add(rect.index);
+        actor.vy = Math.min(actor.vy, -1200);
+        actor.vx = Math.max(actor.vx + 100, 760);
+        spawnParticles(actor.x, actor.y, 30, "#f4d03f");
+        startScreenShake(12, 0.24);
+        return;
+      }
       if (actor.isTrucking) {
         actor.vx += 220;
         spawnParticles(actor.x, actor.y, 40, "#ffcd3c");
@@ -1398,6 +1405,13 @@ function update(dt) {
 
     if (selectedCharacter.id === "brayden") {
       actor.beerRageTimer = Math.max(0, actor.beerRageTimer - dt);
+    }
+
+    if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
+      actor.jacksonSkyModeTimer = Math.max(0, actor.jacksonSkyModeTimer - dt);
+      actor.vy -= 520 * dt;
+      actor.vx += 180 * dt;
+      spawnParticles(actor.x, actor.y + actor.radius * 0.45, 4, "#f4d03f");
     }
 
     actor.vy += world.gravity * actor.gravityMult * dt;
@@ -1497,47 +1511,22 @@ function update(dt) {
       }
     }
 
-    if (selectedCharacter.id === "jackson" && actor.jacksonDiveActive) {
-      const target = Number.isInteger(actor.jacksonDiveTargetIndex)
-        ? getJanet(actor.jacksonDiveTargetIndex)
-        : null;
-
-      if (!target || destroyedJanets.has(target.index)) {
-        actor.jacksonDiveActive = false;
-        actor.jacksonDiveTargetIndex = null;
-      } else {
-        actor.jacksonDiveDelay = Math.max(0, actor.jacksonDiveDelay - dt);
-        if (actor.jacksonDiveDelay <= 0) {
-          const txRaw = target.x + target.w * 0.5;
-          const tx = Math.max(txRaw, actor.x + 140); // never steer backward
-          const ty = terrainY(target.x) - target.yOffset + target.h * 0.5;
-          const ddx = tx - actor.x;
-          const ddy = ty - actor.y;
-          const dist = Math.max(1, Math.hypot(ddx, ddy));
-          const dirX = ddx / dist;
-          const dirY = ddy / dist;
-
-          actor.vx += dirX * 2800 * dt;
-          actor.vy += dirY * 2800 * dt + 1200 * dt;
-
-          const nearestX = Math.max(target.x, Math.min(actor.x, target.x + target.w));
-          const targetY = terrainY(target.x) - target.yOffset;
-          const nearestY = Math.max(targetY, Math.min(actor.y, targetY + target.h));
-          const hx = actor.x - nearestX;
-          const hy = actor.y - nearestY;
-          const reachedForward = actor.x >= target.x + target.w * 0.45 && actor.y >= targetY - actor.radius * 0.2;
-          if (hx * hx + hy * hy <= actor.radius * actor.radius || reachedForward) {
-            destroyedJanets.add(target.index);
-            actor.vy = -1500;
-            actor.vx = Math.max(actor.vx + 240, 760);
-            actor.jacksonDiveActive = false;
-            actor.jacksonDiveTargetIndex = null;
-            spawnImpactBurst(actor.x, actor.y, 2.0);
-            spawnParticles(actor.x, actor.y, 28, "#ffd48a");
-            startScreenShake(16, 0.34);
-          }
+    if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
+      nearbyJanets.forEach((hugh) => {
+        if (destroyedJanets.has(hugh.index)) return;
+        const hy = terrainY(hugh.x) - hugh.yOffset;
+        const passesOver = actor.x + actor.radius > hugh.x
+          && actor.x - actor.radius < hugh.x + hugh.w
+          && actor.y < hy + hugh.h * 0.8;
+        if (passesOver) {
+          destroyedJanets.add(hugh.index);
+          actor.vy = Math.min(actor.vy, -1100);
+          actor.vx = Math.max(actor.vx + 120, 780);
+          spawnImpactBurst(actor.x, actor.y, 1.8);
+          spawnParticles(actor.x, actor.y, 24, "#ffd48a");
+          startScreenShake(12, 0.24);
         }
-      }
+      });
     }
 
     const ground = terrainY(actor.x);
@@ -1752,6 +1741,10 @@ function updateAbilityHint() {
     const truckText = actor.truckCount > 0
       ? `Space: truck (${actor.truckCount} left)`
       : "No trucks left";
+    if (actor.jacksonSkyModeTimer > 0) {
+      abilityHint.textContent = `${footballText}  |  GOLD MODE ${actor.jacksonSkyModeTimer.toFixed(1)}s | Invincible | Uses left: ${smashesLeft}`;
+      return;
+    }
     abilityHint.textContent = `${footballText}  |  ${truckText}  |  Sky smash in ${nextSkyIn === 0 ? 10 : nextSkyIn} | Uses left: ${smashesLeft}`;
     return;
   }
@@ -1952,7 +1945,11 @@ function getCharacterImageCandidates(character) {
 
 function drawBackground() {
   const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0) {
+  if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
+    grad.addColorStop(0, "#ffe58a");
+    grad.addColorStop(0.55, "#ffd34f");
+    grad.addColorStop(1, "#f7b733");
+  } else if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0) {
     const t = performance.now() * 0.0026;
     const hueA = (t * 180) % 360;
     const hueB = (hueA + 120) % 360;
