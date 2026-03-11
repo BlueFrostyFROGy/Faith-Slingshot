@@ -1661,7 +1661,7 @@ function useTruck() {
     actor.jjTruckRegenTimer = JJ_TRUCK_REGEN_SECONDS;
   }
   actor.isTrucking = true;
-  actor.truckTimer = 3.0;
+  actor.truckTimer = 4.5;
   actor.vx = Math.max(actor.vx + 780, 980); // bigger forward burst
   actor.vy *= 0.25;                           // kill vertical so he goes flat
   spawnParticles(actor.x, actor.y, 28, "#ffcd3c");
