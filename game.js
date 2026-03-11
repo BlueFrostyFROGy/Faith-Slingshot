@@ -191,6 +191,22 @@ const characters = [
     unlockAt: 0,
     ability: "fartpassive",
   },
+  {
+    id: "jackson",
+    name: "Jackson",
+    trait: "Truck + sky smash",
+    bio: "Space uses truck boost. Every 10 footballs launches sky-smash on Hugh Henderson (max 5 per run).",
+    imageBase: "Jackson",
+    initials: "J",
+    mass: 1.35,
+    radius: 34,
+    drag: 0.1,
+    bounce: 0.56,
+    gravityMult: 0.98,
+    launchBoost: 1.12,
+    unlockAt: 0,
+    ability: "truck",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -244,6 +260,11 @@ const actor = {
   beerCount: 0,
   beerRageTimer: 0,
   burgerCount: 0,
+  jacksonFootballCount: 0,
+  jacksonSkySmashesUsed: 0,
+  jacksonDiveActive: false,
+  jacksonDiveDelay: 0,
+  jacksonDiveTargetIndex: null,
 };
 
 const obstacles = [];
@@ -254,9 +275,11 @@ const janetCache = new Map();
 const candyCache = new Map();
 const beerCache = new Map();
 const burgerCache = new Map();
+const footballCache = new Map();
 const collectedCandies = new Set();
 const collectedBeers = new Set();
 const collectedBurgers = new Set();
+const collectedFootballs = new Set();
 
 const JANET_BASE = {
   w: 56,
@@ -293,6 +316,7 @@ let braydenBeerImg = null;
 let braydenRacketImg = null;
 let tennisBallImg = null;
 let reedBurgerImg = null;
+let jacksonFootballImg = null;
 const candyImgs = [];
 
 const spencerBombImageCandidates = [
@@ -356,6 +380,13 @@ const reedBurgerImageCandidates = [
   "Reed Blair Cheese Burger.webp",
   "Reed Blair Cheeseburger.webp",
   "Reed Blair Cheeseburger.png",
+];
+
+const jacksonFootballImageCandidates = [
+  "characters props/Jacksons Football.png",
+  "Jacksons Football.png",
+  "assets/images/jackson-football.png",
+  "assets/images/football.png",
 ];
 
 function seededNoise(seed) {
@@ -568,6 +599,46 @@ function getBurgersInRange(startX, endX) {
   return burgers;
 }
 
+function createFootball(index) {
+  const spacing = 300;
+  const startX = 1050;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 901) * 210) - 70;
+  const yOffset = 110 + Math.floor(seededNoise(index + 902) * 28);
+
+  return {
+    index,
+    x: baseX + offset,
+    yOffset,
+    r: 14,
+  };
+}
+
+function getFootball(index) {
+  if (!footballCache.has(index)) {
+    footballCache.set(index, createFootball(index));
+  }
+  return footballCache.get(index);
+}
+
+function getFootballsInRange(startX, endX) {
+  const spacing = 300;
+  const startXBase = 1050;
+  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 2);
+  const footballs = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const football = getFootball(index);
+    if (collectedFootballs.has(football.index)) continue;
+    if (football.x + football.r >= startX && football.x - football.r <= endX) {
+      footballs.push(football);
+    }
+  }
+
+  return footballs;
+}
+
 let audioCtx;
 
 function ensureAudio() {
@@ -629,6 +700,11 @@ function resetActor() {
   actor.beerCount = 0;
   actor.beerRageTimer = 0;
   actor.burgerCount = 0;
+  actor.jacksonFootballCount = 0;
+  actor.jacksonSkySmashesUsed = 0;
+  actor.jacksonDiveActive = false;
+  actor.jacksonDiveDelay = 0;
+  actor.jacksonDiveTargetIndex = null;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -638,6 +714,7 @@ function resetActor() {
   collectedCandies.clear();
   collectedBeers.clear();
   collectedBurgers.clear();
+  collectedFootballs.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -808,6 +885,38 @@ function triggerReedSkyLaunch() {
   spawnParticles(actor.x, actor.y + actor.radius * 0.5, 34, "#8c5a2e");
 }
 
+function findNearestHughAhead() {
+  const candidates = getJanetsInRange(actor.x + 20, actor.x + 3600);
+  if (!candidates.length) return null;
+  let best = null;
+  let bestDist = Infinity;
+  candidates.forEach((hugh) => {
+    const cx = hugh.x + hugh.w * 0.5;
+    const dist = cx - actor.x;
+    if (dist > 0 && dist < bestDist) {
+      bestDist = dist;
+      best = hugh;
+    }
+  });
+  return best;
+}
+
+function triggerJacksonSkySmash() {
+  if (actor.jacksonSkySmashesUsed >= 5) return;
+  const target = findNearestHughAhead();
+  if (!target) return;
+
+  actor.jacksonSkySmashesUsed += 1;
+  actor.jacksonDiveActive = true;
+  actor.jacksonDiveDelay = 0.35;
+  actor.jacksonDiveTargetIndex = target.index;
+  actor.vy -= 1350;
+  actor.vx += 230;
+  startScreenShake(14, 0.36);
+  spawnParticles(actor.x, actor.y, 40, "#ffe199");
+  tone(170, 0.08, "square", 0.08);
+}
+
 function updateScreenShake(dt) {
   const spinActive = selectedCharacter.id === "brayden" && actor.beerRageTimer > 0 && actor.state !== "ended";
   const spinDeg = spinActive ? (performance.now() * 0.38) % 360 : 0;
@@ -892,6 +1001,8 @@ function useAbility() {
     actor.abilityCooldown = actor.beerRageTimer > 0 ? 0 : 0.65;
   } else if (selectedCharacter.id === "reed") {
     actor.abilityCooldown = 3.5;
+  } else if (selectedCharacter.id === "jackson") {
+    actor.abilityCooldown = 0;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -1034,6 +1145,9 @@ function useAbility() {
     case "fartpassive":
       triggerReedBasicFartJump();
       break;
+    case "truck":
+      useTruck();
+      break;
     default:
       break;
   }
@@ -1042,7 +1156,7 @@ function useAbility() {
 }
 
 function useTruck() {
-  if (selectedCharacter.id !== "anthony") return;
+  if (selectedCharacter.id !== "anthony" && selectedCharacter.id !== "jackson") return;
   if (actor.state === "ready" || actor.state === "ended") return;
   if (actor.truckCount <= 0) {
     tone(120, 0.06, "sine", 0.05);
@@ -1301,6 +1415,9 @@ function update(dt) {
     const nearbyBurgers = selectedCharacter.id === "reed"
       ? getBurgersInRange(actor.x - 260, actor.x + 560)
       : [];
+    const nearbyFootballs = selectedCharacter.id === "jackson"
+      ? getFootballsInRange(actor.x - 260, actor.x + 560)
+      : [];
 
     obstacles.forEach(collideRect);
     nearbyJanets.forEach(collideRect);
@@ -1359,6 +1476,64 @@ function update(dt) {
 
         if (actor.burgerCount % 5 === 0) {
           triggerReedSkyLaunch();
+        }
+      }
+    }
+
+    for (const football of nearbyFootballs) {
+      const fy = terrainY(football.x) - football.yOffset;
+      const dx = actor.x - football.x;
+      const dy = actor.y - fy;
+      const hitR = actor.radius + football.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedFootballs.add(football.index);
+        actor.jacksonFootballCount += 1;
+        spawnParticles(football.x, fy, 14, "#c97b35");
+        tone(260 + Math.min(260, actor.jacksonFootballCount * 4), 0.05, "triangle", 0.06);
+
+        if (actor.jacksonFootballCount % 10 === 0 && actor.jacksonSkySmashesUsed < 5) {
+          triggerJacksonSkySmash();
+        }
+      }
+    }
+
+    if (selectedCharacter.id === "jackson" && actor.jacksonDiveActive) {
+      const target = Number.isInteger(actor.jacksonDiveTargetIndex)
+        ? getJanet(actor.jacksonDiveTargetIndex)
+        : null;
+
+      if (!target || destroyedJanets.has(target.index)) {
+        actor.jacksonDiveActive = false;
+        actor.jacksonDiveTargetIndex = null;
+      } else {
+        actor.jacksonDiveDelay = Math.max(0, actor.jacksonDiveDelay - dt);
+        if (actor.jacksonDiveDelay <= 0) {
+          const tx = target.x + target.w * 0.5;
+          const ty = terrainY(target.x) - target.yOffset + target.h * 0.5;
+          const ddx = tx - actor.x;
+          const ddy = ty - actor.y;
+          const dist = Math.max(1, Math.hypot(ddx, ddy));
+          const dirX = ddx / dist;
+          const dirY = ddy / dist;
+
+          actor.vx += dirX * 2800 * dt;
+          actor.vy += dirY * 2800 * dt + 1200 * dt;
+
+          const nearestX = Math.max(target.x, Math.min(actor.x, target.x + target.w));
+          const targetY = terrainY(target.x) - target.yOffset;
+          const nearestY = Math.max(targetY, Math.min(actor.y, targetY + target.h));
+          const hx = actor.x - nearestX;
+          const hy = actor.y - nearestY;
+          if (hx * hx + hy * hy <= actor.radius * actor.radius) {
+            destroyedJanets.add(target.index);
+            actor.vy = -1300;
+            actor.vx = Math.max(actor.vx + 140, 520);
+            actor.jacksonDiveActive = false;
+            actor.jacksonDiveTargetIndex = null;
+            spawnImpactBurst(actor.x, actor.y, 2.0);
+            spawnParticles(actor.x, actor.y, 28, "#ffd48a");
+            startScreenShake(16, 0.34);
+          }
         }
       }
     }
@@ -1458,6 +1633,8 @@ function getAbilityLabel(character) {
       return "dunk hurdle";
     case "tennis":
       return "tennis jump / shot";
+    case "truck":
+      return "truck boost";
     case "fartpassive":
       return "fart boost (passive)";
     default:
@@ -1563,6 +1740,17 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${burgerText}  |  Space: fart jump | Sky launch every 5 burgers (in ${nextSkyIn === 0 ? 5 : nextSkyIn})`;
+    return;
+  }
+
+  if (selectedCharacter.id === "jackson") {
+    const footballText = `Footballs: ${actor.jacksonFootballCount}`;
+    const nextSkyIn = 10 - (actor.jacksonFootballCount % 10 || 10);
+    const smashesLeft = 5 - actor.jacksonSkySmashesUsed;
+    const truckText = actor.truckCount > 0
+      ? `Space: truck (${actor.truckCount} left)`
+      : "No trucks left";
+    abilityHint.textContent = `${footballText}  |  ${truckText}  |  Sky smash in ${nextSkyIn === 0 ? 10 : nextSkyIn} | Uses left: ${smashesLeft}`;
     return;
   }
 
@@ -1754,6 +1942,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "reed") {
     return ["characters/Reed Blair.png", "characters/Reed Blair.jpg"];
   }
+  if (character.id === "jackson") {
+    return ["characters/Jackson .png", "characters/Jackson .jpg"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 
@@ -1897,6 +2088,9 @@ function drawMapDecor() {
   const visibleBurgers = selectedCharacter.id === "reed"
     ? getBurgersInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
+  const visibleFootballs = selectedCharacter.id === "jackson"
+    ? getFootballsInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
 
   visibleCandies.forEach((candy) => {
     const cy = terrainY(candy.x) - candy.yOffset;
@@ -1975,6 +2169,26 @@ function drawMapDecor() {
       // Bottom bun
       ctx.fillStyle = "#c48a4a";
       ctx.fillRect(sx - r, by + 9, r * 2, 6);
+    }
+  });
+
+  visibleFootballs.forEach((football) => {
+    const fy = terrainY(football.x) - football.yOffset;
+    const sx = football.x - cameraX;
+    if (sx < -70 || sx > canvas.width + 70) return;
+
+    const size = football.r * 2.6;
+    if (jacksonFootballImg && jacksonFootballImg.complete && jacksonFootballImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, fy);
+      ctx.rotate(Math.sin((performance.now() * 0.0035) + football.index) * 0.12);
+      ctx.drawImage(jacksonFootballImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#9a4f20";
+      ctx.beginPath();
+      ctx.ellipse(sx, fy, football.r * 1.1, football.r * 0.75, -0.5, 0, Math.PI * 2);
+      ctx.fill();
     }
   });
 
@@ -2456,6 +2670,16 @@ function preloadCharacterImages() {
     }
   };
   reedBurgerImg.src = reedBurgerImageCandidates[reedBurgerIndex];
+
+  jacksonFootballImg = new Image();
+  let jacksonFootballIndex = 0;
+  jacksonFootballImg.onerror = () => {
+    jacksonFootballIndex += 1;
+    if (jacksonFootballIndex < jacksonFootballImageCandidates.length) {
+      jacksonFootballImg.src = jacksonFootballImageCandidates[jacksonFootballIndex];
+    }
+  };
+  jacksonFootballImg.src = jacksonFootballImageCandidates[jacksonFootballIndex];
 
   candyImgs.length = 0;
   candyImageCandidates.forEach((path) => {
