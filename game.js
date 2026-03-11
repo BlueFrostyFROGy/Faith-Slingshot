@@ -115,12 +115,12 @@ const characters = [
     bio: "Starts fast. Space for jump, double-Space for bomb. Bombs destroy Janet but slow him down.",
     imageBase: "Spencer",
     initials: "S",
-    mass: 2.05,
-    radius: 40,
+    mass: 1.82,
+    radius: 38,
     drag: 0.06,
-    bounce: 0.52,
+    bounce: 0.56,
     gravityMult: 0.90,
-    launchBoost: 1.48,
+    launchBoost: 1.38,
     unlockAt: 0,
     ability: "jumpbomb",
   },
@@ -133,10 +133,10 @@ const characters = [
     initials: "E",
     mass: 0.72,
     radius: 22,
-    drag: 0.095,
-    bounce: 0.48,
-    gravityMult: 0.94,
-    launchBoost: 1.16,
+    drag: 0.082,
+    bounce: 0.56,
+    gravityMult: 0.90,
+    launchBoost: 1.20,
     unlockAt: 0,
     ability: "backflip",
   },
@@ -374,8 +374,6 @@ function resetActor() {
   actor.spencerBombsUsed = 0;
   actor.backflipRotation = 0;
   actor.backflipActive = false;
-  actor.backflipRotation = 0;
-  actor.backflipActive = false;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -575,7 +573,7 @@ function useAbility() {
   if (selectedCharacter.id === "manning") {
     actor.abilityCooldown = 5.0;
   } else if (selectedCharacter.id === "eli") {
-    actor.abilityCooldown = 6.5;
+    actor.abilityCooldown = 5.5;
   } else if (selectedCharacter.id === "hunter") {
     actor.abilityCooldown = 4.0;
   } else {
@@ -704,9 +702,9 @@ function useSpencerJump() {
   if (selectedCharacter.id !== "spencer") return;
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
-  const jumpPower = Math.max(220, 560 - actor.spencerBombsUsed * 95);
+  const jumpPower = Math.max(260, 520 - actor.spencerBombsUsed * 70);
   actor.vy -= jumpPower;
-  actor.vx += 110;
+  actor.vx += 95;
   actor.usedAbility = true;
   actor.abilityCooldown = 0.55;
   tone(520, 0.07, "triangle", 0.08);
@@ -750,18 +748,18 @@ function useSpencerBomb() {
   bombs.push({
     x: actor.x,
     y: actor.y + actor.radius * 0.25,
-    vx: actor.vx * 0.7 + 90,
-    vy: actor.vy * 0.35 + 140,
+    vx: actor.vx * 0.68 + 70,
+    vy: actor.vy * 0.32 + 120,
     life: 1.35,
     radius: 18,
     exploded: false,
   });
 
   actor.spencerBombsUsed += 1;
-  actor.vx *= 0.78;
-  actor.vy = Math.max(actor.vy, -120);
+  actor.vx *= 0.86;
+  actor.vy = Math.max(actor.vy, -140);
   actor.usedAbility = true;
-  actor.abilityCooldown = 1.05;
+  actor.abilityCooldown = 0.95;
 
   spawnParticles(actor.x, actor.y, 22, "#ffbf66");
   tone(250, 0.06, "square", 0.09);
@@ -890,22 +888,23 @@ function update(dt) {
         return;
       }
       if (Math.abs(actor.vy) > 80) {
+        const impactVy = Math.abs(actor.vy);
         let bounceFactor = Math.max(0.62, actor.bounce * 1.22);
         if (selectedCharacter.id === "anthony") {
-          const impactIntensity = Math.min(2.4, Math.abs(actor.vy) / 420);
+          const impactIntensity = Math.min(2.4, impactVy / 420);
           spawnImpactBurst(actor.x, actor.y + actor.radius * 0.35, impactIntensity);
           bounceFactor = Math.min(bounceFactor, 0.82);
           startScreenShake(22 + impactIntensity * 6.0, 0.45);
         } else if (selectedCharacter.id === "eli") {
-          bounceFactor *= 0.9;
+          bounceFactor *= 0.86;
         }
-        actor.vy = -Math.abs(actor.vy) * bounceFactor;
+        actor.vy = -impactVy * bounceFactor;
         actor.vx *= selectedCharacter.id === "eli" ? 0.9 : 0.965;
         spawnParticles(actor.x, actor.y, 9, "#f5e8b2");
         tone(190, 0.04, "sine", 0.05);
         
-        // Auto-backflip for Eli on every bounce
-        if (selectedCharacter.id === "eli") {
+        // Auto-backflip for Eli only on stronger bounces
+        if (selectedCharacter.id === "eli" && impactVy > 230) {
           actor.backflipActive = true;
           actor.backflipRotation = 0;
         }
