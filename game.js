@@ -1498,9 +1498,9 @@ function useAbility() {
   } else if (selectedCharacter.id === "myer") {
     actor.abilityCooldown = 1.15;
   } else if (selectedCharacter.id === "lincolnjames") {
-    actor.abilityCooldown = 0.45;
+    actor.abilityCooldown = 2;
   } else if (selectedCharacter.id === "lukepueppke") {
-    actor.abilityCooldown = 0.4;
+    actor.abilityCooldown = 2;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -1693,7 +1693,7 @@ function useAbility() {
       actor.vy -= jumpVy;
       actor.vx += 60 + actor.lincolnAdhd * 3;
       actor.bounce = Math.min(0.88, 0.68 + actor.lincolnAdhd * 0.008);
-      actor.abilityCooldown = 0.45;
+      actor.abilityCooldown = 2;
       tone(580 + Math.min(300, actor.lincolnAdhd * 8), 0.07, "triangle", 0.09);
       tone(380, 0.05, "square", 0.07);
       spawnParticles(actor.x, actor.y, 22, "#ff5ef5");
@@ -1706,7 +1706,7 @@ function useAbility() {
       const boost = Math.min(LUKE_ITEM_JUMP_MAX, LUKE_ITEM_JUMP_BASE + actor.lukeItemCount * LUKE_ITEM_JUMP_BONUS);
       actor.vx += boost;
       actor.vy -= 340 + actor.lukeItemCount * 6;
-      actor.abilityCooldown = 0.4;
+      actor.abilityCooldown = 2;
       tone(460 + Math.min(280, actor.lukeItemCount * 7), 0.07, "sawtooth", 0.09);
       tone(280, 0.05, "triangle", 0.06);
       spawnParticles(actor.x, actor.y, 20, "#4fc3f7");
