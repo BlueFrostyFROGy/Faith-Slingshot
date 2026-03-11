@@ -179,7 +179,7 @@ const characters = [
     id: "reed",
     name: "Reed Blair",
     trait: "Cheeseburger gas boost",
-    bio: "Gets a basic fart jump every 3.5s. Every 5 cheeseburgers triggers a 5s sky fart boost.",
+    bio: "Press Space for a fart jump. Every 5 cheeseburgers launches him to the sky.",
     imageBase: "Reed Blair",
     initials: "R",
     mass: 1.05,
@@ -244,8 +244,6 @@ const actor = {
   beerCount: 0,
   beerRageTimer: 0,
   burgerCount: 0,
-  reedBasicFartTimer: 3.5,
-  reedMegaFartTimer: 0,
 };
 
 const obstacles = [];
@@ -631,8 +629,6 @@ function resetActor() {
   actor.beerCount = 0;
   actor.beerRageTimer = 0;
   actor.burgerCount = 0;
-  actor.reedBasicFartTimer = 3.5;
-  actor.reedMegaFartTimer = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -796,21 +792,20 @@ function triggerBeerRage() {
 }
 
 function triggerReedBasicFartJump() {
-  actor.vy -= 300;
-  actor.vx += 40;
+  actor.vy -= 520;
+  actor.vx += 85;
   tone(120, 0.05, "sawtooth", 0.06);
-  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 12, "#6b3e1f");
+  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 20, "#6b3e1f");
 }
 
-function triggerReedMegaFartBoost() {
-  actor.reedMegaFartTimer = 5.0;
-  actor.vy -= 980;
-  actor.vx += 180;
-  startScreenShake(9, 0.28);
+function triggerReedSkyLaunch() {
+  actor.vy -= 1250;
+  actor.vx += 260;
+  startScreenShake(14, 0.36);
   tone(140, 0.09, "sawtooth", 0.09);
   tone(95, 0.08, "triangle", 0.08);
-  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 36, "#6b3e1f");
-  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 24, "#8c5a2e");
+  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 54, "#6b3e1f");
+  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 34, "#8c5a2e");
 }
 
 function updateScreenShake(dt) {
@@ -879,11 +874,6 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
 function useAbility() {
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
-  if (selectedCharacter.id === "reed") {
-    tone(140, 0.05, "sine", 0.05);
-    return;
-  }
-
   if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0 && actor.overdriveDunksLeft <= 0) {
     tone(140, 0.05, "sine", 0.05);
     return;
@@ -900,6 +890,8 @@ function useAbility() {
     actor.abilityCooldown = actor.rainbowModeTimer > 0 ? 0 : 0.45;
   } else if (selectedCharacter.id === "brayden") {
     actor.abilityCooldown = actor.beerRageTimer > 0 ? 0 : 0.65;
+  } else if (selectedCharacter.id === "reed") {
+    actor.abilityCooldown = 3.5;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -1039,6 +1031,9 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 16, "#b6ff6a");
       break;
     }
+    case "fartpassive":
+      triggerReedBasicFartJump();
+      break;
     default:
       break;
   }
@@ -1291,21 +1286,6 @@ function update(dt) {
       actor.beerRageTimer = Math.max(0, actor.beerRageTimer - dt);
     }
 
-    if (selectedCharacter.id === "reed") {
-      actor.reedBasicFartTimer -= dt;
-      if (actor.reedBasicFartTimer <= 0) {
-        triggerReedBasicFartJump();
-        actor.reedBasicFartTimer = 3.5;
-      }
-
-      if (actor.reedMegaFartTimer > 0) {
-        actor.reedMegaFartTimer = Math.max(0, actor.reedMegaFartTimer - dt);
-        actor.vy -= 380 * dt;
-        actor.vx += 95 * dt;
-        spawnParticles(actor.x, actor.y + actor.radius * 0.5, 3, "#6b3e1f");
-      }
-    }
-
     actor.vy += world.gravity * actor.gravityMult * dt;
     actor.vx -= actor.vx * actor.drag * dt;
     actor.x += actor.vx * dt;
@@ -1378,7 +1358,7 @@ function update(dt) {
         tone(240 + Math.min(220, actor.burgerCount * 5), 0.05, "triangle", 0.06);
 
         if (actor.burgerCount % 5 === 0) {
-          triggerReedMegaFartBoost();
+          triggerReedSkyLaunch();
         }
       }
     }
@@ -1577,13 +1557,12 @@ function updateAbilityHint() {
 
   if (selectedCharacter.id === "reed") {
     const burgerText = `Cheeseburgers: ${actor.burgerCount}`;
-    const nextMegaIn = 5 - (actor.burgerCount % 5 || 5);
-    const basicIn = Math.max(0, actor.reedBasicFartTimer).toFixed(1);
-    if (actor.reedMegaFartTimer > 0) {
-      abilityHint.textContent = `${burgerText}  |  SKY BOOST ${actor.reedMegaFartTimer.toFixed(1)}s | Basic jump in ${basicIn}s`;
+    const nextSkyIn = 5 - (actor.burgerCount % 5 || 5);
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${burgerText}  |  Space: fart jump in ${actor.abilityCooldown.toFixed(1)}s | Sky launch in ${nextSkyIn === 0 ? 5 : nextSkyIn}`;
       return;
     }
-    abilityHint.textContent = `${burgerText}  |  Basic fart jump every 3.5s (${basicIn}s) | Mega in ${nextMegaIn === 0 ? 5 : nextMegaIn}`;
+    abilityHint.textContent = `${burgerText}  |  Space: fart jump | Sky launch every 5 burgers (in ${nextSkyIn === 0 ? 5 : nextSkyIn})`;
     return;
   }
 
