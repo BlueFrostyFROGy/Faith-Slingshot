@@ -48,9 +48,6 @@ const signUpBtn = document.getElementById("signUpBtn");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const accountStatus = document.getElementById("accountStatus");
-const jjCutsceneOverlay = document.getElementById("jjCutsceneOverlay");
-const jjCutsceneVideo = document.getElementById("jjCutsceneVideo");
-const jjCutsceneFrame = document.getElementById("jjCutsceneFrame");
 
 let authSession = null;
 let leaderboardViewMode = "character";
@@ -67,13 +64,13 @@ const world = {
 };
 
 const ABILITY_COOLDOWN_SECONDS = 3;
-const JJ_TRUCK_MAX = 3;
-const JJ_TRUCK_REGEN_SECONDS = 2;
+const JJ_TRUCK_MAX = 2;
+const JJ_TRUCK_REGEN_SECONDS = 3;
 const JJ_JUMP_MAX = 1;
 const JJ_JUMP_REGEN_SECONDS = 1;
-const KADE_JUMP_RESET_SPEED = 100; // px/s ≈ "10 mph" after jump
-const KADE_ACCEL = 160;            // px/s² passive BMW acceleration
-const KADE_MAX_SPEED = 3200;       // px/s top speed cap
+const KADE_JUMP_RESET_SPEED = 100; // px/s — base speed after jump penalty
+const KADE_ACCEL = 280;            // px/s² passive BMW acceleration
+const KADE_MAX_SPEED = 5000;       // px/s top speed cap
 const CALEB_JUMP_VY = 760;         // fixed jump strength (clears Hugh Henderson)
 const CALEB_ACCEL = 190;           // px/s² passive T-Rex acceleration
 const CALEB_MAX_SPEED = 3600;      // px/s top speed cap
@@ -281,7 +278,7 @@ const characters = [
     id: "jjfootballboss",
     name: "JJFootballBoss",
     trait: "Rolling growth machine",
-    bio: "Roll over needles to get bigger and faster. Space uses truck boost. At 1,000m, play JJ cutscene and continue.",
+    bio: "Roll over needles to get bigger and faster. Space uses truck boost. Double-Space for a jump.",
     imageBase: "JJFOOTBALLBOSS",
     initials: "JJ",
     mass: 1.22,
@@ -390,7 +387,6 @@ const actor = {
   myerTrailTimer: 0,
   jjNeedleCount: 0,
   jjRollAngle: 0,
-  jjTriggeredCutscene: false,
   salShrinkStage: 0,
   jjTruckRegenTimer: 0,
   jjJumpRegenTimer: 0,
@@ -461,9 +457,6 @@ const candyImgs = [];
 let kadeBMWImg = null;
 let calebTrexImg = null;
 
-let jjCutsceneActive = false;
-let jjCutsceneResumeState = null;
-let jjCutsceneTimeout = null;
 
 const spencerBombImageCandidates = [
   "characters props/Spencers Bomb.png",
@@ -551,57 +544,18 @@ const jjNeedleImageCandidates = [
   "assets/images/jjfootballbossneedle.png",
 ];
 
-const jjCutsceneVideoCandidates = [
-  "JJ FOotball Boss ofical video.Mp4",
-  "JJ FOotball Boss ofical video.mp4",
-  "JJ FOotball Boss ofical video.MOV",
-  "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mp4",
-  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mp4",
-  "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.webm",
-  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).webm",
-  "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mov",
-  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mov",
-];
-
-const jjCutscenePdfPath = "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.pdf";
 
 function encodeAssetPath(path) {
   return path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
 }
 
 function buildSiteAssetUrl(path) {
-  if (/^https?:\/\//i.test(path)) {
-    return path;
-  }
-
   const encoded = encodeAssetPath(path);
   const pathname = window.location.pathname || "/";
   const baseDir = pathname.endsWith("/")
     ? pathname
     : pathname.slice(0, pathname.lastIndexOf("/") + 1);
   return `${baseDir}${encoded}`;
-}
-
-async function findAvailableCutsceneVideoUrl() {
-  for (const candidate of jjCutsceneVideoCandidates) {
-    const url = buildSiteAssetUrl(candidate);
-    try {
-      const res = await fetch(url, { method: "GET", cache: "no-store" });
-      if (res.ok) return url;
-    } catch {
-      // try next candidate
-    }
-  }
-  return null;
-}
-
-async function isPdfCutsceneAvailable() {
-  try {
-    const res = await fetch(buildSiteAssetUrl(jjCutscenePdfPath), { method: "GET", cache: "no-store" });
-    return res.ok;
-  } catch {
-    return false;
-  }
 }
 
 function seededNoise(seed) {
@@ -969,11 +923,6 @@ function terrainY(x) {
 function resetActor() {
   const forkY = terrainY(world.launchX) - 70;
 
-  if (jjCutsceneActive) {
-    jjCutsceneResumeState = null;
-    endJJCutsceneAndResume();
-  }
-
   applyCharacterStats(selectedCharacter);
 
   actor.x = world.launchX;
@@ -1018,7 +967,6 @@ function resetActor() {
   actor.myerTrailTimer = 0;
   actor.jjNeedleCount = 0;
   actor.jjRollAngle = 0;
-  actor.jjTriggeredCutscene = false;
   actor.salShrinkStage = 0;
   actor.jjTruckRegenTimer = JJ_TRUCK_REGEN_SECONDS;
   actor.jjJumpRegenTimer = JJ_JUMP_REGEN_SECONDS;
@@ -1333,91 +1281,7 @@ function startNextRunSameCharacter() {
   updateHeightUI();
 }
 
-function endJJCutsceneAndResume() {
-  if (!jjCutsceneActive) return;
-  if (jjCutsceneTimeout) {
-    clearTimeout(jjCutsceneTimeout);
-    jjCutsceneTimeout = null;
-  }
 
-  jjCutsceneActive = false;
-  if (jjCutsceneOverlay) jjCutsceneOverlay.classList.remove("active");
-
-  if (jjCutsceneVideo) {
-    jjCutsceneVideo.pause();
-    jjCutsceneVideo.removeAttribute("src");
-    jjCutsceneVideo.style.display = "none";
-    jjCutsceneVideo.load();
-  }
-  if (jjCutsceneFrame) {
-    jjCutsceneFrame.removeAttribute("src");
-    jjCutsceneFrame.removeAttribute("srcdoc");
-    jjCutsceneFrame.style.display = "none";
-  }
-
-  if (jjCutsceneResumeState) {
-    actor.vx = jjCutsceneResumeState.vx;
-    actor.vy = jjCutsceneResumeState.vy;
-    actor.state = jjCutsceneResumeState.state;
-    actor.abilityCooldown = jjCutsceneResumeState.abilityCooldown;
-    runStateLabel.textContent = "JJ highlight done — back in the run!";
-  }
-
-  jjCutsceneResumeState = null;
-}
-
-async function triggerJJCutscene() {
-  if (jjCutsceneActive || actor.jjTriggeredCutscene || selectedCharacter.id !== "jjfootballboss") return;
-  actor.jjTriggeredCutscene = true;
-  jjCutsceneActive = true;
-  jjCutsceneResumeState = {
-    vx: actor.vx,
-    vy: actor.vy,
-    state: actor.state,
-    abilityCooldown: actor.abilityCooldown,
-  };
-
-  actor.vx = 0;
-  actor.vy = 0;
-  actor.state = "flying";
-  actor.abilityCooldown = 0;
-  runStateLabel.textContent = "JJ highlight playing...";
-
-  if (jjCutsceneOverlay) jjCutsceneOverlay.classList.add("active");
-  if (jjCutsceneVideo) jjCutsceneVideo.style.display = "none";
-  if (jjCutsceneFrame) jjCutsceneFrame.style.display = "none";
-
-  const playPdfFallback = async () => {
-    if (!jjCutsceneFrame) return;
-    jjCutsceneFrame.removeAttribute("srcdoc");
-    if (await isPdfCutsceneAvailable()) {
-      jjCutsceneFrame.src = buildSiteAssetUrl(jjCutscenePdfPath);
-    } else {
-      jjCutsceneFrame.srcdoc = "<div style='font-family:Trebuchet MS,sans-serif;padding:40px;text-align:center;color:#1c2a4b'><h2>JJ Highlight</h2><p>Cutscene file not found. Returning to run shortly.</p></div>";
-    }
-    jjCutsceneFrame.style.display = "block";
-  };
-
-  // Try each video candidate directly in the video element — no fetch check needed
-  const tryVideoAtIndex = (idx) => {
-    if (!jjCutsceneVideo || idx >= jjCutsceneVideoCandidates.length) {
-      playPdfFallback();
-      return;
-    }
-    const url = buildSiteAssetUrl(jjCutsceneVideoCandidates[idx]);
-    jjCutsceneVideo.onerror = null;
-    jjCutsceneVideo.onerror = () => tryVideoAtIndex(idx + 1);
-    jjCutsceneVideo.src = url;
-    jjCutsceneVideo.load();
-    jjCutsceneVideo.style.display = "block";
-    jjCutsceneVideo.play().catch(() => tryVideoAtIndex(idx + 1));
-  };
-  tryVideoAtIndex(0);
-
-  jjCutsceneTimeout = setTimeout(() => {
-    endJJCutsceneAndResume();
-  }, 20000);
-}
 
 function finishRun(message = "Run ended: no movement left. Press Restart Run.") {
   runStateLabel.textContent = message;
@@ -1666,9 +1530,9 @@ function useTruck() {
     actor.jjTruckRegenTimer = JJ_TRUCK_REGEN_SECONDS;
   }
   actor.isTrucking = true;
-  actor.truckTimer = 4.5;
-  actor.vx = Math.max(actor.vx + 780, 980); // bigger forward burst
-  actor.vy *= 0.25;                           // kill vertical so he goes flat
+  actor.truckTimer = 2.5;
+  actor.vx = Math.max(actor.vx + 380, 580); // nerfed forward burst
+  actor.vy *= 0.4;                            // dampen vertical
   spawnParticles(actor.x, actor.y, 28, "#ffcd3c");
   spawnParticles(actor.x, actor.y, 14, "#ff9b72");
   tone(220, 0.08, "square", 0.1);
@@ -1701,9 +1565,9 @@ function useJJDoubleJump() {
 
   actor.jjJumpCharges -= 1;
   actor.jjJumpRegenTimer = JJ_JUMP_REGEN_SECONDS;
-  actor.vy -= 520;
-  actor.vx += 90;
-  actor.vx = Math.max(actor.vx, 220);
+  actor.vy -= 320;
+  actor.vx += 40;
+  actor.vx = Math.max(actor.vx, 160);
   spawnParticles(actor.x, actor.y, 18, "#9be9ff");
   tone(620, 0.06, "triangle", 0.07);
   tone(760, 0.05, "triangle", 0.06);
@@ -1893,12 +1757,6 @@ function collideBouncePad(pad) {
 }
 
 function update(dt) {
-  if (jjCutsceneActive) {
-    updateParticles(dt);
-    updateImpactBursts(dt);
-    updateScreenShake(dt);
-    return;
-  }
 
   updateBombs(dt);
   updateTennisBalls(dt);
@@ -2152,9 +2010,9 @@ function update(dt) {
       if (dx * dx + dy * dy <= hitR * hitR) {
         collectedNeedles.add(needle.index);
         actor.jjNeedleCount += 1;
-        actor.radius = Math.min(64, actor.radius + 0.8);
-        actor.vx = Math.max(140, actor.vx * 1.035 + 24);
-        actor.drag = Math.max(0.05, actor.drag - 0.0015);
+        actor.radius = Math.min(48, actor.radius + 0.35);
+        actor.vx = Math.max(120, actor.vx * 1.012 + 10);
+        actor.drag = Math.max(0.065, actor.drag - 0.0008);
         spawnParticles(needle.x, ny, 16, "#8ee8ff");
         tone(520 + Math.min(260, actor.jjNeedleCount * 7), 0.05, "triangle", 0.06);
       }
@@ -2223,8 +2081,8 @@ function update(dt) {
 
       if (selectedCharacter.id === "kaderess" && actor.kadeSlowdownPending) {
         actor.kadeSlowdownPending = false;
-        actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
-        actor.vx = Math.min(actor.vx, KADE_JUMP_RESET_SPEED + 60);
+        actor.kadeSpeed = actor.kadeSpeed * 0.75;
+        actor.vx = actor.vx * 0.75;
         spawnParticles(actor.x, actor.y, 12, "#9bc1ff");
       }
 
@@ -2242,9 +2100,6 @@ function update(dt) {
     distanceValue.textContent = travelled.toFixed(1);
     updateHeightUI();
 
-    if (selectedCharacter.id === "jjfootballboss" && travelled >= 1000 && !actor.jjTriggeredCutscene) {
-      triggerJJCutscene();
-    }
 
     if (travelled > world.bestDistance) {
       world.bestDistance = travelled;
@@ -2449,8 +2304,7 @@ function updateAbilityHint() {
     const jumpText = actor.jjJumpCharges > 0
       ? `Double-Space: jump (${actor.jjJumpCharges})`
       : `Jump +1 in ${actor.jjJumpRegenTimer.toFixed(1)}s`;
-    const cutsceneText = actor.jjTriggeredCutscene ? "Highlight done" : "Highlight at 20,000m";
-    abilityHint.textContent = `${needleText}  |  ${truckText}  |  ${truckRegenText}  |  ${jumpText}  |  ${cutsceneText}`;
+    abilityHint.textContent = `${needleText}  |  ${truckText}  |  ${truckRegenText}  |  ${jumpText}`;
     return;
   }
 
