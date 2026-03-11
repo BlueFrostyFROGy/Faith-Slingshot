@@ -2,6 +2,7 @@ const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const AUTH_SESSION_KEY = "faith-flight-auth-session";
 const MAX_LEADERBOARD_ENTRIES = 10;
+const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
@@ -38,6 +39,9 @@ const submitScoreBtn = document.getElementById("submitScoreBtn");
 const playAgainBtn = document.getElementById("playAgainBtn");
 const finalScore = document.getElementById("finalScore");
 const leaderboardList = document.getElementById("leaderboardList");
+const leaderboardTitle = document.getElementById("leaderboardTitle");
+const leaderboardModeBtn = document.getElementById("leaderboardModeBtn");
+const leaderboardModeLabel = document.getElementById("leaderboardModeLabel");
 const accountEmailInput = document.getElementById("accountEmailInput");
 const accountPasswordInput = document.getElementById("accountPasswordInput");
 const signUpBtn = document.getElementById("signUpBtn");
@@ -49,6 +53,9 @@ const jjCutsceneVideo = document.getElementById("jjCutsceneVideo");
 const jjCutsceneFrame = document.getElementById("jjCutsceneFrame");
 
 let authSession = null;
+let leaderboardViewMode = "character";
+let leaderboardRunCharacterId = "";
+let leaderboardRunCharacterName = "";
 
 const world = {
   width: 12000,
@@ -64,6 +71,19 @@ const JJ_TRUCK_MAX = 3;
 const JJ_TRUCK_REGEN_SECONDS = 2;
 const JJ_JUMP_MAX = 1;
 const JJ_JUMP_REGEN_SECONDS = 1;
+const KADE_JUMP_RESET_SPEED = 100; // px/s ≈ "10 mph" after jump
+const KADE_ACCEL = 160;            // px/s² passive BMW acceleration
+const KADE_MAX_SPEED = 3200;       // px/s top speed cap
+
+// Sal (anthony) shrink-on-distance constants
+const SAL_SHRINK_INTERVAL = 100;   // metres between each shrink
+const SAL_RADIUS_START  = 34;
+const SAL_RADIUS_MIN    = 12;
+const SAL_DRAG_START    = 0.16;
+const SAL_DRAG_MIN      = 0.028;
+const SAL_GRAV_START    = 1.09;
+const SAL_GRAV_MIN      = 0.72;
+const SAL_SPEED_BONUS   = 55;      // px/s bonus per shrink stage
 
 const maps = [
   { id: "campus", name: "Campus" },
@@ -113,8 +133,8 @@ const characters = [
   {
     id: "anthony",
     name: "Anthony",
-    trait: "Heavy impact",
-    bio: "Big body with huge launch carry. Massive jump burst and heavy impact.",
+    trait: "Shrinking speedster",
+    bio: "Big body with huge launch carry. Every 100m he loses weight and shrinks, but gets faster and faster.",
     imageBase: "assets/images/anthony",
     initials: "A",
     mass: 1.8,
@@ -258,7 +278,7 @@ const characters = [
     id: "jjfootballboss",
     name: "JJFootballBoss",
     trait: "Rolling growth machine",
-    bio: "Roll over needles to get bigger and faster. Space uses truck boost. At 20,000m, play JJ cutscene and continue.",
+    bio: "Roll over needles to get bigger and faster. Space uses truck boost. At 1,000m, play JJ cutscene and continue.",
     imageBase: "JJFOOTBALLBOSS",
     initials: "JJ",
     mass: 1.22,
@@ -269,6 +289,22 @@ const characters = [
     launchBoost: 1.18,
     unlockAt: 0,
     ability: "truck",
+  },
+  {
+    id: "kaderess",
+    name: "Kade Ress",
+    trait: "BMW throttle",
+    bio: "His BMW accelerates faster and faster — but every jump resets speed to 10 mph. Build that speed!",
+    imageBase: "Kade Ress",
+    initials: "KR",
+    mass: 1.55,
+    radius: 34,
+    drag: 0.028,
+    bounce: 0.52,
+    gravityMult: 0.96,
+    launchBoost: 1.16,
+    unlockAt: 0,
+    ability: "bmwjump",
   },
 ];
 
@@ -335,9 +371,11 @@ const actor = {
   jjNeedleCount: 0,
   jjRollAngle: 0,
   jjTriggeredCutscene: false,
+  salShrinkStage: 0,
   jjTruckRegenTimer: 0,
   jjJumpRegenTimer: 0,
   jjJumpCharges: 1,
+  kadeSpeed: KADE_JUMP_RESET_SPEED,
 };
 
 const obstacles = [];
@@ -397,6 +435,8 @@ let jacksonFootballImg = null;
 let myerPotGoldImg = null;
 let jjNeedleImg = null;
 const candyImgs = [];
+
+let kadeBMWImg = null;
 
 let jjCutsceneActive = false;
 let jjCutsceneResumeState = null;
@@ -949,9 +989,11 @@ function resetActor() {
   actor.jjNeedleCount = 0;
   actor.jjRollAngle = 0;
   actor.jjTriggeredCutscene = false;
+  actor.salShrinkStage = 0;
   actor.jjTruckRegenTimer = JJ_TRUCK_REGEN_SECONDS;
   actor.jjJumpRegenTimer = JJ_JUMP_REGEN_SECONDS;
   actor.jjJumpCharges = JJ_JUMP_MAX;
+  actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -1540,6 +1582,18 @@ function useAbility() {
       tone(880, 0.05, "triangle", 0.06);
       spawnMyerRainbowTrail(1.2);
       break;
+    case "bmwjump":
+      // Jump — but slam BMW speed back to 10 mph
+      actor.vy -= 500;
+      actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
+      actor.vx = Math.min(actor.vx, KADE_JUMP_RESET_SPEED + 60);
+      actor.abilityCooldown = 0.6;
+      tone(320, 0.07, "triangle", 0.08);
+      tone(180, 0.06, "sawtooth", 0.07);
+      spawnParticles(actor.x, actor.y, 22, "#1a5cff");
+      spawnParticles(actor.x, actor.y, 10, "#ffffff");
+      startScreenShake(8, 0.18);
+      break;
     default:
       break;
   }
@@ -1560,7 +1614,7 @@ function useTruck() {
     actor.jjTruckRegenTimer = JJ_TRUCK_REGEN_SECONDS;
   }
   actor.isTrucking = true;
-  actor.truckTimer = 1.35;
+  actor.truckTimer = 3.0;
   actor.vx = Math.max(actor.vx + 780, 980); // bigger forward burst
   actor.vy *= 0.25;                           // kill vertical so he goes flat
   spawnParticles(actor.x, actor.y, 28, "#ffcd3c");
@@ -1877,8 +1931,40 @@ function update(dt) {
       }
     }
 
+    if (selectedCharacter.id === "kaderess" && actor.state === "flying") {
+      actor.kadeSpeed = Math.min(KADE_MAX_SPEED, actor.kadeSpeed + KADE_ACCEL * dt);
+    }
+
+    if (selectedCharacter.id === "anthony" && actor.state === "flying") {
+      const travelled = Math.max(0, (actor.maxX - world.launchX) / 10);
+      const newStage = Math.floor(travelled / SAL_SHRINK_INTERVAL);
+      if (newStage > actor.salShrinkStage) {
+        const stagesGained = newStage - actor.salShrinkStage;
+        actor.salShrinkStage = newStage;
+        // Shrink radius
+        const t = Math.min(1, actor.salShrinkStage / 11); // 0 → 1 over 11 stages (1100m)
+        actor.radius = Math.round(SAL_RADIUS_START - (SAL_RADIUS_START - SAL_RADIUS_MIN) * t);
+        // Reduce drag and gravity → faster, lighter
+        actor.drag = SAL_DRAG_START - (SAL_DRAG_START - SAL_DRAG_MIN) * t;
+        actor.gravityMult = SAL_GRAV_START - (SAL_GRAV_START - SAL_GRAV_MIN) * t;
+        // Speed burst for each new stage
+        actor.vx += SAL_SPEED_BONUS * stagesGained;
+        // Visual feedback
+        spawnParticles(actor.x, actor.y, 18, "#ffe8a0");
+        spawnParticles(actor.x, actor.y, 10, "#ffffff");
+        tone(560, 0.06, "triangle", 0.08);
+        tone(780, 0.05, "triangle", 0.06);
+        startScreenShake(6, 0.14);
+      }
+    }
+
     actor.vy += world.gravity * actor.gravityMult * dt;
     actor.vx -= actor.vx * actor.drag * dt;
+
+    if (selectedCharacter.id === "kaderess" && actor.state === "flying") {
+      // BMW engine never lets vx drop below current accumulated speed
+      actor.vx = Math.max(actor.vx, actor.kadeSpeed);
+    }
     actor.x += actor.vx * dt;
     actor.y += actor.vy * dt;
     const nearbyBouncePads = getBouncePadsInRange(actor.x - 260, actor.x + 520);
@@ -2087,7 +2173,7 @@ function update(dt) {
     distanceValue.textContent = travelled.toFixed(1);
     updateHeightUI();
 
-    if (selectedCharacter.id === "jjfootballboss" && travelled >= 20000 && !actor.jjTriggeredCutscene) {
+    if (selectedCharacter.id === "jjfootballboss" && travelled >= 1000 && !actor.jjTriggeredCutscene) {
       triggerJJCutscene();
     }
 
@@ -2182,7 +2268,11 @@ function updateAbilityHint() {
     const truckText = actor.truckCount > 0
       ? `Double-Space: truck (${actor.truckCount} left)`
       : "No trucks left";
-    abilityHint.textContent = `${slamText}  |  ${truckText}`;
+    const nextShrinkAt = (actor.salShrinkStage + 1) * SAL_SHRINK_INTERVAL;
+    const shrinkText = actor.salShrinkStage > 0
+      ? `Stage ${actor.salShrinkStage} (size ${actor.radius}) | Next shrink at ${nextShrinkAt}m`
+      : `Shrinks at ${SAL_SHRINK_INTERVAL}m, ${SAL_SHRINK_INTERVAL * 2}m…`;
+    abilityHint.textContent = `${slamText}  |  ${truckText}  |  ${shrinkText}`;
     return;
   }
 
@@ -2291,6 +2381,12 @@ function updateAbilityHint() {
     return;
   }
 
+  if (selectedCharacter.id === "kaderess") {
+    const mphApprox = (actor.kadeSpeed / 22.4).toFixed(0);
+    abilityHint.textContent = `BMW speed: ~${mphApprox} mph  |  Space: jump (resets to 10 mph)`;
+    return;
+  }
+
   if (selectedCharacter.id === "myer") {
     const potText = `Lucky Charms: ${actor.myerPotCount}`;
     const nextBoostIn = 10 - (actor.myerPotCount % 10 || 10);
@@ -2320,16 +2416,50 @@ function updateAbilityHint() {
 }
 
 function loadLeaderboard() {
+  const normalize = (entry) => {
+    if (!entry || typeof entry !== "object") return null;
+    const name = typeof entry.name === "string" ? entry.name.slice(0, 20) : "Player";
+    const distance = Number(entry.distance);
+    if (!Number.isFinite(distance)) return null;
+    const characterId = typeof entry.characterId === "string" ? entry.characterId : "";
+    const characterName = typeof entry.characterName === "string" ? entry.characterName : "";
+    const date = entry.date || new Date().toLocaleDateString();
+    return {
+      name,
+      distance: Number(distance.toFixed(1)),
+      date,
+      characterId,
+      characterName,
+    };
+  };
+
+  let source = [];
   if (Array.isArray(window.sharedLeaderboardCache) && window.sharedLeaderboardCache.length > 0) {
-    return window.sharedLeaderboardCache;
+    source = window.sharedLeaderboardCache;
+  } else {
+    const stored = localStorage.getItem(LEADERBOARD_KEY);
+    source = stored ? JSON.parse(stored) : [];
   }
-  const stored = localStorage.getItem(LEADERBOARD_KEY);
-  return stored ? JSON.parse(stored) : [];
+
+  return (Array.isArray(source) ? source : [])
+    .map(normalize)
+    .filter(Boolean)
+    .sort((a, b) => b.distance - a.distance);
 }
 
 function saveLeaderboard(scores) {
-  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(scores));
-  window.sharedLeaderboardCache = scores;
+  const normalized = (Array.isArray(scores) ? scores : [])
+    .filter((s) => s && Number.isFinite(Number(s.distance)))
+    .sort((a, b) => Number(b.distance) - Number(a.distance))
+    .map((s) => ({
+      name: (s.name || "Player").toString().slice(0, 20),
+      distance: Number(Number(s.distance).toFixed(1)),
+      date: s.date || new Date().toLocaleDateString(),
+      characterId: typeof s.characterId === "string" ? s.characterId : "",
+      characterName: typeof s.characterName === "string" ? s.characterName : "",
+    }));
+  localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(normalized));
+  window.sharedLeaderboardCache = normalized;
 }
 
 function getAuthToken() {
@@ -2401,24 +2531,54 @@ function signOutAccount() {
 function addScoreToLeaderboard(playerName, distance) {
   const leaderboard = loadLeaderboard();
   const travelled = parseFloat((distance / 10).toFixed(1));
-  leaderboard.push({ name: playerName, distance: travelled, date: new Date().toLocaleDateString() });
+  leaderboard.push({
+    name: playerName,
+    distance: travelled,
+    date: new Date().toLocaleDateString(),
+    characterId: selectedCharacter?.id || "",
+    characterName: selectedCharacter?.name || "",
+  });
   leaderboard.sort((a, b) => b.distance - a.distance);
-  const topScores = leaderboard.slice(0, MAX_LEADERBOARD_ENTRIES);
-  saveLeaderboard(topScores);
-  return topScores;
+  saveLeaderboard(leaderboard);
+  return leaderboard;
 }
 
 async function fetchCloudLeaderboard() {
+  const normalizeRows = (data) => data
+    .filter((s) => s && typeof s.Name === "string" && Number.isFinite(Number(s.distance)))
+    .sort((a, b) => Number(b.distance) - Number(a.distance))
+    .map((s) => ({
+      name: s.Name.slice(0, 20),
+      distance: Number(Number(s.distance).toFixed(1)),
+      date: s.created_at ? new Date(s.created_at).toLocaleDateString() : new Date().toLocaleDateString(),
+      characterId: typeof s.character_id === "string" ? s.character_id : "",
+      characterName: typeof s.character_name === "string" ? s.character_name : "",
+    }));
+
   try {
-    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at&order=distance.desc&limit=${MAX_LEADERBOARD_ENTRIES}`;
-    console.log("Fetching from Supabase:", url);
-    const res = await fetch(url, {
+    const extendedUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at,character_id,character_name&order=distance.desc&limit=${CLOUD_LEADERBOARD_FETCH_LIMIT}`;
+    const basicUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at&order=distance.desc&limit=${CLOUD_LEADERBOARD_FETCH_LIMIT}`;
+
+    console.log("Fetching from Supabase:", extendedUrl);
+    let res = await fetch(extendedUrl, {
       cache: "no-store",
       headers: {
         apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${getAuthToken()}`,
+        Authorization: `Bearer ${getAuthToken()}`,
       },
     });
+
+    if (!res.ok) {
+      console.warn("Extended leaderboard fetch failed, trying basic columns");
+      res = await fetch(basicUrl, {
+        cache: "no-store",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+      });
+    }
+
     console.log("Supabase fetch response:", res.status, res.statusText);
     if (!res.ok) {
       const errBody = await res.text();
@@ -2431,15 +2591,7 @@ async function fetchCloudLeaderboard() {
       console.warn("Supabase returned non-array data");
       return false;
     }
-    const normalized = data
-      .filter((s) => s && typeof s.Name === "string" && Number.isFinite(Number(s.distance)))
-      .sort((a, b) => Number(b.distance) - Number(a.distance))
-      .slice(0, MAX_LEADERBOARD_ENTRIES)
-      .map((s) => ({
-        name: s.Name.slice(0, 20),
-        distance: Number(Number(s.distance).toFixed(1)),
-        date: s.created_at ? new Date(s.created_at).toLocaleDateString() : new Date().toLocaleDateString(),
-      }));
+    const normalized = normalizeRows(data);
     saveLeaderboard(normalized);
     return true;
   } catch (e) {
@@ -2451,12 +2603,18 @@ async function fetchCloudLeaderboard() {
 async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
   try {
     const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}`;
-    const body = JSON.stringify({
+    const extendedBody = JSON.stringify({
+      Name: playerName.slice(0, 20),
+      distance: Number(travelledMeters.toFixed(1)),
+      character_id: selectedCharacter?.id || "",
+      character_name: selectedCharacter?.name || "",
+    });
+    const basicBody = JSON.stringify({
       Name: playerName.slice(0, 20),
       distance: Number(travelledMeters.toFixed(1)),
     });
-    console.log("Pushing to Supabase:", url, body);
-    const insertRes = await fetch(url, {
+    console.log("Pushing to Supabase:", url, extendedBody);
+    let insertRes = await fetch(url, {
       method: "POST",
       headers: {
         apikey: SUPABASE_ANON_KEY,
@@ -2464,8 +2622,21 @@ async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body,
+      body: extendedBody,
     });
+    if (!insertRes.ok) {
+      console.warn("Extended leaderboard insert failed, trying basic payload");
+      insertRes = await fetch(url, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${getAuthToken()}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: basicBody,
+      });
+    }
     console.log("Supabase insert response:", insertRes.status, insertRes.statusText);
     if (insertRes.ok) {
       console.log("Score inserted to Supabase successfully");
@@ -2491,11 +2662,43 @@ function subscribeToLeaderboard() {
   }, 12000);
 }
 
+function getLeaderboardScoresForView() {
+  const allScores = loadLeaderboard();
+  if (leaderboardViewMode === "character" && leaderboardRunCharacterId) {
+    return allScores
+      .filter((s) => s.characterId === leaderboardRunCharacterId)
+      .slice(0, MAX_LEADERBOARD_ENTRIES);
+  }
+  return allScores.slice(0, MAX_LEADERBOARD_ENTRIES);
+}
+
+function updateLeaderboardModeUI() {
+  const charLabel = leaderboardRunCharacterName || selectedCharacter?.name || "Character";
+  if (leaderboardTitle) {
+    leaderboardTitle.textContent = leaderboardViewMode === "character"
+      ? `${charLabel} Leaderboard`
+      : "All-Time Leaderboard";
+  }
+  if (leaderboardModeBtn) {
+    leaderboardModeBtn.textContent = leaderboardViewMode === "character"
+      ? "Show: All-Time"
+      : "Show: Current Character";
+  }
+  if (leaderboardModeLabel) {
+    leaderboardModeLabel.textContent = leaderboardViewMode === "character"
+      ? `Viewing: ${charLabel}`
+      : "Viewing: All Characters";
+  }
+}
+
 function displayLeaderboard() {
-  const scores = loadLeaderboard();
+  const scores = getLeaderboardScoresForView();
+  updateLeaderboardModeUI();
   leaderboardList.innerHTML = "";
   if (scores.length === 0) {
-    leaderboardList.innerHTML = "<p>No scores yet. Be the first!</p>";
+    leaderboardList.innerHTML = leaderboardViewMode === "character"
+      ? "<p>No scores yet for this character.</p>"
+      : "<p>No scores yet. Be the first!</p>";
     return;
   }
   scores.forEach((score, idx) => {
@@ -2531,11 +2734,14 @@ function showLeaderboardScreen(distance) {
   
   const travelled = (distance / 10).toFixed(1);
   finalScore.textContent = `Your Score: ${travelled}m`;
+  leaderboardRunCharacterId = selectedCharacter?.id || "";
+  leaderboardRunCharacterName = selectedCharacter?.name || "";
+  leaderboardViewMode = "character";
   playerNameInput.value = "";
   playerNameInput.focus();
   
   // Check if top 3 and trigger confetti
-  const scores = loadLeaderboard();
+  const scores = getLeaderboardScoresForView();
   const tempScore = parseFloat(travelled);
   const isTop3 = scores.slice(0, 3).some(s => Math.abs(s.distance - tempScore) < 0.1) || scores.length < 3;
   if (isTop3 && scores.length > 0) {
@@ -2569,6 +2775,9 @@ function getCharacterImageCandidates(character) {
   }
   if (character.id === "jjfootballboss") {
     return ["characters/JJFOOTBALLBOSS.png", "characters/JJFOOTBALLBOSS.jpg"];
+  }
+  if (character.id === "kaderess") {
+    return ["characters/Kade Ress.png", "Kade Ress.png"];
   }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
@@ -3069,6 +3278,60 @@ function drawBraydenRacket() {
   ctx.restore();
 }
 
+function drawKadeBMW() {
+  if (selectedCharacter.id !== "kaderess" || actor.state === "ready") return;
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const r = actor.radius;
+
+  // BMW body — wider and lower than the portrait
+  const carW = r * 4.2;
+  const carH = r * 2.0;
+  const carX = sx - carW / 2;
+  const carY = sy - r * 0.3;  // sits just below portrait center
+
+  ctx.save();
+  if (kadeBMWImg && kadeBMWImg.complete && kadeBMWImg.naturalWidth > 10) {
+    ctx.drawImage(kadeBMWImg, carX, carY, carW, carH);
+  } else {
+    // Fallback: draw a simple white car silhouette
+    ctx.fillStyle = "#f0f0f0";
+    ctx.strokeStyle = "#222";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(carX, carY + carH * 0.3, carW, carH * 0.55, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(carX + carW * 0.18, carY, carW * 0.64, carH * 0.42, 6);
+    ctx.fill();
+    ctx.stroke();
+    // Wheels
+    ctx.fillStyle = "#222";
+    ctx.beginPath(); ctx.arc(carX + carW * 0.22, carY + carH * 0.85, r * 0.36, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(carX + carW * 0.78, carY + carH * 0.85, r * 0.36, 0, Math.PI * 2); ctx.fill();
+    // BMW roundel placeholder
+    ctx.fillStyle = "#1c6fc9";
+    ctx.beginPath(); ctx.arc(sx, carY + carH * 0.57, r * 0.22, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Speed glow when going fast
+  if (actor.kadeSpeed > 600) {
+    const alpha = Math.min(0.55, (actor.kadeSpeed - 600) / 2600);
+    ctx.save();
+    const grd = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, r * 2.8);
+    grd.addColorStop(0, `rgba(26,92,255,${alpha})`);
+    grd.addColorStop(1, `rgba(26,92,255,0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.ellipse(sx - r * 1.2, sy + r * 0.3, r * 2.2, r * 0.7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 function drawTennisBalls() {
   tennisBalls.forEach((ball) => {
     const sx = ball.x - cameraX;
@@ -3213,6 +3476,7 @@ function draw() {
   drawCatapult();
   drawSlingshotBands();
   drawTrajectory();
+  drawKadeBMW();
   drawActor();
   drawFishingRod();
   drawBraydenRacket();
@@ -3407,6 +3671,9 @@ function preloadCharacterImages() {
     }
   };
   jjNeedleImg.src = jjNeedleImageCandidates[jjNeedleIndex];
+
+  kadeBMWImg = new Image();
+  kadeBMWImg.src = "characters props/Kade BMW.png";
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
@@ -3665,6 +3932,13 @@ submitScoreBtn.addEventListener("click", async () => {
   playerNameInput.disabled = true;
   playerNameInput.value = cloudOk ? "Score submitted!" : "Saved locally (cloud sync failed)";
 });
+
+if (leaderboardModeBtn) {
+  leaderboardModeBtn.addEventListener("click", () => {
+    leaderboardViewMode = leaderboardViewMode === "character" ? "all" : "character";
+    displayLeaderboard();
+  });
+}
 
 playAgainBtn.addEventListener("click", () => {
   startNextRunSameCharacter();
