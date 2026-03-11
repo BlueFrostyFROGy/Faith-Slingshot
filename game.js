@@ -1629,8 +1629,10 @@ function useAbility() {
         tone(120, 0.04, "sine", 0.04);
         break;
       }
-      // Fixed jump height every time
-      actor.vy = -CALEB_JUMP_VY;
+      // Jump to exactly 30m height: v = sqrt(2 * g * h), h = 30m = 300px
+      const effectiveGravity = world.gravity * actor.gravityMult;
+      const jumpVy = Math.sqrt(2 * effectiveGravity * 300);
+      actor.vy = -jumpVy;
       actor.abilityCooldown = 0.52;
       tone(240, 0.07, "square", 0.08);
       tone(520, 0.05, "triangle", 0.06);
