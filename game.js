@@ -144,11 +144,11 @@ const characters = [
     id: "candyjew",
     name: "Candy Jew",
     trait: "Sugar overdrive",
-    bio: "Collect candies to get faster. Every 5 candies triggers rainbow beam overdrive.",
+    bio: "Collect candies to get faster. Every 15 candies triggers rainbow beam overdrive.",
     imageBase: "Candy Jew",
     initials: "C",
     mass: 0.92,
-    radius: 25,
+    radius: 36,
     drag: 0.088,
     bounce: 0.58,
     gravityMult: 0.92,
@@ -1011,7 +1011,7 @@ function update(dt) {
         actor.vx += 25 + Math.min(180, actor.candyCount * 2.2);
         spawnParticles(candy.x, cy, 14, "#ffd95e");
         tone(560 + Math.min(360, actor.candyCount * 4), 0.05, "triangle", 0.06);
-        if (actor.candyCount % 5 === 0) {
+        if (actor.candyCount % 15 === 0) {
           triggerCandyOverdrive();
         }
       }
