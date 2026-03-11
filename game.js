@@ -115,7 +115,7 @@ const characters = [
     id: "spencer",
     name: "Spencer",
     trait: "Bomb sprinter",
-    bio: "Starts fast. Space for jump, double-Space for bomb. Bombs destroy TB but slow him down.",
+    bio: "Starts fast. Space for jump, double-Space for bomb. Bombs destroy Hugh Henderson but slow him down.",
     imageBase: "Spencer",
     initials: "S",
     mass: 1.82,
@@ -262,12 +262,15 @@ const JANET_BASE = {
   w: 56,
   h: 58,
   color: "#ffe0ea",
-  label: "TB",
+  label: "Hugh Henderson",
   fatal: true,
 };
 
 const fatalObstacleImageCandidates = [
+  "Obstacle Hugh Henderson.png",
   "Obstacle TB.png",
+  "assets/images/obstacle-hugh-henderson.png",
+  "assets/images/obstacle-hugh-henderson.jpg",
   "assets/images/obstacle-tb.png",
   "assets/images/obstacle-tb.jpg",
   "assets/images/front-office.png",
@@ -1193,7 +1196,7 @@ function collideRect(rect) {
       actor.y = y - actor.radius;
       spawnParticles(actor.x, actor.y, 24, "#ff7d5f");
       tone(120, 0.12, "sawtooth", 0.08);
-      finishRun("Run ended: TB collision.");
+      finishRun("Run ended: Hugh Henderson collision.");
       return;
     }
     actor.y = y - actor.radius;
@@ -1486,7 +1489,7 @@ function updateAbilityHint() {
 
   if (selectedCharacter.id === "spencer") {
     if (actor.state === "ready") {
-      abilityHint.textContent = "Space: jump  |  Double-Space: bomb (kills TB, slows you)";
+      abilityHint.textContent = "Space: jump  |  Double-Space: bomb (kills Hugh Henderson, slows you)";
       return;
     }
     const jumpPower = Math.max(220, 560 - actor.spencerBombsUsed * 95);
