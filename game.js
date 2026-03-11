@@ -779,7 +779,7 @@ function useAbility() {
 
   actor.usedAbility = true;
   if (selectedCharacter.id === "manning") {
-    actor.abilityCooldown = 5.0;
+    actor.abilityCooldown = 1.5;
   } else if (selectedCharacter.id === "eli") {
     actor.abilityCooldown = 2.0;
   } else if (selectedCharacter.id === "hunter") {
@@ -855,8 +855,8 @@ function useAbility() {
       break;
     }
     case "slam":
-      actor.vy -= 680;
-      actor.vx += 200;
+      actor.vy -= 860;
+      actor.vx += 280;
       tone(140, 0.1, "triangle", 0.08);
       spawnParticles(actor.x, actor.y, 30, "#ff9b72");
       startScreenShake(32, 0.45);
@@ -939,8 +939,8 @@ function useTruck() {
 
   actor.truckCount -= 1;
   actor.isTrucking = true;
-  actor.truckTimer = 0.85;
-  actor.vx = Math.max(actor.vx + 620, 820); // big forward burst
+  actor.truckTimer = 1.35;
+  actor.vx = Math.max(actor.vx + 780, 980); // bigger forward burst
   actor.vy *= 0.25;                           // kill vertical so he goes flat
   spawnParticles(actor.x, actor.y, 28, "#ffcd3c");
   spawnParticles(actor.x, actor.y, 14, "#ff9b72");
