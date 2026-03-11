@@ -27,7 +27,9 @@ const powerLabel = document.getElementById("powerLabel");
 const abilityHint = document.getElementById("abilityHint");
 const distanceValue = document.getElementById("distanceValue");
 const highScoreValue = document.getElementById("highScoreValue");
+const mapNameLabel = document.getElementById("mapNameLabel");
 const runStateLabel = document.getElementById("runStateLabel");
+const switchMapBtn = document.getElementById("switchMapBtn");
 
 const playerNameInput = document.getElementById("playerNameInput");
 const submitScoreBtn = document.getElementById("submitScoreBtn");
@@ -45,6 +47,18 @@ const world = {
 };
 
 const ABILITY_COOLDOWN_SECONDS = 3;
+
+const maps = [
+  { id: "campus", name: "Campus" },
+  { id: "town-square", name: "Town Square" },
+];
+let currentMapIndex = 0;
+let townSquareMapImg = null;
+const townSquareMapImageCandidates = [
+  "Map 2 (Town Sqaure).png",
+  "Map 2 (Town Square).png",
+  "assets/images/town-square.png",
+];
 
 const characters = [
   {
@@ -1602,6 +1616,21 @@ function updateHighScoreUI() {
   highScoreValue.textContent = world.bestDistance.toFixed(1);
 }
 
+function getCurrentMap() {
+  return maps[currentMapIndex] || maps[0];
+}
+
+function updateMapUI() {
+  if (mapNameLabel) {
+    mapNameLabel.textContent = `Map: ${getCurrentMap().name}`;
+  }
+}
+
+function toggleMap() {
+  currentMapIndex = (currentMapIndex + 1) % maps.length;
+  updateMapUI();
+}
+
 function getAbilityLabel(character) {
   switch (character.ability) {
     case "fishingrod":
@@ -1944,6 +1973,29 @@ function getCharacterImageCandidates(character) {
 }
 
 function drawBackground() {
+  const currentMap = getCurrentMap();
+
+  if (currentMap.id === "town-square" && townSquareMapImg && townSquareMapImg.complete && townSquareMapImg.naturalWidth > 8) {
+    const drawH = canvas.height + 80;
+    const drawW = drawH * (townSquareMapImg.naturalWidth / townSquareMapImg.naturalHeight);
+    const scroll = cameraX * 0.2;
+    const offset = ((scroll % drawW) + drawW) % drawW;
+
+    for (let x = -offset - drawW; x < canvas.width + drawW; x += drawW) {
+      ctx.drawImage(townSquareMapImg, x, -40, drawW, drawH);
+    }
+
+    if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
+      ctx.fillStyle = "rgba(255, 211, 79, 0.35)";
+      ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
+    }
+
+    drawCloud(180, 120);
+    drawCloud(500, 90);
+    drawCloud(880, 145);
+    return;
+  }
+
   const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
   if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
     grad.addColorStop(0, "#ffe58a");
@@ -2013,7 +2065,10 @@ function drawGround() {
 function drawMapDecor() {
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 20px Trebuchet MS";
-  ctx.fillText("Faith Christian Campus (Fictional)", 18, 35);
+  const mapTitle = getCurrentMap().id === "town-square"
+    ? "Town Square"
+    : "Faith Christian Campus (Fictional)";
+  ctx.fillText(mapTitle, 18, 35);
 
   const markerStep = world.markersEvery * 10;
   const startMarkerX = Math.max(
@@ -2680,6 +2735,16 @@ function preloadCharacterImages() {
   };
   jacksonFootballImg.src = jacksonFootballImageCandidates[jacksonFootballIndex];
 
+  townSquareMapImg = new Image();
+  let townSquareIdx = 0;
+  townSquareMapImg.onerror = () => {
+    townSquareIdx += 1;
+    if (townSquareIdx < townSquareMapImageCandidates.length) {
+      townSquareMapImg.src = townSquareMapImageCandidates[townSquareIdx];
+    }
+  };
+  townSquareMapImg.src = townSquareMapImageCandidates[townSquareIdx];
+
   candyImgs.length = 0;
   candyImageCandidates.forEach((path) => {
     const img = new Image();
@@ -2701,6 +2766,7 @@ backToMenuBtn.addEventListener("click", showMenu);
 document.getElementById("changeCharBtn").addEventListener("click", () => {
   showCharacterSelect();
 });
+switchMapBtn?.addEventListener("click", toggleMap);
 playBtn.addEventListener("click", () => {
   if (!isUnlocked(selectedCharacter)) {
     selectedCharacter = characters.find((c) => isUnlocked(c)) || characters[0];
@@ -2852,6 +2918,7 @@ canvas.addEventListener("mouseleave", () => {
 
 preloadCharacterImages();
 updateHighScoreUI();
+updateMapUI();
 subscribeToLeaderboard();
 showMenu();
 resetActor();
