@@ -486,7 +486,27 @@ const jjCutsceneVideoCandidates = [
   "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).webm",
   "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mov",
 ];
-const jjCutscenePdfPath = "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).pdf";
+const jjCutscenePdfCandidates = [
+  "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.pdf",
+  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).pdf",
+];
+
+function encodeAssetPath(path) {
+  return path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+}
+
+async function findFirstExistingAsset(paths) {
+  for (const path of paths) {
+    const encoded = encodeAssetPath(path);
+    try {
+      const res = await fetch(encoded, { method: "GET", cache: "no-store" });
+      if (res.ok) return encoded;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
 
 function seededNoise(seed) {
   const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453123;
@@ -1212,6 +1232,7 @@ function endJJCutsceneAndResume() {
   }
   if (jjCutsceneFrame) {
     jjCutsceneFrame.removeAttribute("src");
+    jjCutsceneFrame.removeAttribute("srcdoc");
     jjCutsceneFrame.style.display = "none";
   }
 
@@ -1226,7 +1247,7 @@ function endJJCutsceneAndResume() {
   jjCutsceneResumeState = null;
 }
 
-function triggerJJCutscene() {
+async function triggerJJCutscene() {
   if (jjCutsceneActive || actor.jjTriggeredCutscene || selectedCharacter.id !== "jjfootballboss") return;
   actor.jjTriggeredCutscene = true;
   jjCutsceneActive = true;
@@ -1249,8 +1270,14 @@ function triggerJJCutscene() {
 
   const playPdfFallback = () => {
     if (!jjCutsceneFrame) return;
-    jjCutsceneFrame.src = encodeURI(jjCutscenePdfPath);
-    jjCutsceneFrame.style.display = "block";
+    findFirstExistingAsset(jjCutscenePdfCandidates).then((pdfPath) => {
+      jjCutsceneFrame.style.display = "block";
+      if (pdfPath) {
+        jjCutsceneFrame.src = pdfPath;
+        return;
+      }
+      jjCutsceneFrame.srcdoc = "<div style='font-family:Trebuchet MS,sans-serif;padding:40px;text-align:center;color:#1c2a4b'><h2>JJ Highlight</h2><p>Cutscene media not found, returning to run shortly.</p></div>";
+    });
   };
 
   if (jjCutsceneVideo) {
@@ -1271,13 +1298,18 @@ function triggerJJCutscene() {
     }
 
     if (chosenVideo) {
-      jjCutsceneVideo.src = encodeURI(chosenVideo);
-      jjCutsceneVideo.currentTime = 0;
-      jjCutsceneVideo.style.display = "block";
-      jjCutsceneVideo.play().catch(() => {
-        jjCutsceneVideo.style.display = "none";
+      const existingVideo = await findFirstExistingAsset([chosenVideo]);
+      if (existingVideo) {
+        jjCutsceneVideo.src = existingVideo;
+        jjCutsceneVideo.currentTime = 0;
+        jjCutsceneVideo.style.display = "block";
+        jjCutsceneVideo.play().catch(() => {
+          jjCutsceneVideo.style.display = "none";
+          playPdfFallback();
+        });
+      } else {
         playPdfFallback();
-      });
+      }
     } else {
       playPdfFallback();
     }
