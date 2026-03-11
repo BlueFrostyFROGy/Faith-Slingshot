@@ -30,6 +30,10 @@ jobs:
           cp game.js _site/
           cp styles.css _site/
           cp -R assets _site/
+          shopt -s nullglob
+          for img in *.png *.jpg *.jpeg *.webp; do
+            cp "$img" _site/
+          done
           if [ -f "favicon.ico" ]; then cp favicon.ico _site/; fi
 
       - name: Setup Pages
