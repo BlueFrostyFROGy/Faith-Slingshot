@@ -85,6 +85,21 @@ const SAL_GRAV_START    = 1.09;
 const SAL_GRAV_MIN      = 0.72;
 const SAL_SPEED_BONUS   = 55;      // px/s bonus per shrink stage
 
+// Lincoln James — ADHD collector
+const LINCOLN_ADHD_JUMP_BASE   = 480; // base jump vy
+const LINCOLN_ADHD_JUMP_BONUS  = 18;  // extra vy per ADHD collected
+const LINCOLN_ADHD_JUMP_MAX_VY = 1100; // cap
+const LINCOLN_ADHD_IMMUNITY_THRESHOLD = 10; // ADHD needed for immunity
+const LINCOLN_IMMUNITY_DURATION = 20; // seconds
+
+// Luke Pueppke — Red Bull + Coffee collector
+const LUKE_ITEM_JUMP_BASE   = 420; // base jump vx boost
+const LUKE_ITEM_JUMP_BONUS  = 14;  // extra vx per item
+const LUKE_ITEM_JUMP_MAX    = 960; // cap
+const LUKE_SUPERSPEED_THRESHOLD = 20;
+const LUKE_SUPERSPEED_VX        = 4200; // px/s during superspeed
+const LUKE_SUPERSPEED_DURATION  = 8;    // seconds
+
 const maps = [
   { id: "campus", name: "Campus" },
   { id: "town-square", name: "Town Square" },
@@ -322,6 +337,38 @@ const characters = [
     unlockAt: 0,
     ability: "trexjump",
   },
+  {
+    id: "lincolnjames",
+    name: "Lincoln James",
+    trait: "ADHD hyperfocus",
+    bio: "Collect ADHD to jump higher and faster. Collect 10 ADHD for 20s immunity to Hugh Henderson!",
+    imageBase: "Lincoln James",
+    initials: "LJ",
+    mass: 0.88,
+    radius: 24,
+    drag: 0.076,
+    bounce: 0.68,
+    gravityMult: 0.91,
+    launchBoost: 1.24,
+    unlockAt: 0,
+    ability: "lincolnjump",
+  },
+  {
+    id: "lukepueppke",
+    name: "Luke Pueppke",
+    trait: "Caffeine rocket",
+    bio: "Collect Red Bull & Coffee to jump further and faster. 20 items = SUPERSPEED for 8 seconds!",
+    imageBase: "Luke Pueppke",
+    initials: "LP",
+    mass: 0.95,
+    radius: 25,
+    drag: 0.072,
+    bounce: 0.62,
+    gravityMult: 0.92,
+    launchBoost: 1.26,
+    unlockAt: 0,
+    ability: "lukejump",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -394,6 +441,10 @@ const actor = {
   kadeSpeed: KADE_JUMP_RESET_SPEED,
   kadeSlowdownPending: false,
   calebSpeed: KADE_JUMP_RESET_SPEED,
+  lincolnAdhd: 0,
+  lincolnImmunityTimer: 0,
+  lukeItemCount: 0,
+  lukeSuperspeedTimer: 0,
 };
 
 const obstacles = [];
@@ -456,6 +507,9 @@ const candyImgs = [];
 
 let kadeBMWImg = null;
 let calebTrexImg = null;
+let lincolnAdhdImg = null;
+let lukeRedBullImg = null;
+let lukeCoffeeImg = null;
 
 
 const spencerBombImageCandidates = [
@@ -542,6 +596,22 @@ const jjNeedleImageCandidates = [
   "characters props/JJFOOTBALLBOSSNEEDLE.png",
   "JJFOOTBALLBOSSNEEDLE.png",
   "assets/images/jjfootballbossneedle.png",
+];
+
+const lincolnAdhdImageCandidates = [
+  "characters props/Lincolns ADHD.png",
+  "Lincolns ADHD.png",
+];
+
+const lukeRedBullImageCandidates = [
+  "characters props/Lukes Redbull.png",
+  "Lukes Redbull.png",
+];
+
+const lukeCoffeeImageCandidates = [
+  "characters props/Lukes Coffe.png",
+  "characters props/Lukes Coffee.png",
+  "Lukes Coffe.png",
 ];
 
 
@@ -888,7 +958,100 @@ function getNeedlesInRange(startX, endX) {
   return needles;
 }
 
-let audioCtx;
+// ── Lincoln: ADHD pills ───────────────────────────────────────────────────────
+const lincolnAdhdCache = new Map();
+const collectedLincolnAdhd = new Set();
+
+function createLincolnAdhd(index) {
+  const spacing = 320;
+  const startX = 800;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1101) * 200) - 80;
+  const yOffset = 100 + Math.floor(seededNoise(index + 1102) * 32);
+  return { index, x: baseX + offset, yOffset, r: 13 };
+}
+
+function getLincolnAdhd(index) {
+  if (!lincolnAdhdCache.has(index)) lincolnAdhdCache.set(index, createLincolnAdhd(index));
+  return lincolnAdhdCache.get(index);
+}
+
+function getLincolnAdhdInRange(startX, endX) {
+  const spacing = 320, startXBase = 800;
+  const first = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const last  = Math.max(first, Math.floor((endX - startXBase) / spacing) + 2);
+  const items = [];
+  for (let i = first; i <= last; i++) {
+    const a = getLincolnAdhd(i);
+    if (collectedLincolnAdhd.has(a.index)) continue;
+    if (a.x + a.r >= startX && a.x - a.r <= endX) items.push(a);
+  }
+  return items;
+}
+
+// ── Luke: Red Bull cans ───────────────────────────────────────────────────────
+const lukeRedBullCache = new Map();
+const collectedLukeRedBull = new Set();
+
+function createLukeRedBull(index) {
+  const spacing = 400;
+  const startX = 900;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1201) * 220) - 80;
+  const yOffset = 105 + Math.floor(seededNoise(index + 1202) * 28);
+  return { index, x: baseX + offset, yOffset, r: 14 };
+}
+
+function getLukeRedBull(index) {
+  if (!lukeRedBullCache.has(index)) lukeRedBullCache.set(index, createLukeRedBull(index));
+  return lukeRedBullCache.get(index);
+}
+
+function getLukeRedBullInRange(startX, endX) {
+  const spacing = 400, startXBase = 900;
+  const first = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const last  = Math.max(first, Math.floor((endX - startXBase) / spacing) + 2);
+  const items = [];
+  for (let i = first; i <= last; i++) {
+    const rb = getLukeRedBull(i);
+    if (collectedLukeRedBull.has(rb.index)) continue;
+    if (rb.x + rb.r >= startX && rb.x - rb.r <= endX) items.push(rb);
+  }
+  return items;
+}
+
+// ── Luke: Coffee cups ─────────────────────────────────────────────────────────
+const lukeCoffeeCache = new Map();
+const collectedLukeCoffee = new Set();
+
+function createLukeCoffee(index) {
+  const spacing = 440;
+  const startX = 1100;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1301) * 210) - 80;
+  const yOffset = 102 + Math.floor(seededNoise(index + 1302) * 30);
+  return { index, x: baseX + offset, yOffset, r: 14 };
+}
+
+function getLukeCoffee(index) {
+  if (!lukeCoffeeCache.has(index)) lukeCoffeeCache.set(index, createLukeCoffee(index));
+  return lukeCoffeeCache.get(index);
+}
+
+function getLukeCoffeeInRange(startX, endX) {
+  const spacing = 440, startXBase = 1100;
+  const first = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const last  = Math.max(first, Math.floor((endX - startXBase) / spacing) + 2);
+  const items = [];
+  for (let i = first; i <= last; i++) {
+    const c = getLukeCoffee(i);
+    if (collectedLukeCoffee.has(c.index)) continue;
+    if (c.x + c.r >= startX && c.x - c.r <= endX) items.push(c);
+  }
+  return items;
+}
+
+
 
 function ensureAudio() {
   if (!audioCtx) {
@@ -974,6 +1137,10 @@ function resetActor() {
   actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
   actor.kadeSlowdownPending = false;
   actor.calebSpeed = KADE_JUMP_RESET_SPEED;
+  actor.lincolnAdhd = 0;
+  actor.lincolnImmunityTimer = 0;
+  actor.lukeItemCount = 0;
+  actor.lukeSuperspeedTimer = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -986,6 +1153,9 @@ function resetActor() {
   collectedFootballs.clear();
   collectedPots.clear();
   collectedNeedles.clear();
+  collectedLincolnAdhd.clear();
+  collectedLukeRedBull.clear();
+  collectedLukeCoffee.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -1324,6 +1494,10 @@ function useAbility() {
     actor.abilityCooldown = 0;
   } else if (selectedCharacter.id === "myer") {
     actor.abilityCooldown = 1.15;
+  } else if (selectedCharacter.id === "lincolnjames") {
+    actor.abilityCooldown = 0.45;
+  } else if (selectedCharacter.id === "lukepueppke") {
+    actor.abilityCooldown = 0.4;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -1510,8 +1684,33 @@ function useAbility() {
       startScreenShake(7, 0.16);
       break;
     }
-    default:
+    case "lincolnjump": {
+      // Jump height scales with ADHD collected
+      const jumpVy = Math.min(LINCOLN_ADHD_JUMP_MAX_VY, LINCOLN_ADHD_JUMP_BASE + actor.lincolnAdhd * LINCOLN_ADHD_JUMP_BONUS);
+      actor.vy -= jumpVy;
+      actor.vx += 60 + actor.lincolnAdhd * 3;
+      actor.bounce = Math.min(0.88, 0.68 + actor.lincolnAdhd * 0.008);
+      actor.abilityCooldown = 0.45;
+      tone(580 + Math.min(300, actor.lincolnAdhd * 8), 0.07, "triangle", 0.09);
+      tone(380, 0.05, "square", 0.07);
+      spawnParticles(actor.x, actor.y, 22, "#ff5ef5");
+      spawnParticles(actor.x, actor.y, 12, "#ffffff");
+      startScreenShake(8 + Math.min(8, actor.lincolnAdhd / 3), 0.18);
       break;
+    }
+    case "lukejump": {
+      // Jump gives more forward distance with more items
+      const boost = Math.min(LUKE_ITEM_JUMP_MAX, LUKE_ITEM_JUMP_BASE + actor.lukeItemCount * LUKE_ITEM_JUMP_BONUS);
+      actor.vx += boost;
+      actor.vy -= 340 + actor.lukeItemCount * 6;
+      actor.abilityCooldown = 0.4;
+      tone(460 + Math.min(280, actor.lukeItemCount * 7), 0.07, "sawtooth", 0.09);
+      tone(280, 0.05, "triangle", 0.06);
+      spawnParticles(actor.x, actor.y, 20, "#4fc3f7");
+      spawnParticles(actor.x, actor.y, 10, "#ffffff");
+      startScreenShake(7 + Math.min(8, actor.lukeItemCount / 4), 0.16);
+      break;
+    }
   }
 
   updateAbilityHint();
@@ -1694,6 +1893,14 @@ function collideRect(rect) {
         startScreenShake(10, 0.22);
         return;
       }
+      if (selectedCharacter.id === "lincolnjames" && actor.lincolnImmunityTimer > 0) {
+        // Immune — bounce off Hugh harmlessly
+        actor.vx += 180;
+        actor.vy -= 80;
+        spawnParticles(actor.x, actor.y, 24, "#ff5ef5");
+        startScreenShake(8, 0.18);
+        return;
+      }
       if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
         destroyedJanets.add(rect.index);
         actor.vy = Math.min(actor.vy, -1200);
@@ -1849,6 +2056,22 @@ function update(dt) {
       actor.calebSpeed = Math.min(CALEB_MAX_SPEED, actor.calebSpeed + CALEB_ACCEL * dt);
     }
 
+    if (selectedCharacter.id === "lincolnjames") {
+      if (actor.lincolnImmunityTimer > 0) {
+        actor.lincolnImmunityTimer = Math.max(0, actor.lincolnImmunityTimer - dt);
+        // faint glow trail during immunity
+        if (Math.random() < 0.4) spawnParticles(actor.x, actor.y, 2, "#ff5ef5");
+      }
+    }
+
+    if (selectedCharacter.id === "lukepueppke") {
+      if (actor.lukeSuperspeedTimer > 0) {
+        actor.lukeSuperspeedTimer = Math.max(0, actor.lukeSuperspeedTimer - dt);
+        actor.vx = Math.max(actor.vx, LUKE_SUPERSPEED_VX);
+        if (Math.random() < 0.5) spawnParticles(actor.x, actor.y, 3, "#4fc3f7");
+      }
+    }
+
     if (selectedCharacter.id === "anthony" && actor.state === "flying") {
       const travelled = Math.max(0, (actor.maxX - world.launchX) / 10);
       const newStage = Math.floor(travelled / SAL_SHRINK_INTERVAL);
@@ -1904,6 +2127,15 @@ function update(dt) {
       : [];
     const nearbyNeedles = selectedCharacter.id === "jjfootballboss"
       ? getNeedlesInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbyLincolnAdhd = selectedCharacter.id === "lincolnjames"
+      ? getLincolnAdhdInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbyLukeRedBull = selectedCharacter.id === "lukepueppke"
+      ? getLukeRedBullInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbyLukeCoffee = selectedCharacter.id === "lukepueppke"
+      ? getLukeCoffeeInRange(actor.x - 260, actor.x + 560)
       : [];
 
     obstacles.forEach(collideRect);
@@ -2015,6 +2247,73 @@ function update(dt) {
         actor.drag = Math.max(0.065, actor.drag - 0.0008);
         spawnParticles(needle.x, ny, 16, "#8ee8ff");
         tone(520 + Math.min(260, actor.jjNeedleCount * 7), 0.05, "triangle", 0.06);
+      }
+    }
+
+    for (const adhd of nearbyLincolnAdhd) {
+      const ay = terrainY(adhd.x) - adhd.yOffset;
+      const dx = actor.x - adhd.x;
+      const dy = actor.y - ay;
+      const hitR = actor.radius + adhd.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedLincolnAdhd.add(adhd.index);
+        actor.lincolnAdhd += 1;
+        spawnParticles(adhd.x, ay, 18, "#ff5ef5");
+        spawnParticles(adhd.x, ay, 8, "#ffffff");
+        tone(500 + Math.min(300, actor.lincolnAdhd * 10), 0.05, "triangle", 0.07);
+        // Trigger immunity at threshold
+        if (actor.lincolnAdhd >= LINCOLN_ADHD_IMMUNITY_THRESHOLD && actor.lincolnImmunityTimer <= 0) {
+          actor.lincolnImmunityTimer = LINCOLN_IMMUNITY_DURATION;
+          startScreenShake(12, 0.3);
+          spawnParticles(actor.x, actor.y, 40, "#ff5ef5");
+          spawnParticles(actor.x, actor.y, 20, "#ffffff");
+          tone(740, 0.08, "triangle", 0.09);
+          tone(960, 0.07, "triangle", 0.08);
+        }
+      }
+    }
+
+    for (const rb of nearbyLukeRedBull) {
+      const ry = terrainY(rb.x) - rb.yOffset;
+      const dx = actor.x - rb.x;
+      const dy = actor.y - ry;
+      const hitR = actor.radius + rb.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedLukeRedBull.add(rb.index);
+        actor.lukeItemCount += 1;
+        actor.vx += 18;
+        spawnParticles(rb.x, ry, 16, "#4fc3f7");
+        tone(420 + Math.min(280, actor.lukeItemCount * 7), 0.05, "triangle", 0.06);
+        if (actor.lukeItemCount >= LUKE_SUPERSPEED_THRESHOLD && actor.lukeSuperspeedTimer <= 0) {
+          actor.lukeSuperspeedTimer = LUKE_SUPERSPEED_DURATION;
+          startScreenShake(14, 0.35);
+          spawnParticles(actor.x, actor.y, 44, "#4fc3f7");
+          spawnParticles(actor.x, actor.y, 22, "#ffffff");
+          tone(680, 0.08, "sawtooth", 0.1);
+          tone(880, 0.07, "triangle", 0.09);
+        }
+      }
+    }
+
+    for (const cof of nearbyLukeCoffee) {
+      const cy2 = terrainY(cof.x) - cof.yOffset;
+      const dx = actor.x - cof.x;
+      const dy = actor.y - cy2;
+      const hitR = actor.radius + cof.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedLukeCoffee.add(cof.index);
+        actor.lukeItemCount += 1;
+        actor.vx += 14;
+        spawnParticles(cof.x, cy2, 16, "#8d6e63");
+        tone(380 + Math.min(280, actor.lukeItemCount * 7), 0.05, "triangle", 0.06);
+        if (actor.lukeItemCount >= LUKE_SUPERSPEED_THRESHOLD && actor.lukeSuperspeedTimer <= 0) {
+          actor.lukeSuperspeedTimer = LUKE_SUPERSPEED_DURATION;
+          startScreenShake(14, 0.35);
+          spawnParticles(actor.x, actor.y, 44, "#4fc3f7");
+          spawnParticles(actor.x, actor.y, 22, "#ffffff");
+          tone(680, 0.08, "sawtooth", 0.1);
+          tone(880, 0.07, "triangle", 0.09);
+        }
       }
     }
 
@@ -2318,6 +2617,28 @@ function updateAbilityHint() {
   if (selectedCharacter.id === "calebparker") {
     const mphApprox = (actor.calebSpeed / 22.4).toFixed(0);
     abilityHint.textContent = `T-Rex speed: ~${mphApprox} mph  |  Space: fixed jump (clears Hugh)`;
+    return;
+  }
+
+  if (selectedCharacter.id === "lincolnjames") {
+    const adhdText = `ADHD: ${actor.lincolnAdhd}`;
+    const immuneText = actor.lincolnImmunityTimer > 0
+      ? `IMMUNE ${actor.lincolnImmunityTimer.toFixed(1)}s`
+      : actor.lincolnAdhd >= LINCOLN_ADHD_IMMUNITY_THRESHOLD
+        ? "Immunity active on next 10"
+        : `Immunity at ${LINCOLN_ADHD_IMMUNITY_THRESHOLD} ADHD`;
+    const jumpPow = Math.min(LINCOLN_ADHD_JUMP_MAX_VY, LINCOLN_ADHD_JUMP_BASE + actor.lincolnAdhd * LINCOLN_ADHD_JUMP_BONUS);
+    abilityHint.textContent = `${adhdText}  |  ${immuneText}  |  Space: jump (power ${Math.round(jumpPow)})`;
+    return;
+  }
+
+  if (selectedCharacter.id === "lukepueppke") {
+    const itemText = `Items: ${actor.lukeItemCount}`;
+    const speedText = actor.lukeSuperspeedTimer > 0
+      ? `SUPERSPEED ${actor.lukeSuperspeedTimer.toFixed(1)}s`
+      : `Superspeed at ${LUKE_SUPERSPEED_THRESHOLD} items`;
+    const boost = Math.min(LUKE_ITEM_JUMP_MAX, LUKE_ITEM_JUMP_BASE + actor.lukeItemCount * LUKE_ITEM_JUMP_BONUS);
+    abilityHint.textContent = `${itemText}  |  ${speedText}  |  Space: jump (boost +${Math.round(boost)})`;
     return;
   }
 
@@ -2716,6 +3037,12 @@ function getCharacterImageCandidates(character) {
   if (character.id === "calebparker") {
     return ["characters/Caleb Parker.png", "Caleb Parker.png"];
   }
+  if (character.id === "lincolnjames") {
+    return ["characters/Lincoln James.png", "Lincoln James.png"];
+  }
+  if (character.id === "lukepueppke") {
+    return ["characters/Luke Pueppke.png", "Luke Pueppke.png"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 
@@ -2898,6 +3225,15 @@ function drawMapDecor() {
   const visibleNeedles = selectedCharacter.id === "jjfootballboss"
     ? getNeedlesInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
+  const visibleLincolnAdhd = selectedCharacter.id === "lincolnjames"
+    ? getLincolnAdhdInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
+  const visibleLukeRedBull = selectedCharacter.id === "lukepueppke"
+    ? getLukeRedBullInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
+  const visibleLukeCoffee = selectedCharacter.id === "lukepueppke"
+    ? getLukeCoffeeInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
 
   visibleCandies.forEach((candy) => {
     const cy = terrainY(candy.x) - candy.yOffset;
@@ -3058,6 +3394,111 @@ function drawMapDecor() {
     ctx.font = "bold 12px Trebuchet MS";
     ctx.fillText("BOUNCE", sx + 10, y + 11);
   });
+
+  // Lincoln ADHD pills
+  visibleLincolnAdhd.forEach((adhd) => {
+    const ay = terrainY(adhd.x) - adhd.yOffset;
+    const sx = adhd.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+    const size = adhd.r * 3.2;
+    if (lincolnAdhdImg && lincolnAdhdImg.complete && lincolnAdhdImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, ay);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + adhd.index) * 0.15);
+      ctx.drawImage(lincolnAdhdImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#ff5ef5";
+      ctx.beginPath();
+      ctx.roundRect(sx - adhd.r * 0.55, ay - adhd.r, adhd.r * 1.1, adhd.r * 2, adhd.r * 0.45);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold ${adhd.r}px Trebuchet MS`;
+      ctx.textAlign = "center";
+      ctx.fillText("A", sx, ay + adhd.r * 0.38);
+      ctx.textAlign = "start";
+    }
+  });
+
+  // Luke Red Bull cans
+  visibleLukeRedBull.forEach((rb) => {
+    const ry = terrainY(rb.x) - rb.yOffset;
+    const sx = rb.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+    const size = rb.r * 2.8;
+    if (lukeRedBullImg && lukeRedBullImg.complete && lukeRedBullImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, ry);
+      ctx.rotate(Math.sin((performance.now() * 0.0032) + rb.index) * 0.12);
+      ctx.drawImage(lukeRedBullImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#1c5fcf";
+      ctx.beginPath();
+      ctx.roundRect(sx - rb.r * 0.55, ry - rb.r, rb.r * 1.1, rb.r * 2, rb.r * 0.2);
+      ctx.fill();
+      ctx.fillStyle = "#ff2a2a";
+      ctx.font = `bold ${Math.round(rb.r * 0.75)}px Trebuchet MS`;
+      ctx.textAlign = "center";
+      ctx.fillText("RB", sx, ry + rb.r * 0.35);
+      ctx.textAlign = "start";
+    }
+  });
+
+  // Luke Coffee cups
+  visibleLukeCoffee.forEach((cof) => {
+    const cy2 = terrainY(cof.x) - cof.yOffset;
+    const sx = cof.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+    const size = cof.r * 2.8;
+    if (lukeCoffeeImg && lukeCoffeeImg.complete && lukeCoffeeImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, cy2);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + cof.index) * 0.1);
+      ctx.drawImage(lukeCoffeeImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#8d6e63";
+      ctx.beginPath();
+      ctx.arc(sx, cy2, cof.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold ${Math.round(cof.r * 0.8)}px Trebuchet MS`;
+      ctx.textAlign = "center";
+      ctx.fillText("☕", sx, cy2 + cof.r * 0.35);
+      ctx.textAlign = "start";
+    }
+  });
+
+  // Lincoln immunity glow ring
+  if (selectedCharacter.id === "lincolnjames" && actor.lincolnImmunityTimer > 0) {
+    const sx = actor.x - cameraX;
+    const pulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.008);
+    ctx.save();
+    ctx.globalAlpha = pulse * 0.55;
+    ctx.strokeStyle = "#ff5ef5";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(sx, actor.y, actor.radius + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Luke superspeed glow ring
+  if (selectedCharacter.id === "lukepueppke" && actor.lukeSuperspeedTimer > 0) {
+    const sx = actor.x - cameraX;
+    const pulse = 0.55 + 0.45 * Math.sin(performance.now() * 0.01);
+    ctx.save();
+    ctx.globalAlpha = pulse * 0.6;
+    ctx.strokeStyle = "#4fc3f7";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(sx, actor.y, actor.radius + 9, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
 }
 
 function drawCatapult() {
@@ -3660,6 +4101,30 @@ function preloadCharacterImages() {
 
   calebTrexImg = new Image();
   calebTrexImg.src = "characters props/Caleb Trex.webp";
+
+  lincolnAdhdImg = new Image();
+  let lincolnAdhdIdx = 0;
+  lincolnAdhdImg.onerror = () => {
+    lincolnAdhdIdx += 1;
+    if (lincolnAdhdIdx < lincolnAdhdImageCandidates.length) lincolnAdhdImg.src = lincolnAdhdImageCandidates[lincolnAdhdIdx];
+  };
+  lincolnAdhdImg.src = lincolnAdhdImageCandidates[0];
+
+  lukeRedBullImg = new Image();
+  let lukeRedBullIdx = 0;
+  lukeRedBullImg.onerror = () => {
+    lukeRedBullIdx += 1;
+    if (lukeRedBullIdx < lukeRedBullImageCandidates.length) lukeRedBullImg.src = lukeRedBullImageCandidates[lukeRedBullIdx];
+  };
+  lukeRedBullImg.src = lukeRedBullImageCandidates[0];
+
+  lukeCoffeeImg = new Image();
+  let lukeCoffeeIdx = 0;
+  lukeCoffeeImg.onerror = () => {
+    lukeCoffeeIdx += 1;
+    if (lukeCoffeeIdx < lukeCoffeeImageCandidates.length) lukeCoffeeImg.src = lukeCoffeeImageCandidates[lukeCoffeeIdx];
+  };
+  lukeCoffeeImg.src = lukeCoffeeImageCandidates[0];
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
