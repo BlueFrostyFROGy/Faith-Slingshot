@@ -667,6 +667,8 @@ function useAbility() {
     actor.abilityCooldown = 5.5;
   } else if (selectedCharacter.id === "hunter") {
     actor.abilityCooldown = 4.0;
+  } else if (selectedCharacter.id === "candyjew") {
+    actor.abilityCooldown = actor.rainbowModeTimer > 0 ? 0 : 0.45;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -1168,7 +1170,7 @@ function updateAbilityHint() {
       return;
     }
     if (actor.rainbowModeTimer > 0) {
-      abilityHint.textContent = `${candyText}  |  RAINBOW OVERDRIVE!`;
+      abilityHint.textContent = `${candyText}  |  RAINBOW OVERDRIVE! Infinite dunks`;
       return;
     }
     if (actor.abilityCooldown > 0) {
