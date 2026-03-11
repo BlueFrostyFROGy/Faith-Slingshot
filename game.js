@@ -175,6 +175,22 @@ const characters = [
     unlockAt: 0,
     ability: "tennis",
   },
+  {
+    id: "reed",
+    name: "Reed Blair",
+    trait: "Cheeseburger gas boost",
+    bio: "Every 5 cheeseburgers triggers a fart boost that launches him higher.",
+    imageBase: "Reed Blair",
+    initials: "R",
+    mass: 1.05,
+    radius: 31,
+    drag: 0.1,
+    bounce: 0.57,
+    gravityMult: 0.96,
+    launchBoost: 1.12,
+    unlockAt: 0,
+    ability: "fartpassive",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -227,6 +243,7 @@ const actor = {
   candyOverdrivesUsed: 0,
   beerCount: 0,
   beerRageTimer: 0,
+  burgerCount: 0,
 };
 
 const obstacles = [];
@@ -236,8 +253,10 @@ const bouncePadCache = new Map();
 const janetCache = new Map();
 const candyCache = new Map();
 const beerCache = new Map();
+const burgerCache = new Map();
 const collectedCandies = new Set();
 const collectedBeers = new Set();
+const collectedBurgers = new Set();
 
 const JANET_BASE = {
   w: 56,
@@ -493,6 +512,46 @@ function getBeersInRange(startX, endX) {
   return beers;
 }
 
+function createBurger(index) {
+  const spacing = 320;
+  const startX = 900;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 801) * 210) - 70;
+  const yOffset = 105 + Math.floor(seededNoise(index + 802) * 26);
+
+  return {
+    index,
+    x: baseX + offset,
+    yOffset,
+    r: 14,
+  };
+}
+
+function getBurger(index) {
+  if (!burgerCache.has(index)) {
+    burgerCache.set(index, createBurger(index));
+  }
+  return burgerCache.get(index);
+}
+
+function getBurgersInRange(startX, endX) {
+  const spacing = 320;
+  const startXBase = 900;
+  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 2);
+  const burgers = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const burger = getBurger(index);
+    if (collectedBurgers.has(burger.index)) continue;
+    if (burger.x + burger.r >= startX && burger.x - burger.r <= endX) {
+      burgers.push(burger);
+    }
+  }
+
+  return burgers;
+}
+
 let audioCtx;
 
 function ensureAudio() {
@@ -553,6 +612,7 @@ function resetActor() {
   actor.candyOverdrivesUsed = 0;
   actor.beerCount = 0;
   actor.beerRageTimer = 0;
+  actor.burgerCount = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -561,6 +621,7 @@ function resetActor() {
   destroyedJanets.clear();
   collectedCandies.clear();
   collectedBeers.clear();
+  collectedBurgers.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -714,6 +775,16 @@ function triggerBeerRage() {
   spawnParticles(actor.x, actor.y, 26, "#ffd27a");
 }
 
+function triggerFartBoost() {
+  actor.vy -= 560;
+  actor.vx += 90;
+  startScreenShake(9, 0.28);
+  tone(140, 0.08, "sawtooth", 0.08);
+  tone(95, 0.07, "triangle", 0.06);
+  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 30, "#6b3e1f");
+  spawnParticles(actor.x, actor.y + actor.radius * 0.5, 18, "#8c5a2e");
+}
+
 function updateScreenShake(dt) {
   const spinActive = selectedCharacter.id === "brayden" && actor.beerRageTimer > 0 && actor.state !== "ended";
   const spinDeg = spinActive ? (performance.now() * 0.38) % 360 : 0;
@@ -779,6 +850,11 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
 
 function useAbility() {
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
+
+  if (selectedCharacter.id === "reed") {
+    tone(140, 0.05, "sine", 0.05);
+    return;
+  }
 
   if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0 && actor.overdriveDunksLeft <= 0) {
     tone(140, 0.05, "sine", 0.05);
@@ -1199,6 +1275,9 @@ function update(dt) {
     const nearbyBeers = selectedCharacter.id === "brayden"
       ? getBeersInRange(actor.x - 260, actor.x + 560)
       : [];
+    const nearbyBurgers = selectedCharacter.id === "reed"
+      ? getBurgersInRange(actor.x - 260, actor.x + 560)
+      : [];
 
     obstacles.forEach(collideRect);
     nearbyJanets.forEach(collideRect);
@@ -1240,6 +1319,23 @@ function update(dt) {
         if (actor.beerCount >= 20) {
           finishRun("Run ended: Brayden hit 20 beers.");
           return;
+        }
+      }
+    }
+
+    for (const burger of nearbyBurgers) {
+      const by = terrainY(burger.x) - burger.yOffset;
+      const dx = actor.x - burger.x;
+      const dy = actor.y - by;
+      const hitR = actor.radius + burger.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedBurgers.add(burger.index);
+        actor.burgerCount += 1;
+        spawnParticles(burger.x, by, 14, "#a66a3a");
+        tone(240 + Math.min(220, actor.burgerCount * 5), 0.05, "triangle", 0.06);
+
+        if (actor.burgerCount % 5 === 0) {
+          triggerFartBoost();
         }
       }
     }
@@ -1339,6 +1435,8 @@ function getAbilityLabel(character) {
       return "dunk hurdle";
     case "tennis":
       return "tennis jump / shot";
+    case "fartpassive":
+      return "fart boost (passive)";
     default:
       return "ability";
   }
@@ -1431,6 +1529,13 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${beerText}  |  Space: jump + tennis shot`;
+    return;
+  }
+
+  if (selectedCharacter.id === "reed") {
+    const burgerText = `Cheeseburgers: ${actor.burgerCount}`;
+    const nextBoostIn = 5 - (actor.burgerCount % 5 || 5);
+    abilityHint.textContent = `${burgerText}  |  Fart boost every 5 burgers | Next boost in ${nextBoostIn === 0 ? 5 : nextBoostIn}`;
     return;
   }
 
@@ -1619,6 +1724,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "eli") {
     return ["characters/Eli Ailshie.png", "Eli Ailshie.png"];
   }
+  if (character.id === "reed") {
+    return ["characters/Reed Blair.png", "Reed Blair.png"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 
@@ -1759,6 +1867,9 @@ function drawMapDecor() {
   const visibleBeers = selectedCharacter.id === "brayden"
     ? getBeersInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
+  const visibleBurgers = selectedCharacter.id === "reed"
+    ? getBurgersInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
 
   visibleCandies.forEach((candy) => {
     const cy = terrainY(candy.x) - candy.yOffset;
@@ -1805,6 +1916,30 @@ function drawMapDecor() {
       ctx.font = "bold 11px Trebuchet MS";
       ctx.fillText("B", sx - 4, by + 4);
     }
+  });
+
+  visibleBurgers.forEach((burger) => {
+    const by = terrainY(burger.x) - burger.yOffset;
+    const sx = burger.x - cameraX;
+    if (sx < -70 || sx > canvas.width + 70) return;
+
+    const r = burger.r;
+    // Top bun
+    ctx.fillStyle = "#d7a35e";
+    ctx.beginPath();
+    ctx.arc(sx, by - 3, r, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    // Patty + lettuce + cheese
+    ctx.fillStyle = "#5b3420";
+    ctx.fillRect(sx - r, by - 2, r * 2, 5);
+    ctx.fillStyle = "#5ba84a";
+    ctx.fillRect(sx - r, by + 3, r * 2, 3);
+    ctx.fillStyle = "#f0c43c";
+    ctx.fillRect(sx - r + 2, by + 6, r * 2 - 4, 3);
+    // Bottom bun
+    ctx.fillStyle = "#c48a4a";
+    ctx.fillRect(sx - r, by + 9, r * 2, 6);
   });
 
   visibleBouncePads.forEach((b) => {
