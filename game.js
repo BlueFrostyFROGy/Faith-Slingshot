@@ -140,6 +140,22 @@ const characters = [
     unlockAt: 0,
     ability: "backflip",
   },
+  {
+    id: "candyjew",
+    name: "Candy Jew",
+    trait: "Sugar overdrive",
+    bio: "Collect candies to get faster. Every 20 candies triggers rainbow beam overdrive.",
+    imageBase: "Candy Jew",
+    initials: "C",
+    mass: 0.92,
+    radius: 25,
+    drag: 0.088,
+    bounce: 0.58,
+    gravityMult: 0.92,
+    launchBoost: 1.18,
+    unlockAt: 0,
+    ability: "dunk",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -193,6 +209,8 @@ const confetti = [];
 
 const bouncePadCache = new Map();
 const janetCache = new Map();
+const candyCache = new Map();
+const collectedCandies = new Set();
 
 const JANET_BASE = {
   w: 56,
@@ -221,6 +239,7 @@ const fatalObstacleImageCandidates = [
 let fatalObstacleImg = null;
 let spencerBombImg = null;
 let manningFishingRodImg = null;
+const candyImgs = [];
 
 const spencerBombImageCandidates = [
   "characters props/Spencers Bomb.png",
@@ -238,6 +257,15 @@ const manningFishingRodImageCandidates = [
   "assets/images/manning-fishing-rod.png",
   "assets/images/mannings-fishing-rod.jpg",
   "assets/images/manning-fishing-rod.jpg",
+];
+
+const candyImageCandidates = [
+  "characters props/Candy Jew Candy.png",
+  "characters props/Candy Jew Candy 2.png",
+  "characters props/Candy Jew Candy 3.png",
+  "characters props/Candy Jew Candy 4.png",
+  "characters props/Candy Jew Candy 5.png",
+  "characters props/Candy Jew Candy 6.png",
 ];
 
 function seededNoise(seed) {
@@ -328,6 +356,48 @@ function getJanetsInRange(startX, endX) {
   return janets;
 }
 
+function createCandy(index) {
+  const spacing = 240;
+  const startX = 700;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 501) * 180) - 60;
+  const yOffset = 95 + Math.floor(seededNoise(index + 502) * 34);
+  const variant = index % candyImageCandidates.length;
+
+  return {
+    index,
+    x: baseX + offset,
+    yOffset,
+    r: 13,
+    variant,
+  };
+}
+
+function getCandy(index) {
+  if (!candyCache.has(index)) {
+    candyCache.set(index, createCandy(index));
+  }
+  return candyCache.get(index);
+}
+
+function getCandiesInRange(startX, endX) {
+  const spacing = 240;
+  const startXBase = 700;
+  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 2);
+  const candies = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const candy = getCandy(index);
+    if (collectedCandies.has(candy.index)) continue;
+    if (candy.x + candy.r >= startX && candy.x - candy.r <= endX) {
+      candies.push(candy);
+    }
+  }
+
+  return candies;
+}
+
 let audioCtx;
 
 function ensureAudio() {
@@ -379,11 +449,16 @@ function resetActor() {
   actor.spencerBombsUsed = 0;
   actor.backflipRotation = 0;
   actor.backflipActive = false;
+  actor.candyCount = 0;
+  actor.candySpeedBonus = 0;
+  actor.rainbowModeTimer = 0;
+  actor.rainbowBeamTimer = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
   bombs.length = 0;
   destroyedJanets.clear();
+  collectedCandies.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -511,6 +586,15 @@ function updateImpactBursts(dt) {
 function startScreenShake(strength = 8, duration = 0.24) {
   screenShakeStrength = Math.max(screenShakeStrength, strength);
   screenShakeTime = Math.max(screenShakeTime, duration);
+}
+
+function triggerCandyOverdrive() {
+  actor.rainbowModeTimer = 1.0;
+  actor.rainbowBeamTimer = 1.0;
+  startScreenShake(14, 0.35);
+  tone(740, 0.08, "triangle", 0.09);
+  tone(910, 0.08, "triangle", 0.08);
+  spawnParticles(actor.x, actor.y, 40, "#ffffff");
 }
 
 function updateScreenShake(dt) {
@@ -674,6 +758,14 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 32, "#ff66ff");
       spawnParticles(actor.x, actor.y, 16, "#ffaaff");
       startScreenShake(11, 0.26);
+      break;
+    case "dunk":
+      actor.vy -= 430;
+      actor.vx += 250;
+      actor.vx *= 1.07;
+      tone(300, 0.07, "square", 0.08);
+      tone(220, 0.06, "triangle", 0.07);
+      spawnParticles(actor.x, actor.y, 24, "#ffd95e");
       break;
     default:
       break;
@@ -869,16 +961,50 @@ function update(dt) {
         actor.truckTimer = 0;
       }
     }
+
+    if (selectedCharacter.id === "candyjew") {
+      actor.vx += actor.candyCount * 16 * dt;
+      if (actor.rainbowModeTimer > 0) {
+        actor.rainbowModeTimer = Math.max(0, actor.rainbowModeTimer - dt);
+        actor.rainbowBeamTimer = Math.max(0, actor.rainbowBeamTimer - dt);
+        const beamAngle = -0.62;
+        const beamForce = 980;
+        actor.vx += Math.cos(beamAngle) * beamForce * dt;
+        actor.vy += Math.sin(beamAngle) * beamForce * dt;
+      }
+    }
+
     actor.vy += world.gravity * actor.gravityMult * dt;
     actor.vx -= actor.vx * actor.drag * dt;
     actor.x += actor.vx * dt;
     actor.y += actor.vy * dt;
     const nearbyBouncePads = getBouncePadsInRange(actor.x - 260, actor.x + 520);
     const nearbyJanets = getJanetsInRange(actor.x - 220, actor.x + 560);
+    const nearbyCandies = selectedCharacter.id === "candyjew"
+      ? getCandiesInRange(actor.x - 260, actor.x + 560)
+      : [];
 
     obstacles.forEach(collideRect);
     nearbyJanets.forEach(collideRect);
     nearbyBouncePads.forEach(collideBouncePad);
+
+    nearbyCandies.forEach((candy) => {
+      const cy = terrainY(candy.x) - candy.yOffset;
+      const dx = actor.x - candy.x;
+      const dy = actor.y - cy;
+      const hitR = actor.radius + candy.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedCandies.add(candy.index);
+        actor.candyCount += 1;
+        actor.candySpeedBonus = Math.min(0.8, actor.candyCount * 0.018);
+        actor.vx += 25 + Math.min(180, actor.candyCount * 2.2);
+        spawnParticles(candy.x, cy, 14, "#ffd95e");
+        tone(560 + Math.min(360, actor.candyCount * 4), 0.05, "triangle", 0.06);
+        if (actor.candyCount % 20 === 0) {
+          triggerCandyOverdrive();
+        }
+      }
+    });
 
     const ground = terrainY(actor.x);
     if (actor.y + actor.radius >= ground) {
@@ -971,6 +1097,8 @@ function getAbilityLabel(character) {
       return "jump / bomb";
     case "backflip":
       return "powered backflip";
+    case "dunk":
+      return "dunk hurdle";
     default:
       return "ability";
   }
@@ -1021,6 +1149,24 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `Space: jump (${Math.round(jumpPower)})  |  Double-Space: bomb  |  Bombs used: ${actor.spencerBombsUsed}`;
+    return;
+  }
+
+  if (selectedCharacter.id === "candyjew") {
+    const candyText = `Candies: ${actor.candyCount}`;
+    if (actor.state === "ready") {
+      abilityHint.textContent = `${candyText}  |  Space: dunk`;
+      return;
+    }
+    if (actor.rainbowModeTimer > 0) {
+      abilityHint.textContent = `${candyText}  |  RAINBOW OVERDRIVE!`;
+      return;
+    }
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${candyText}  |  Dunk: ${actor.abilityCooldown.toFixed(1)}s`;
+      return;
+    }
+    abilityHint.textContent = `${candyText}  |  Space: dunk`;
     return;
   }
 
@@ -1115,6 +1261,9 @@ function showLeaderboardScreen(distance) {
 }
 
 function getCharacterImageCandidates(character) {
+  if (character.id === "candyjew") {
+    return ["characters/Candy Jew.png", "Candy Jew.png"];
+  }
   if (character.id === "spencer") {
     return ["characters/Spencer.png", "Spencer.png"];
   }
@@ -1126,8 +1275,18 @@ function getCharacterImageCandidates(character) {
 
 function drawBackground() {
   const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  grad.addColorStop(0, "#90d9ff");
-  grad.addColorStop(1, "#dbf6ff");
+  if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0) {
+    const t = performance.now() * 0.0026;
+    const hueA = (t * 180) % 360;
+    const hueB = (hueA + 120) % 360;
+    const hueC = (hueA + 240) % 360;
+    grad.addColorStop(0, `hsl(${hueA} 90% 70%)`);
+    grad.addColorStop(0.5, `hsl(${hueB} 92% 68%)`);
+    grad.addColorStop(1, `hsl(${hueC} 92% 72%)`);
+  } else {
+    grad.addColorStop(0, "#90d9ff");
+    grad.addColorStop(1, "#dbf6ff");
+  }
   ctx.fillStyle = grad;
   ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
 
@@ -1245,6 +1404,33 @@ function drawMapDecor() {
   });
 
   const visibleBouncePads = getBouncePadsInRange(cameraX - 120, cameraX + canvas.width + 120);
+  const visibleCandies = selectedCharacter.id === "candyjew"
+    ? getCandiesInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
+
+  visibleCandies.forEach((candy) => {
+    const cy = terrainY(candy.x) - candy.yOffset;
+    const sx = candy.x - cameraX;
+    if (sx < -60 || sx > canvas.width + 60) return;
+
+    const img = candyImgs[candy.variant];
+    const size = candy.r * 2.25;
+    if (img && img.complete && img.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, cy);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + candy.index) * 0.15);
+      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#ffd95e";
+      ctx.beginPath();
+      ctx.arc(sx, cy, candy.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 11px Trebuchet MS";
+      ctx.fillText("C", sx - 4, cy + 4);
+    }
+  });
 
   visibleBouncePads.forEach((b) => {
     const y = terrainY(b.x) - b.yOffset;
@@ -1375,6 +1561,35 @@ function drawFishingRod() {
   ctx.restore();
 }
 
+function drawCandyBeam() {
+  if (selectedCharacter.id !== "candyjew" || actor.rainbowBeamTimer <= 0) return;
+
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const angle = -0.62;
+  const len = 500;
+  const ex = sx + Math.cos(angle) * len;
+  const ey = sy + Math.sin(angle) * len;
+  const alpha = Math.min(1, actor.rainbowBeamTimer * 2.5);
+  const colors = ["#ff3b3b", "#ffa53b", "#ffe73b", "#57ff57", "#4aa3ff", "#c266ff"];
+
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.82;
+  ctx.lineCap = "round";
+  colors.forEach((color, i) => {
+    const offset = (i - 2.5) * 5;
+    const ox = Math.cos(angle + Math.PI / 2) * offset;
+    const oy = Math.sin(angle + Math.PI / 2) * offset;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(sx + ox, sy + oy);
+    ctx.lineTo(ex + ox, ey + oy);
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
 function drawParticles() {
   impactBursts.forEach((b) => {
     const alpha = Math.max(0, b.life / b.maxLife);
@@ -1476,6 +1691,7 @@ function draw() {
   drawTrajectory();
   drawActor();
   drawFishingRod();
+  drawCandyBeam();
   drawBombs();
   drawParticles();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1605,6 +1821,13 @@ function preloadCharacterImages() {
     }
   };
   manningFishingRodImg.src = manningFishingRodImageCandidates[rodIndex];
+
+  candyImgs.length = 0;
+  candyImageCandidates.forEach((path) => {
+    const img = new Image();
+    img.src = path;
+    candyImgs.push(img);
+  });
 }
 
 angleSlider.addEventListener("input", () => {
