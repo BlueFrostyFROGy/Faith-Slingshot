@@ -288,6 +288,7 @@ let manningFishingRodImg = null;
 let braydenBeerImg = null;
 let braydenRacketImg = null;
 let tennisBallImg = null;
+let reedBurgerImg = null;
 const candyImgs = [];
 
 const spencerBombImageCandidates = [
@@ -340,6 +341,13 @@ const tennisBallImageCandidates = [
   "characters props/Brayden Tennis Ball.png",
   "Brayden Tennis ball.webp",
   "Brayden Tennis Ball.webp",
+];
+
+const reedBurgerImageCandidates = [
+  "characters props/Reed Blair Cheese Burger.webp",
+  "characters props/Reed Blair Cheeseburger.webp",
+  "Reed Blair Cheese Burger.webp",
+  "Reed Blair Cheeseburger.webp",
 ];
 
 function seededNoise(seed) {
@@ -1923,23 +1931,32 @@ function drawMapDecor() {
     const sx = burger.x - cameraX;
     if (sx < -70 || sx > canvas.width + 70) return;
 
-    const r = burger.r;
-    // Top bun
-    ctx.fillStyle = "#d7a35e";
-    ctx.beginPath();
-    ctx.arc(sx, by - 3, r, Math.PI, 0);
-    ctx.closePath();
-    ctx.fill();
-    // Patty + lettuce + cheese
-    ctx.fillStyle = "#5b3420";
-    ctx.fillRect(sx - r, by - 2, r * 2, 5);
-    ctx.fillStyle = "#5ba84a";
-    ctx.fillRect(sx - r, by + 3, r * 2, 3);
-    ctx.fillStyle = "#f0c43c";
-    ctx.fillRect(sx - r + 2, by + 6, r * 2 - 4, 3);
-    // Bottom bun
-    ctx.fillStyle = "#c48a4a";
-    ctx.fillRect(sx - r, by + 9, r * 2, 6);
+    const size = burger.r * 2.5;
+    if (reedBurgerImg && reedBurgerImg.complete && reedBurgerImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, by);
+      ctx.rotate(Math.sin((performance.now() * 0.0035) + burger.index) * 0.12);
+      ctx.drawImage(reedBurgerImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      const r = burger.r;
+      // Top bun
+      ctx.fillStyle = "#d7a35e";
+      ctx.beginPath();
+      ctx.arc(sx, by - 3, r, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      // Patty + lettuce + cheese
+      ctx.fillStyle = "#5b3420";
+      ctx.fillRect(sx - r, by - 2, r * 2, 5);
+      ctx.fillStyle = "#5ba84a";
+      ctx.fillRect(sx - r, by + 3, r * 2, 3);
+      ctx.fillStyle = "#f0c43c";
+      ctx.fillRect(sx - r + 2, by + 6, r * 2 - 4, 3);
+      // Bottom bun
+      ctx.fillStyle = "#c48a4a";
+      ctx.fillRect(sx - r, by + 9, r * 2, 6);
+    }
   });
 
   visibleBouncePads.forEach((b) => {
@@ -2410,6 +2427,16 @@ function preloadCharacterImages() {
     }
   };
   tennisBallImg.src = tennisBallImageCandidates[tennisBallIndex];
+
+  reedBurgerImg = new Image();
+  let reedBurgerIndex = 0;
+  reedBurgerImg.onerror = () => {
+    reedBurgerIndex += 1;
+    if (reedBurgerIndex < reedBurgerImageCandidates.length) {
+      reedBurgerImg.src = reedBurgerImageCandidates[reedBurgerIndex];
+    }
+  };
+  reedBurgerImg.src = reedBurgerImageCandidates[reedBurgerIndex];
 
   candyImgs.length = 0;
   candyImageCandidates.forEach((path) => {
