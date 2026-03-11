@@ -1467,21 +1467,23 @@ function addScoreToLeaderboard(playerName, distance) {
 
 async function fetchCloudLeaderboard() {
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=name,distance,created_at&order=distance.desc&limit=${MAX_LEADERBOARD_ENTRIES}`,
-      {
-        cache: "no-store",
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        },
-      }
-    );
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=name,distance,created_at&order=distance.desc&limit=${MAX_LEADERBOARD_ENTRIES}`;
+    console.log("Fetching from Supabase:", url);
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    });
+    console.log("Supabase fetch response:", res.status, res.statusText);
     if (!res.ok) {
-      console.warn(`Supabase fetch failed: ${res.status} ${res.statusText}`);
+      const errBody = await res.text();
+      console.error(`Supabase fetch failed: ${res.status} ${res.statusText}`, errBody);
       return false;
     }
     const data = await res.json();
+    console.log("Supabase data:", data);
     if (!Array.isArray(data)) {
       console.warn("Supabase returned non-array data");
       return false;
@@ -1504,7 +1506,13 @@ async function fetchCloudLeaderboard() {
 
 async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
   try {
-    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}`, {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}`;
+    const body = JSON.stringify({
+      name: playerName.slice(0, 20),
+      distance: Number(travelledMeters.toFixed(1)),
+    });
+    console.log("Pushing to Supabase:", url, body);
+    const insertRes = await fetch(url, {
       method: "POST",
       headers: {
         apikey: SUPABASE_ANON_KEY,
@@ -1512,18 +1520,16 @@ async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body: JSON.stringify({
-        name: playerName.slice(0, 20),
-        distance: Number(travelledMeters.toFixed(1)),
-      }),
+      body,
     });
+    console.log("Supabase insert response:", insertRes.status, insertRes.statusText);
     if (insertRes.ok) {
-      console.log("Score inserted to Supabase");
+      console.log("Score inserted to Supabase successfully");
       await fetchCloudLeaderboard();
       return true;
     }
     const errText = await insertRes.text();
-    console.warn(`Supabase insert failed: ${insertRes.status} ${insertRes.statusText}`, errText);
+    console.error(`Supabase insert failed: ${insertRes.status} ${insertRes.statusText}`, errText);
     return false;
   } catch (e) {
     console.error("pushCloudLeaderboardEntry error:", e);
