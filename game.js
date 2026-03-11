@@ -144,15 +144,15 @@ const characters = [
     id: "candyjew",
     name: "Candy Jew",
     trait: "Sugar overdrive",
-    bio: "Collect candies to get faster. Every 15 candies triggers rainbow beam overdrive.",
+    bio: "Collect candies to get faster. Every 10 candies triggers rainbow beam overdrive.",
     imageBase: "Candy Jew",
     initials: "C",
     mass: 0.92,
     radius: 36,
-    drag: 0.088,
+    drag: 0.11,
     bounce: 0.58,
-    gravityMult: 0.92,
-    launchBoost: 1.18,
+    gravityMult: 0.98,
+    launchBoost: 1.08,
     unlockAt: 0,
     ability: "dunk",
   },
@@ -591,8 +591,8 @@ function startScreenShake(strength = 8, duration = 0.24) {
 function triggerCandyOverdrive() {
   actor.rainbowModeTimer = 10.0;
   actor.rainbowBeamTimer = 1.0;
-  actor.vy -= 520;
-  actor.vx += 180;
+  actor.vy -= 420;
+  actor.vx += 80;
   startScreenShake(14, 0.35);
   tone(740, 0.08, "triangle", 0.09);
   tone(910, 0.08, "triangle", 0.08);
@@ -764,9 +764,9 @@ function useAbility() {
       startScreenShake(11, 0.26);
       break;
     case "dunk":
-      actor.vy -= 430;
-      actor.vx += 250;
-      actor.vx *= 1.07;
+      actor.vy -= 360;
+      actor.vx += 170;
+      actor.vx *= 1.03;
       tone(300, 0.07, "square", 0.08);
       tone(220, 0.06, "triangle", 0.07);
       spawnParticles(actor.x, actor.y, 24, "#ffd95e");
@@ -974,12 +974,12 @@ function update(dt) {
     }
 
     if (selectedCharacter.id === "candyjew") {
-      actor.vx += actor.candyCount * 16 * dt;
+      actor.vx += actor.candyCount * 8 * dt;
       if (actor.rainbowModeTimer > 0) {
         actor.rainbowModeTimer = Math.max(0, actor.rainbowModeTimer - dt);
         actor.rainbowBeamTimer = Math.max(0, actor.rainbowBeamTimer - dt);
-        const beamAngle = -0.98;
-        const beamForce = 1320;
+        const beamAngle = -0.92;
+        const beamForce = 760;
         actor.vx += Math.cos(beamAngle) * beamForce * dt;
         actor.vy += Math.sin(beamAngle) * beamForce * dt;
       }
@@ -1008,10 +1008,10 @@ function update(dt) {
         collectedCandies.add(candy.index);
         actor.candyCount += 1;
         actor.candySpeedBonus = Math.min(0.8, actor.candyCount * 0.018);
-        actor.vx += 25 + Math.min(180, actor.candyCount * 2.2);
+        actor.vx += 8 + Math.min(60, actor.candyCount * 1.2);
         spawnParticles(candy.x, cy, 14, "#ffd95e");
         tone(560 + Math.min(360, actor.candyCount * 4), 0.05, "triangle", 0.06);
-        if (actor.candyCount % 15 === 0) {
+        if (actor.candyCount % 10 === 0) {
           triggerCandyOverdrive();
         }
       }
