@@ -112,7 +112,7 @@ const characters = [
     id: "spencer",
     name: "Spencer",
     trait: "Bomb sprinter",
-    bio: "Starts fast. Space for jump, double-Space for bomb. Bombs destroy Janet but slow him down.",
+    bio: "Starts fast. Space for jump, double-Space for bomb. Bombs destroy TB but slow him down.",
     imageBase: "Spencer",
     initials: "S",
     mass: 1.82,
@@ -198,11 +198,14 @@ const JANET_BASE = {
   w: 56,
   h: 58,
   color: "#ffe0ea",
-  label: "Janet",
+  label: "TB",
   fatal: true,
 };
 
 const fatalObstacleImageCandidates = [
+  "Obstacle TB.png",
+  "assets/images/obstacle-tb.png",
+  "assets/images/obstacle-tb.jpg",
   "assets/images/front-office.png",
   "assets/images/front-office.jpg",
   "assets/images/front-office-portrait.png",
@@ -220,6 +223,7 @@ let spencerBombImg = null;
 let manningFishingRodImg = null;
 
 const spencerBombImageCandidates = [
+  "characters props/Spencers Bomb.png",
   "Spencers Bomb.png",
   "assets/images/spencers-bomb.png",
   "assets/images/spencer-bomb.png",
@@ -228,6 +232,7 @@ const spencerBombImageCandidates = [
 ];
 
 const manningFishingRodImageCandidates = [
+  "characters props/Mannings Fishing Rod.png",
   "Mannings Fishing Rod.png",
   "assets/images/mannings-fishing-rod.png",
   "assets/images/manning-fishing-rod.png",
@@ -804,7 +809,7 @@ function collideRect(rect) {
       actor.y = y - actor.radius;
       spawnParticles(actor.x, actor.y, 24, "#ff7d5f");
       tone(120, 0.12, "sawtooth", 0.08);
-      finishRun("Run ended: Janet collision.");
+      finishRun("Run ended: TB collision.");
       return;
     }
     actor.y = y - actor.radius;
@@ -1007,7 +1012,7 @@ function updateAbilityHint() {
 
   if (selectedCharacter.id === "spencer") {
     if (actor.state === "ready") {
-      abilityHint.textContent = "Space: jump  |  Double-Space: bomb (kills Janet, slows you)";
+      abilityHint.textContent = "Space: jump  |  Double-Space: bomb (kills TB, slows you)";
       return;
     }
     const jumpPower = Math.max(220, 560 - actor.spencerBombsUsed * 95);
@@ -1110,6 +1115,12 @@ function showLeaderboardScreen(distance) {
 }
 
 function getCharacterImageCandidates(character) {
+  if (character.id === "spencer") {
+    return ["characters/Spencer.png", "Spencer.png"];
+  }
+  if (character.id === "eli") {
+    return ["characters/Eli Ailshie.png", "Eli Ailshie.png"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 

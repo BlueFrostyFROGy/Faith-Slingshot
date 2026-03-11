@@ -30,6 +30,8 @@ jobs:
           cp game.js _site/
           cp styles.css _site/
           cp -R assets _site/
+          if [ -d "characters" ]; then cp -R characters _site/; fi
+          if [ -d "characters props" ]; then cp -R "characters props" _site/; fi
           shopt -s nullglob
           for img in *.png *.jpg *.jpeg *.webp; do
             cp "$img" _site/
