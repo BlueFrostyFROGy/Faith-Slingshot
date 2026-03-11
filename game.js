@@ -230,6 +230,22 @@ const characters = [
     unlockAt: 0,
     ability: "truck",
   },
+  {
+    id: "myer",
+    name: "Myer the Leprechaun",
+    trait: "Rainbow bounce luck",
+    bio: "Space jumps upward. Every bounce leaves a rainbow trail, and every 10 pots of gold trigger a rainbow launch.",
+    imageBase: "Myer",
+    initials: "ML",
+    mass: 0.84,
+    radius: 27,
+    drag: 0.082,
+    bounce: 0.68,
+    gravityMult: 0.9,
+    launchBoost: 1.24,
+    unlockAt: 0,
+    ability: "leprejump",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -289,6 +305,9 @@ const actor = {
   jacksonDiveActive: false,
   jacksonDiveDelay: 0,
   jacksonDiveTargetIndex: null,
+  myerPotCount: 0,
+  myerRainbowBoostTimer: 0,
+  myerTrailTimer: 0,
 };
 
 const obstacles = [];
@@ -300,10 +319,12 @@ const candyCache = new Map();
 const beerCache = new Map();
 const burgerCache = new Map();
 const footballCache = new Map();
+const potGoldCache = new Map();
 const collectedCandies = new Set();
 const collectedBeers = new Set();
 const collectedBurgers = new Set();
 const collectedFootballs = new Set();
+const collectedPots = new Set();
 
 const JANET_BASE = {
   w: 56,
@@ -341,6 +362,7 @@ let braydenRacketImg = null;
 let tennisBallImg = null;
 let reedBurgerImg = null;
 let jacksonFootballImg = null;
+let myerPotGoldImg = null;
 const candyImgs = [];
 
 const spencerBombImageCandidates = [
@@ -411,6 +433,13 @@ const jacksonFootballImageCandidates = [
   "Jacksons Football.png",
   "assets/images/jackson-football.png",
   "assets/images/football.png",
+];
+
+const myerPotGoldImageCandidates = [
+  "characters props/Myers Pot of gold.png",
+  "characters props/Myers Pot Of Gold.png",
+  "Myers Pot of gold.png",
+  "assets/images/myers-pot-of-gold.png",
 ];
 
 function seededNoise(seed) {
@@ -663,6 +692,46 @@ function getFootballsInRange(startX, endX) {
   return footballs;
 }
 
+function createPotGold(index) {
+  const spacing = 280;
+  const startX = 960;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 951) * 220) - 80;
+  const yOffset = 112 + Math.floor(seededNoise(index + 952) * 32);
+
+  return {
+    index,
+    x: baseX + offset,
+    yOffset,
+    r: 16,
+  };
+}
+
+function getPotGold(index) {
+  if (!potGoldCache.has(index)) {
+    potGoldCache.set(index, createPotGold(index));
+  }
+  return potGoldCache.get(index);
+}
+
+function getPotsGoldInRange(startX, endX) {
+  const spacing = 280;
+  const startXBase = 960;
+  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 2);
+  const pots = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const pot = getPotGold(index);
+    if (collectedPots.has(pot.index)) continue;
+    if (pot.x + pot.r >= startX && pot.x - pot.r <= endX) {
+      pots.push(pot);
+    }
+  }
+
+  return pots;
+}
+
 let audioCtx;
 
 function ensureAudio() {
@@ -730,6 +799,9 @@ function resetActor() {
   actor.jacksonDiveActive = false;
   actor.jacksonDiveDelay = 0;
   actor.jacksonDiveTargetIndex = null;
+  actor.myerPotCount = 0;
+  actor.myerRainbowBoostTimer = 0;
+  actor.myerTrailTimer = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -740,6 +812,7 @@ function resetActor() {
   collectedBeers.clear();
   collectedBurgers.clear();
   collectedFootballs.clear();
+  collectedPots.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -939,6 +1012,33 @@ function triggerJacksonSkySmash() {
   tone(170, 0.08, "square", 0.08);
 }
 
+function spawnMyerRainbowTrail(strength = 1) {
+  const colors = ["#ff4f7d", "#ff9f40", "#ffe45e", "#5cff7a", "#53a7ff", "#c47bff"];
+  colors.forEach((color, index) => {
+    particles.push({
+      x: actor.x - 10 + index * 4,
+      y: actor.y + actor.radius * 0.45,
+      vx: -120 - Math.random() * 160,
+      vy: -60 + index * 12 - Math.random() * 60,
+      life: 0.38 + Math.random() * 0.28,
+      size: 3 + Math.random() * 2 + strength,
+      color,
+    });
+  });
+}
+
+function triggerMyerRainbowBoost() {
+  actor.myerRainbowBoostTimer = 2.6;
+  actor.myerTrailTimer = Math.max(actor.myerTrailTimer, 1.2);
+  actor.vy -= 1180;
+  actor.vx += 180;
+  startScreenShake(12, 0.3);
+  tone(760, 0.09, "triangle", 0.08);
+  tone(960, 0.08, "triangle", 0.07);
+  spawnParticles(actor.x, actor.y, 24, "#ffffff");
+  spawnMyerRainbowTrail(2.2);
+}
+
 function updateScreenShake(dt) {
   const spinActive = selectedCharacter.id === "brayden" && actor.beerRageTimer > 0 && actor.state !== "ended";
   const spinDeg = spinActive ? (performance.now() * 0.38) % 360 : 0;
@@ -1025,6 +1125,8 @@ function useAbility() {
     actor.abilityCooldown = 3.5;
   } else if (selectedCharacter.id === "jackson") {
     actor.abilityCooldown = 0;
+  } else if (selectedCharacter.id === "myer") {
+    actor.abilityCooldown = 1.15;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -1169,6 +1271,14 @@ function useAbility() {
       break;
     case "truck":
       useTruck();
+      break;
+    case "leprejump":
+      actor.vy -= 560;
+      actor.vx += 95;
+      actor.myerTrailTimer = Math.max(actor.myerTrailTimer, 0.55);
+      tone(640, 0.07, "triangle", 0.08);
+      tone(880, 0.05, "triangle", 0.06);
+      spawnMyerRainbowTrail(1.2);
       break;
     default:
       break;
@@ -1384,6 +1494,11 @@ function collideBouncePad(pad) {
       startScreenShake(7, 0.2);
     }
 
+    if (selectedCharacter.id === "myer") {
+      actor.myerTrailTimer = Math.max(actor.myerTrailTimer, 1.0);
+      spawnMyerRainbowTrail(1.6);
+    }
+
     spawnParticles(actor.x, actor.y, 16, "#ff7aa8");
     tone(620, 0.06, "triangle", 0.07);
   }
@@ -1437,6 +1552,18 @@ function update(dt) {
       spawnParticles(actor.x, actor.y + actor.radius * 0.45, 4, "#f4d03f");
     }
 
+    if (selectedCharacter.id === "myer") {
+      actor.myerTrailTimer = Math.max(0, actor.myerTrailTimer - dt);
+      if (actor.myerRainbowBoostTimer > 0) {
+        actor.myerRainbowBoostTimer = Math.max(0, actor.myerRainbowBoostTimer - dt);
+        actor.vy -= 520 * dt;
+        actor.vx += 40 * dt;
+        spawnMyerRainbowTrail(1.35);
+      } else if (actor.myerTrailTimer > 0) {
+        spawnMyerRainbowTrail(0.8);
+      }
+    }
+
     actor.vy += world.gravity * actor.gravityMult * dt;
     actor.vx -= actor.vx * actor.drag * dt;
     actor.x += actor.vx * dt;
@@ -1454,6 +1581,9 @@ function update(dt) {
       : [];
     const nearbyFootballs = selectedCharacter.id === "jackson"
       ? getFootballsInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbyPots = selectedCharacter.id === "myer"
+      ? getPotsGoldInRange(actor.x - 260, actor.x + 560)
       : [];
 
     obstacles.forEach(collideRect);
@@ -1534,6 +1664,24 @@ function update(dt) {
       }
     }
 
+    for (const pot of nearbyPots) {
+      const py = terrainY(pot.x) - pot.yOffset;
+      const dx = actor.x - pot.x;
+      const dy = actor.y - py;
+      const hitR = actor.radius + pot.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedPots.add(pot.index);
+        actor.myerPotCount += 1;
+        spawnParticles(pot.x, py, 18, "#ffd84d");
+        spawnParticles(pot.x, py, 8, "#fff6b0");
+        tone(480 + Math.min(280, actor.myerPotCount * 10), 0.05, "triangle", 0.06);
+
+        if (actor.myerPotCount % 10 === 0) {
+          triggerMyerRainbowBoost();
+        }
+      }
+    }
+
     if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
       nearbyJanets.forEach((hugh) => {
         if (destroyedJanets.has(hugh.index)) return;
@@ -1574,6 +1722,9 @@ function update(dt) {
           startScreenShake(22 + impactIntensity * 6.0, 0.45);
         } else if (selectedCharacter.id === "eli") {
           bounceFactor *= 0.86;
+        } else if (selectedCharacter.id === "myer") {
+          actor.myerTrailTimer = Math.max(actor.myerTrailTimer, 0.9);
+          spawnMyerRainbowTrail(1.5);
         }
         actor.vy = -impactVy * bounceFactor;
         actor.vx *= selectedCharacter.id === "eli" ? 0.9 : 0.965;
@@ -1666,6 +1817,8 @@ function getAbilityLabel(character) {
       return "truck boost";
     case "fartpassive":
       return "fart boost (passive)";
+    case "leprejump":
+      return "leprechaun jump";
     default:
       return "ability";
   }
@@ -1784,6 +1937,21 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${footballText}  |  ${truckText}  |  Sky smash in ${nextSkyIn === 0 ? 10 : nextSkyIn} | Uses left: ${smashesLeft}`;
+    return;
+  }
+
+  if (selectedCharacter.id === "myer") {
+    const potText = `Pots: ${actor.myerPotCount}`;
+    const nextBoostIn = 10 - (actor.myerPotCount % 10 || 10);
+    if (actor.myerRainbowBoostTimer > 0) {
+      abilityHint.textContent = `${potText}  |  RAINBOW BOOST ${actor.myerRainbowBoostTimer.toFixed(1)}s | Space: jump`;
+      return;
+    }
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${potText}  |  Space jump in ${actor.abilityCooldown.toFixed(1)}s | Rainbow launch in ${nextBoostIn === 0 ? 10 : nextBoostIn}`;
+      return;
+    }
+    abilityHint.textContent = `${potText}  |  Space: jump | Rainbow launch every 10 pots (in ${nextBoostIn === 0 ? 10 : nextBoostIn})`;
     return;
   }
 
@@ -2045,6 +2213,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "jackson") {
     return ["characters/Jackson .png", "characters/Jackson .jpg"];
   }
+  if (character.id === "myer") {
+    return ["characters/Myer.png", "characters/Myer.jpg"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 
@@ -2221,6 +2392,9 @@ function drawMapDecor() {
   const visibleFootballs = selectedCharacter.id === "jackson"
     ? getFootballsInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
+  const visiblePots = selectedCharacter.id === "myer"
+    ? getPotsGoldInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
 
   visibleCandies.forEach((candy) => {
     const cy = terrainY(candy.x) - candy.yOffset;
@@ -2319,6 +2493,32 @@ function drawMapDecor() {
       ctx.beginPath();
       ctx.ellipse(sx, fy, football.r * 1.1, football.r * 0.75, -0.5, 0, Math.PI * 2);
       ctx.fill();
+    }
+  });
+
+  visiblePots.forEach((pot) => {
+    const py = terrainY(pot.x) - pot.yOffset;
+    const sx = pot.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+
+    const size = pot.r * 2.9;
+    if (myerPotGoldImg && myerPotGoldImg.complete && myerPotGoldImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, py);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + pot.index) * 0.12);
+      ctx.drawImage(myerPotGoldImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#0f8d37";
+      ctx.beginPath();
+      ctx.arc(sx, py + 2, pot.r * 0.92, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffd84d";
+      for (let i = -1; i <= 1; i += 1) {
+        ctx.beginPath();
+        ctx.arc(sx + i * 8, py - 8 + Math.abs(i) * 2, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   });
 
@@ -2800,6 +3000,16 @@ function preloadCharacterImages() {
     }
   };
   reedBurgerImg.src = reedBurgerImageCandidates[reedBurgerIndex];
+
+  myerPotGoldImg = new Image();
+  let myerPotGoldIndex = 0;
+  myerPotGoldImg.onerror = () => {
+    myerPotGoldIndex += 1;
+    if (myerPotGoldIndex < myerPotGoldImageCandidates.length) {
+      myerPotGoldImg.src = myerPotGoldImageCandidates[myerPotGoldIndex];
+    }
+  };
+  myerPotGoldImg.src = myerPotGoldImageCandidates[myerPotGoldIndex];
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
