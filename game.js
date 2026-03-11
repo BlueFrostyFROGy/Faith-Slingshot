@@ -2418,12 +2418,12 @@ submitScoreBtn.addEventListener("click", async () => {
   const distance = actor.maxX - world.launchX;
   addScoreToLeaderboard(name, distance);
   const travelled = parseFloat((distance / 10).toFixed(1));
-  await pushCloudLeaderboardEntry(name, travelled);
+  const cloudOk = await pushCloudLeaderboardEntry(name, travelled);
   await fetchCloudLeaderboard();
   displayLeaderboard();
   submitScoreBtn.disabled = true;
   playerNameInput.disabled = true;
-  playerNameInput.value = "Score submitted!";
+  playerNameInput.value = cloudOk ? "Score submitted!" : "Saved locally (cloud sync failed)";
 });
 
 playAgainBtn.addEventListener("click", () => {
