@@ -234,7 +234,7 @@ const characters = [
     id: "myer",
     name: "Myer the Leprechaun",
     trait: "Rainbow bounce luck",
-    bio: "Space jumps upward. Every bounce leaves a rainbow trail, and every 10 pots of gold trigger a rainbow launch.",
+    bio: "Space jumps upward. Every bounce leaves a rainbow trail, and every 10 Lucky Charms trigger a rainbow launch.",
     imageBase: "Myer",
     initials: "ML",
     mass: 0.84,
@@ -1944,7 +1944,7 @@ function updateAbilityHint() {
   }
 
   if (selectedCharacter.id === "myer") {
-    const potText = `Pots: ${actor.myerPotCount}`;
+    const potText = `Lucky Charms: ${actor.myerPotCount}`;
     const nextBoostIn = 10 - (actor.myerPotCount % 10 || 10);
     if (actor.myerRainbowBoostTimer > 0) {
       abilityHint.textContent = `${potText}  |  RAINBOW BOOST ${actor.myerRainbowBoostTimer.toFixed(1)}s | Space: jump`;
@@ -1954,7 +1954,7 @@ function updateAbilityHint() {
       abilityHint.textContent = `${potText}  |  Space jump in ${actor.abilityCooldown.toFixed(1)}s | Rainbow launch in ${nextBoostIn === 0 ? 10 : nextBoostIn}`;
       return;
     }
-    abilityHint.textContent = `${potText}  |  Space: jump | Rainbow launch every 10 pots (in ${nextBoostIn === 0 ? 10 : nextBoostIn})`;
+    abilityHint.textContent = `${potText}  |  Space: jump | Rainbow launch every 10 Lucky Charms (in ${nextBoostIn === 0 ? 10 : nextBoostIn})`;
     return;
   }
 
