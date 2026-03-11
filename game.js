@@ -1891,7 +1891,7 @@ function addScoreToLeaderboard(playerName, distance) {
 
 async function fetchCloudLeaderboard() {
   try {
-    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=name,distance,created_at&order=distance.desc&limit=${MAX_LEADERBOARD_ENTRIES}`;
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,Distance,created_at&order=Distance.desc&limit=${MAX_LEADERBOARD_ENTRIES}`;
     console.log("Fetching from Supabase:", url);
     const res = await fetch(url, {
       cache: "no-store",
@@ -1913,12 +1913,12 @@ async function fetchCloudLeaderboard() {
       return false;
     }
     const normalized = data
-      .filter((s) => s && typeof s.name === "string" && typeof s.distance === "number")
-      .sort((a, b) => b.distance - a.distance)
+      .filter((s) => s && typeof s.Name === "string" && typeof s.Distance === "number")
+      .sort((a, b) => b.Distance - a.Distance)
       .slice(0, MAX_LEADERBOARD_ENTRIES)
       .map((s) => ({
-        name: s.name.slice(0, 20),
-        distance: Number(s.distance.toFixed(1)),
+        name: s.Name.slice(0, 20),
+        distance: Number(s.Distance.toFixed(1)),
         date: s.created_at ? new Date(s.created_at).toLocaleDateString() : new Date().toLocaleDateString(),
       }));
     saveLeaderboard(normalized);
@@ -1932,8 +1932,8 @@ async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
   try {
     const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}`;
     const body = JSON.stringify({
-      name: playerName.slice(0, 20),
-      distance: Number(travelledMeters.toFixed(1)),
+      Name: playerName.slice(0, 20),
+      Distance: Number(travelledMeters.toFixed(1)),
     });
     console.log("Pushing to Supabase:", url, body);
     const insertRes = await fetch(url, {
