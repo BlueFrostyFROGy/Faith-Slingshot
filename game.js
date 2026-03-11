@@ -156,6 +156,22 @@ const characters = [
     unlockAt: 0,
     ability: "dunk",
   },
+  {
+    id: "brayden",
+    name: "Brayden Voth",
+    trait: "Tennis chaos",
+    bio: "Collect beers. Every 5 beers starts spin mode with infinite jumps for 7.5s. At 20 beers, you die.",
+    imageBase: "Brayden Voth",
+    initials: "B",
+    mass: 1.25,
+    radius: 32,
+    drag: 0.095,
+    bounce: 0.54,
+    gravityMult: 0.98,
+    launchBoost: 1.14,
+    unlockAt: 0,
+    ability: "tennis",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -171,6 +187,7 @@ let pendingSpencerJumpTimeout = null;
 let lastMouseX = canvas.width / 2;
 let lastMouseY = canvas.height / 2;
 let bombs = [];
+let tennisBalls = [];
 const destroyedJanets = new Set();
 
 // Slingshot drag state
@@ -202,6 +219,8 @@ const actor = {
   spencerBombsUsed: 0,
   backflipRotation: 0,
   backflipActive: false,
+  beerCount: 0,
+  beerRageTimer: 0,
 };
 
 const obstacles = [];
@@ -210,7 +229,9 @@ const confetti = [];
 const bouncePadCache = new Map();
 const janetCache = new Map();
 const candyCache = new Map();
+const beerCache = new Map();
 const collectedCandies = new Set();
+const collectedBeers = new Set();
 
 const JANET_BASE = {
   w: 56,
@@ -239,6 +260,9 @@ const fatalObstacleImageCandidates = [
 let fatalObstacleImg = null;
 let spencerBombImg = null;
 let manningFishingRodImg = null;
+let braydenBeerImg = null;
+let braydenRacketImg = null;
+let tennisBallImg = null;
 const candyImgs = [];
 
 const spencerBombImageCandidates = [
@@ -266,6 +290,18 @@ const candyImageCandidates = [
   "characters props/Candy Jew Candy 4.png",
   "characters props/Candy Jew Candy 5.png",
   "characters props/Candy Jew Candy 6.png",
+];
+
+const braydenBeerImageCandidates = [
+  "characters props/Brayden Beer Prop.png",
+];
+
+const braydenRacketImageCandidates = [
+  "characters props/Brayden Tennis Raqet.png",
+];
+
+const tennisBallImageCandidates = [
+  "characters props/Brayden Tennis ball.webp",
 ];
 
 function seededNoise(seed) {
@@ -398,6 +434,46 @@ function getCandiesInRange(startX, endX) {
   return candies;
 }
 
+function createBeer(index) {
+  const spacing = 360;
+  const startX = 1000;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 701) * 220) - 80;
+  const yOffset = 98 + Math.floor(seededNoise(index + 702) * 30);
+
+  return {
+    index,
+    x: baseX + offset,
+    yOffset,
+    r: 14,
+  };
+}
+
+function getBeer(index) {
+  if (!beerCache.has(index)) {
+    beerCache.set(index, createBeer(index));
+  }
+  return beerCache.get(index);
+}
+
+function getBeersInRange(startX, endX) {
+  const spacing = 360;
+  const startXBase = 1000;
+  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 2);
+  const beers = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const beer = getBeer(index);
+    if (collectedBeers.has(beer.index)) continue;
+    if (beer.x + beer.r >= startX && beer.x - beer.r <= endX) {
+      beers.push(beer);
+    }
+  }
+
+  return beers;
+}
+
 let audioCtx;
 
 function ensureAudio() {
@@ -453,12 +529,16 @@ function resetActor() {
   actor.candySpeedBonus = 0;
   actor.rainbowModeTimer = 0;
   actor.rainbowBeamTimer = 0;
+  actor.beerCount = 0;
+  actor.beerRageTimer = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
   bombs.length = 0;
+  tennisBalls.length = 0;
   destroyedJanets.clear();
   collectedCandies.clear();
+  collectedBeers.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -599,11 +679,26 @@ function triggerCandyOverdrive() {
   spawnParticles(actor.x, actor.y, 40, "#ffffff");
 }
 
+function triggerBeerRage() {
+  actor.beerRageTimer = 7.5;
+  actor.vy -= 260;
+  actor.vx += 140;
+  startScreenShake(10, 0.28);
+  tone(260, 0.08, "square", 0.08);
+  tone(330, 0.07, "sawtooth", 0.07);
+  spawnParticles(actor.x, actor.y, 26, "#ffd27a");
+}
+
 function updateScreenShake(dt) {
+  const spinActive = selectedCharacter.id === "brayden" && actor.beerRageTimer > 0 && actor.state !== "ended";
+  const spinDeg = spinActive ? (performance.now() * 0.38) % 360 : 0;
+
   if (screenShakeTime <= 0) {
     screenShakeX = 0;
     screenShakeY = 0;
-    if (appRoot) appRoot.style.transform = "";
+    if (appRoot) {
+      appRoot.style.transform = spinActive ? `rotate(${spinDeg}deg)` : "";
+    }
     return;
   }
 
@@ -616,7 +711,7 @@ function updateScreenShake(dt) {
   const rotDeg = (Math.random() * 2 - 1) * (amplitude * 0.15);
 
   if (appRoot) {
-    appRoot.style.transform = `translate(${screenShakeX}px, ${screenShakeY}px) rotate(${rotDeg}deg)`;
+    appRoot.style.transform = `translate(${screenShakeX}px, ${screenShakeY}px) rotate(${rotDeg + spinDeg}deg)`;
   }
 
   if (screenShakeTime <= 0) {
@@ -669,6 +764,8 @@ function useAbility() {
     actor.abilityCooldown = 4.0;
   } else if (selectedCharacter.id === "candyjew") {
     actor.abilityCooldown = actor.rainbowModeTimer > 0 ? 0 : 0.45;
+  } else if (selectedCharacter.id === "brayden") {
+    actor.abilityCooldown = actor.beerRageTimer > 0 ? 0 : 0.65;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -771,6 +868,35 @@ function useAbility() {
       tone(220, 0.06, "triangle", 0.07);
       spawnParticles(actor.x, actor.y, 24, "#ffd95e");
       break;
+    case "tennis": {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseWorldX = lastMouseX * scaleX + cameraX;
+      const mouseWorldY = lastMouseY * scaleY;
+      const dx = mouseWorldX - actor.x;
+      const dy = mouseWorldY - actor.y;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const dirX = dx / dist;
+      const dirY = dy / dist;
+
+      tennisBalls.push({
+        x: actor.x + dirX * (actor.radius + 6),
+        y: actor.y + dirY * (actor.radius + 6),
+        vx: dirX * 780 + actor.vx * 0.35,
+        vy: dirY * 780 + actor.vy * 0.2,
+        life: 2.2,
+        radius: 10,
+      });
+
+      actor.vy -= actor.beerRageTimer > 0 ? 300 : 220;
+      actor.vx += actor.beerRageTimer > 0 ? 160 : 110;
+
+      tone(520, 0.06, "square", 0.08);
+      tone(700, 0.05, "triangle", 0.06);
+      spawnParticles(actor.x, actor.y, 16, "#b6ff6a");
+      break;
+    }
     default:
       break;
   }
@@ -885,6 +1011,39 @@ function updateBombs(dt) {
   bombs = bombs.filter((bomb) => !(bomb.exploded && bomb.life <= -0.15));
 }
 
+function updateTennisBalls(dt) {
+  tennisBalls.forEach((ball) => {
+    ball.life -= dt;
+    ball.vy += world.gravity * 0.55 * dt;
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+
+    const nearbyJanets = getJanetsInRange(ball.x - 90, ball.x + 90);
+    for (const janet of nearbyJanets) {
+      const janetY = terrainY(janet.x) - janet.yOffset;
+      const nearestX = Math.max(janet.x, Math.min(ball.x, janet.x + janet.w));
+      const nearestY = Math.max(janetY, Math.min(ball.y, janetY + janet.h));
+      const dx = ball.x - nearestX;
+      const dy = ball.y - nearestY;
+      if (dx * dx + dy * dy <= ball.radius * ball.radius) {
+        destroyedJanets.add(janet.index);
+        ball.life = -1;
+        spawnParticles(ball.x, ball.y, 18, "#b6ff6a");
+        tone(360, 0.05, "square", 0.06);
+        break;
+      }
+    }
+
+    const ground = terrainY(ball.x);
+    if (ball.y + ball.radius >= ground) {
+      ball.y = ground - ball.radius;
+      ball.life = -1;
+    }
+  });
+
+  tennisBalls = tennisBalls.filter((ball) => ball.life > 0);
+}
+
 function collideRect(rect) {
   const y = terrainY(rect.x) - rect.yOffset;
   const nearestX = Math.max(rect.x, Math.min(actor.x, rect.x + rect.w));
@@ -951,6 +1110,7 @@ function collideBouncePad(pad) {
 
 function update(dt) {
   updateBombs(dt);
+  updateTennisBalls(dt);
   updateConfetti(dt);
 
   if (actor.state !== "ready" && actor.state !== "ended") {
@@ -985,6 +1145,10 @@ function update(dt) {
       }
     }
 
+    if (selectedCharacter.id === "brayden") {
+      actor.beerRageTimer = Math.max(0, actor.beerRageTimer - dt);
+    }
+
     actor.vy += world.gravity * actor.gravityMult * dt;
     actor.vx -= actor.vx * actor.drag * dt;
     actor.x += actor.vx * dt;
@@ -993,6 +1157,9 @@ function update(dt) {
     const nearbyJanets = getJanetsInRange(actor.x - 220, actor.x + 560);
     const nearbyCandies = selectedCharacter.id === "candyjew"
       ? getCandiesInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbyBeers = selectedCharacter.id === "brayden"
+      ? getBeersInRange(actor.x - 260, actor.x + 560)
       : [];
 
     obstacles.forEach(collideRect);
@@ -1016,6 +1183,28 @@ function update(dt) {
         }
       }
     });
+
+    for (const beer of nearbyBeers) {
+      const by = terrainY(beer.x) - beer.yOffset;
+      const dx = actor.x - beer.x;
+      const dy = actor.y - by;
+      const hitR = actor.radius + beer.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedBeers.add(beer.index);
+        actor.beerCount += 1;
+        spawnParticles(beer.x, by, 16, "#ffd27a");
+        tone(310 + Math.min(280, actor.beerCount * 7), 0.05, "triangle", 0.06);
+
+        if (actor.beerCount % 5 === 0) {
+          triggerBeerRage();
+        }
+
+        if (actor.beerCount >= 20) {
+          finishRun("Run ended: Brayden hit 20 beers.");
+          return;
+        }
+      }
+    }
 
     const ground = terrainY(actor.x);
     if (actor.y + actor.radius >= ground) {
@@ -1110,6 +1299,8 @@ function getAbilityLabel(character) {
       return "powered backflip";
     case "dunk":
       return "dunk hurdle";
+    case "tennis":
+      return "tennis jump / shot";
     default:
       return "ability";
   }
@@ -1178,6 +1369,24 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${candyText}  |  Space: dunk`;
+    return;
+  }
+
+  if (selectedCharacter.id === "brayden") {
+    const beerText = `Beers: ${actor.beerCount}/20`;
+    if (actor.state === "ready") {
+      abilityHint.textContent = `${beerText}  |  Space: jump + aimable tennis shot`;
+      return;
+    }
+    if (actor.beerRageTimer > 0) {
+      abilityHint.textContent = `${beerText}  |  SPIN MODE ${actor.beerRageTimer.toFixed(1)}s | Infinite jumps`;
+      return;
+    }
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${beerText}  |  Reload: ${actor.abilityCooldown.toFixed(1)}s`;
+      return;
+    }
+    abilityHint.textContent = `${beerText}  |  Space: jump + tennis shot`;
     return;
   }
 
@@ -1272,6 +1481,9 @@ function showLeaderboardScreen(distance) {
 }
 
 function getCharacterImageCandidates(character) {
+  if (character.id === "brayden") {
+    return ["characters/Brayden Voth.png", "Brayden Voth.png"];
+  }
   if (character.id === "candyjew") {
     return ["characters/Candy Jew.png", "Candy Jew.png"];
   }
@@ -1418,6 +1630,9 @@ function drawMapDecor() {
   const visibleCandies = selectedCharacter.id === "candyjew"
     ? getCandiesInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
+  const visibleBeers = selectedCharacter.id === "brayden"
+    ? getBeersInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
 
   visibleCandies.forEach((candy) => {
     const cy = terrainY(candy.x) - candy.yOffset;
@@ -1440,6 +1655,29 @@ function drawMapDecor() {
       ctx.fillStyle = "#fff";
       ctx.font = "bold 11px Trebuchet MS";
       ctx.fillText("C", sx - 4, cy + 4);
+    }
+  });
+
+  visibleBeers.forEach((beer) => {
+    const by = terrainY(beer.x) - beer.yOffset;
+    const sx = beer.x - cameraX;
+    if (sx < -70 || sx > canvas.width + 70) return;
+
+    const size = beer.r * 2.3;
+    if (braydenBeerImg && braydenBeerImg.complete && braydenBeerImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, by);
+      ctx.rotate(Math.sin((performance.now() * 0.0035) + beer.index) * 0.13);
+      ctx.drawImage(braydenBeerImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#f6b64d";
+      ctx.beginPath();
+      ctx.arc(sx, by, beer.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 11px Trebuchet MS";
+      ctx.fillText("B", sx - 4, by + 4);
     }
   });
 
@@ -1572,6 +1810,53 @@ function drawFishingRod() {
   ctx.restore();
 }
 
+function drawBraydenRacket() {
+  if (selectedCharacter.id !== "brayden" || actor.state === "ended") return;
+
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mouseWorldX = lastMouseX * scaleX + cameraX;
+  const mouseWorldY = lastMouseY * scaleY;
+  const angle = Math.atan2(mouseWorldY - sy, mouseWorldX - sx);
+
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(angle);
+  if (braydenRacketImg && braydenRacketImg.complete && braydenRacketImg.naturalWidth > 10) {
+    ctx.drawImage(braydenRacketImg, -6, -22, 58, 44);
+  } else {
+    ctx.strokeStyle = "#e8e8e8";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(36, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(44, 0, 10, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTennisBalls() {
+  tennisBalls.forEach((ball) => {
+    const sx = ball.x - cameraX;
+    if (sx < -60 || sx > canvas.width + 60) return;
+    const size = ball.radius * 2;
+    if (tennisBallImg && tennisBallImg.complete && tennisBallImg.naturalWidth > 8) {
+      ctx.drawImage(tennisBallImg, sx - size / 2, ball.y - size / 2, size, size);
+    } else {
+      ctx.fillStyle = "#b6ff6a";
+      ctx.beginPath();
+      ctx.arc(sx, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
 function drawCandyBeam() {
   if (selectedCharacter.id !== "candyjew" || actor.rainbowBeamTimer <= 0) return;
 
@@ -1702,7 +1987,9 @@ function draw() {
   drawTrajectory();
   drawActor();
   drawFishingRod();
+  drawBraydenRacket();
   drawCandyBeam();
+  drawTennisBalls();
   drawBombs();
   drawParticles();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1832,6 +2119,36 @@ function preloadCharacterImages() {
     }
   };
   manningFishingRodImg.src = manningFishingRodImageCandidates[rodIndex];
+
+  braydenBeerImg = new Image();
+  let beerIndex = 0;
+  braydenBeerImg.onerror = () => {
+    beerIndex += 1;
+    if (beerIndex < braydenBeerImageCandidates.length) {
+      braydenBeerImg.src = braydenBeerImageCandidates[beerIndex];
+    }
+  };
+  braydenBeerImg.src = braydenBeerImageCandidates[beerIndex];
+
+  braydenRacketImg = new Image();
+  let racketIndex = 0;
+  braydenRacketImg.onerror = () => {
+    racketIndex += 1;
+    if (racketIndex < braydenRacketImageCandidates.length) {
+      braydenRacketImg.src = braydenRacketImageCandidates[racketIndex];
+    }
+  };
+  braydenRacketImg.src = braydenRacketImageCandidates[racketIndex];
+
+  tennisBallImg = new Image();
+  let tennisBallIndex = 0;
+  tennisBallImg.onerror = () => {
+    tennisBallIndex += 1;
+    if (tennisBallIndex < tennisBallImageCandidates.length) {
+      tennisBallImg.src = tennisBallImageCandidates[tennisBallIndex];
+    }
+  };
+  tennisBallImg.src = tennisBallImageCandidates[tennisBallIndex];
 
   candyImgs.length = 0;
   candyImageCandidates.forEach((path) => {
