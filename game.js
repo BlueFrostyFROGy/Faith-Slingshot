@@ -1214,6 +1214,17 @@ function launch() {
   launchVector = null;
 }
 
+function startNextRunSameCharacter() {
+  leaderboardScreen.classList.remove("active");
+  menuScreen.classList.remove("active");
+  characterScreen.classList.remove("active");
+  controlsPanel.classList.remove("hidden");
+  applyCharacterStats(selectedCharacter);
+  resetActor();
+  distanceValue.textContent = "0";
+  updateHeightUI();
+}
+
 function endJJCutsceneAndResume() {
   if (!jjCutsceneActive) return;
   if (jjCutsceneTimeout) {
@@ -1329,11 +1340,11 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
   actor.vx = 0;
   actor.vy = 0;
   updateAbilityHint();
-  
-  // Show leaderboard screen after a short delay so they see the final position
+
+  // Instantly roll into the next run with the same character.
   setTimeout(() => {
-    showLeaderboardScreen(actor.maxX - world.launchX);
-  }, 800);
+    startNextRunSameCharacter();
+  }, 450);
 }
 
 function useAbility() {
@@ -3611,8 +3622,7 @@ submitScoreBtn.addEventListener("click", async () => {
 });
 
 playAgainBtn.addEventListener("click", () => {
-  leaderboardScreen.classList.remove("active");
-  showMenu();
+  startNextRunSameCharacter();
   world.bestDistance = Math.max(world.bestDistance, actor.maxX - world.launchX);
   localStorage.setItem(STORAGE_KEY, String(world.bestDistance));
   updateHighScoreUI();
