@@ -145,7 +145,7 @@ const characters = [
   },
   {
     id: "candyjew",
-    name: "Candy Jew",
+    name: "Taylor",
     trait: "Sugar overdrive",
     bio: "Collect candies to get faster. Every 10 candies triggers rainbow beam overdrive.",
     imageBase: "Candy Jew",
