@@ -44,6 +44,9 @@ const signUpBtn = document.getElementById("signUpBtn");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const accountStatus = document.getElementById("accountStatus");
+const jjCutsceneOverlay = document.getElementById("jjCutsceneOverlay");
+const jjCutsceneVideo = document.getElementById("jjCutsceneVideo");
+const jjCutsceneFrame = document.getElementById("jjCutsceneFrame");
 
 let authSession = null;
 
@@ -247,6 +250,22 @@ const characters = [
     unlockAt: 0,
     ability: "leprejump",
   },
+  {
+    id: "jjfootballboss",
+    name: "JJFootballBoss",
+    trait: "Rolling growth machine",
+    bio: "Roll over needles to get bigger and faster. Space uses truck boost. At 20,000m, play JJ cutscene and continue.",
+    imageBase: "JJFOOTBALLBOSS",
+    initials: "JJ",
+    mass: 1.22,
+    radius: 30,
+    drag: 0.082,
+    bounce: 0.64,
+    gravityMult: 0.94,
+    launchBoost: 1.18,
+    unlockAt: 0,
+    ability: "truck",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -309,6 +328,9 @@ const actor = {
   myerPotCount: 0,
   myerRainbowBoostTimer: 0,
   myerTrailTimer: 0,
+  jjNeedleCount: 0,
+  jjRollAngle: 0,
+  jjTriggeredCutscene: false,
 };
 
 const obstacles = [];
@@ -321,11 +343,13 @@ const beerCache = new Map();
 const burgerCache = new Map();
 const footballCache = new Map();
 const potGoldCache = new Map();
+const needleCache = new Map();
 const collectedCandies = new Set();
 const collectedBeers = new Set();
 const collectedBurgers = new Set();
 const collectedFootballs = new Set();
 const collectedPots = new Set();
+const collectedNeedles = new Set();
 
 const JANET_BASE = {
   w: 56,
@@ -364,7 +388,12 @@ let tennisBallImg = null;
 let reedBurgerImg = null;
 let jacksonFootballImg = null;
 let myerPotGoldImg = null;
+let jjNeedleImg = null;
 const candyImgs = [];
+
+let jjCutsceneActive = false;
+let jjCutsceneResumeState = null;
+let jjCutsceneTimeout = null;
 
 const spencerBombImageCandidates = [
   "characters props/Spencers Bomb.png",
@@ -445,6 +474,19 @@ const myerPotGoldImageCandidates = [
   "Myers Pot of gold.png",
   "assets/images/myers-pot-of-gold.png",
 ];
+
+const jjNeedleImageCandidates = [
+  "characters props/JJFOOTBALLBOSSNEEDLE.png",
+  "JJFOOTBALLBOSSNEEDLE.png",
+  "assets/images/jjfootballbossneedle.png",
+];
+
+const jjCutsceneVideoCandidates = [
+  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mp4",
+  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).webm",
+  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mov",
+];
+const jjCutscenePdfPath = "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).pdf";
 
 function seededNoise(seed) {
   const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453123;
@@ -736,6 +778,46 @@ function getPotsGoldInRange(startX, endX) {
   return pots;
 }
 
+function createNeedle(index) {
+  const spacing = 300;
+  const startX = 980;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1001) * 210) - 80;
+  const yOffset = 108 + Math.floor(seededNoise(index + 1002) * 36);
+
+  return {
+    index,
+    x: baseX + offset,
+    yOffset,
+    r: 13,
+  };
+}
+
+function getNeedle(index) {
+  if (!needleCache.has(index)) {
+    needleCache.set(index, createNeedle(index));
+  }
+  return needleCache.get(index);
+}
+
+function getNeedlesInRange(startX, endX) {
+  const spacing = 300;
+  const startXBase = 980;
+  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 2);
+  const needles = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const needle = getNeedle(index);
+    if (collectedNeedles.has(needle.index)) continue;
+    if (needle.x + needle.r >= startX && needle.x - needle.r <= endX) {
+      needles.push(needle);
+    }
+  }
+
+  return needles;
+}
+
 let audioCtx;
 
 function ensureAudio() {
@@ -770,6 +852,13 @@ function terrainY(x) {
 
 function resetActor() {
   const forkY = terrainY(world.launchX) - 70;
+
+  if (jjCutsceneActive) {
+    jjCutsceneResumeState = null;
+    endJJCutsceneAndResume();
+  }
+
+  applyCharacterStats(selectedCharacter);
 
   actor.x = world.launchX;
   actor.y = forkY;
@@ -806,6 +895,9 @@ function resetActor() {
   actor.myerPotCount = 0;
   actor.myerRainbowBoostTimer = 0;
   actor.myerTrailTimer = 0;
+  actor.jjNeedleCount = 0;
+  actor.jjRollAngle = 0;
+  actor.jjTriggeredCutscene = false;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -817,6 +909,7 @@ function resetActor() {
   collectedBurgers.clear();
   collectedFootballs.clear();
   collectedPots.clear();
+  collectedNeedles.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -1101,6 +1194,102 @@ function launch() {
   launchVector = null;
 }
 
+function endJJCutsceneAndResume() {
+  if (!jjCutsceneActive) return;
+  if (jjCutsceneTimeout) {
+    clearTimeout(jjCutsceneTimeout);
+    jjCutsceneTimeout = null;
+  }
+
+  jjCutsceneActive = false;
+  if (jjCutsceneOverlay) jjCutsceneOverlay.classList.remove("active");
+
+  if (jjCutsceneVideo) {
+    jjCutsceneVideo.pause();
+    jjCutsceneVideo.removeAttribute("src");
+    jjCutsceneVideo.style.display = "none";
+    jjCutsceneVideo.load();
+  }
+  if (jjCutsceneFrame) {
+    jjCutsceneFrame.removeAttribute("src");
+    jjCutsceneFrame.style.display = "none";
+  }
+
+  if (jjCutsceneResumeState) {
+    actor.vx = jjCutsceneResumeState.vx;
+    actor.vy = jjCutsceneResumeState.vy;
+    actor.state = jjCutsceneResumeState.state;
+    actor.abilityCooldown = jjCutsceneResumeState.abilityCooldown;
+    runStateLabel.textContent = "JJ highlight done — back in the run!";
+  }
+
+  jjCutsceneResumeState = null;
+}
+
+function triggerJJCutscene() {
+  if (jjCutsceneActive || actor.jjTriggeredCutscene || selectedCharacter.id !== "jjfootballboss") return;
+  actor.jjTriggeredCutscene = true;
+  jjCutsceneActive = true;
+  jjCutsceneResumeState = {
+    vx: actor.vx,
+    vy: actor.vy,
+    state: actor.state,
+    abilityCooldown: actor.abilityCooldown,
+  };
+
+  actor.vx = 0;
+  actor.vy = 0;
+  actor.state = "flying";
+  actor.abilityCooldown = 0;
+  runStateLabel.textContent = "JJ highlight playing...";
+
+  if (jjCutsceneOverlay) jjCutsceneOverlay.classList.add("active");
+  if (jjCutsceneVideo) jjCutsceneVideo.style.display = "none";
+  if (jjCutsceneFrame) jjCutsceneFrame.style.display = "none";
+
+  const playPdfFallback = () => {
+    if (!jjCutsceneFrame) return;
+    jjCutsceneFrame.src = encodeURI(jjCutscenePdfPath);
+    jjCutsceneFrame.style.display = "block";
+  };
+
+  if (jjCutsceneVideo) {
+    let chosenVideo = null;
+    for (const candidate of jjCutsceneVideoCandidates) {
+      if (candidate.toLowerCase().endsWith(".mp4") && jjCutsceneVideo.canPlayType("video/mp4")) {
+        chosenVideo = candidate;
+        break;
+      }
+      if (candidate.toLowerCase().endsWith(".webm") && jjCutsceneVideo.canPlayType("video/webm")) {
+        chosenVideo = candidate;
+        break;
+      }
+      if (candidate.toLowerCase().endsWith(".mov") && jjCutsceneVideo.canPlayType("video/quicktime")) {
+        chosenVideo = candidate;
+        break;
+      }
+    }
+
+    if (chosenVideo) {
+      jjCutsceneVideo.src = encodeURI(chosenVideo);
+      jjCutsceneVideo.currentTime = 0;
+      jjCutsceneVideo.style.display = "block";
+      jjCutsceneVideo.play().catch(() => {
+        jjCutsceneVideo.style.display = "none";
+        playPdfFallback();
+      });
+    } else {
+      playPdfFallback();
+    }
+  } else {
+    playPdfFallback();
+  }
+
+  jjCutsceneTimeout = setTimeout(() => {
+    endJJCutsceneAndResume();
+  }, 20000);
+}
+
 function finishRun(message = "Run ended: no movement left. Press Restart Run.") {
   runStateLabel.textContent = message;
   launchBtn.disabled = true;
@@ -1137,6 +1326,8 @@ function useAbility() {
   } else if (selectedCharacter.id === "reed") {
     actor.abilityCooldown = 3.5;
   } else if (selectedCharacter.id === "jackson") {
+    actor.abilityCooldown = 0;
+  } else if (selectedCharacter.id === "jjfootballboss") {
     actor.abilityCooldown = 0;
   } else if (selectedCharacter.id === "myer") {
     actor.abilityCooldown = 1.15;
@@ -1301,7 +1492,7 @@ function useAbility() {
 }
 
 function useTruck() {
-  if (selectedCharacter.id !== "anthony" && selectedCharacter.id !== "jackson") return;
+  if (selectedCharacter.id !== "anthony" && selectedCharacter.id !== "jackson" && selectedCharacter.id !== "jjfootballboss") return;
   if (actor.state === "ready" || actor.state === "ended") return;
   if (actor.truckCount <= 0) {
     tone(120, 0.06, "sine", 0.05);
@@ -1518,6 +1709,13 @@ function collideBouncePad(pad) {
 }
 
 function update(dt) {
+  if (jjCutsceneActive) {
+    updateParticles(dt);
+    updateImpactBursts(dt);
+    updateScreenShake(dt);
+    return;
+  }
+
   updateBombs(dt);
   updateTennisBalls(dt);
   updateConfetti(dt);
@@ -1577,6 +1775,10 @@ function update(dt) {
       }
     }
 
+    if (selectedCharacter.id === "jjfootballboss") {
+      actor.jjRollAngle += (actor.vx * dt) / Math.max(10, actor.radius);
+    }
+
     actor.vy += world.gravity * actor.gravityMult * dt;
     actor.vx -= actor.vx * actor.drag * dt;
     actor.x += actor.vx * dt;
@@ -1597,6 +1799,9 @@ function update(dt) {
       : [];
     const nearbyPots = selectedCharacter.id === "myer"
       ? getPotsGoldInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbyNeedles = selectedCharacter.id === "jjfootballboss"
+      ? getNeedlesInRange(actor.x - 260, actor.x + 560)
       : [];
 
     obstacles.forEach(collideRect);
@@ -1695,6 +1900,22 @@ function update(dt) {
       }
     }
 
+    for (const needle of nearbyNeedles) {
+      const ny = terrainY(needle.x) - needle.yOffset;
+      const dx = actor.x - needle.x;
+      const dy = actor.y - ny;
+      const hitR = actor.radius + needle.r * 0.86;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedNeedles.add(needle.index);
+        actor.jjNeedleCount += 1;
+        actor.radius = Math.min(64, actor.radius + 0.8);
+        actor.vx = Math.max(140, actor.vx * 1.035 + 24);
+        actor.drag = Math.max(0.05, actor.drag - 0.0015);
+        spawnParticles(needle.x, ny, 16, "#8ee8ff");
+        tone(520 + Math.min(260, actor.jjNeedleCount * 7), 0.05, "triangle", 0.06);
+      }
+    }
+
     if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
       nearbyJanets.forEach((hugh) => {
         if (destroyedJanets.has(hugh.index)) return;
@@ -1767,6 +1988,10 @@ function update(dt) {
     const travelled = Math.max(0, (actor.maxX - world.launchX) / 10);
     distanceValue.textContent = travelled.toFixed(1);
     updateHeightUI();
+
+    if (selectedCharacter.id === "jjfootballboss" && travelled >= 20000 && !actor.jjTriggeredCutscene) {
+      triggerJJCutscene();
+    }
 
     if (travelled > world.bestDistance) {
       world.bestDistance = travelled;
@@ -1951,6 +2176,16 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${footballText}  |  ${truckText}  |  Sky smash in ${nextSkyIn === 0 ? 10 : nextSkyIn} | Uses left: ${smashesLeft}`;
+    return;
+  }
+
+  if (selectedCharacter.id === "jjfootballboss") {
+    const needleText = `Needles: ${actor.jjNeedleCount}`;
+    const truckText = actor.truckCount > 0
+      ? `Space: truck (${actor.truckCount} left)`
+      : "No trucks left";
+    const cutsceneText = actor.jjTriggeredCutscene ? "Highlight done" : "Highlight at 20,000m";
+    abilityHint.textContent = `${needleText}  |  ${truckText}  |  ${cutsceneText}`;
     return;
   }
 
@@ -2230,6 +2465,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "myer") {
     return ["characters/Myer.png", "characters/Myer.jpg"];
   }
+  if (character.id === "jjfootballboss") {
+    return ["characters/JJFOOTBALLBOSS.png", "characters/JJFOOTBALLBOSS.jpg"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 
@@ -2409,6 +2647,9 @@ function drawMapDecor() {
   const visiblePots = selectedCharacter.id === "myer"
     ? getPotsGoldInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
+  const visibleNeedles = selectedCharacter.id === "jjfootballboss"
+    ? getNeedlesInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
 
   visibleCandies.forEach((candy) => {
     const cy = terrainY(candy.x) - candy.yOffset;
@@ -2536,6 +2777,30 @@ function drawMapDecor() {
     }
   });
 
+  visibleNeedles.forEach((needle) => {
+    const ny = terrainY(needle.x) - needle.yOffset;
+    const sx = needle.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+
+    const size = needle.r * 3.4;
+    if (jjNeedleImg && jjNeedleImg.complete && jjNeedleImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, ny);
+      ctx.rotate(-0.58 + Math.sin((performance.now() * 0.003) + needle.index) * 0.04);
+      ctx.drawImage(jjNeedleImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.strokeStyle = "#9be9ff";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(sx - needle.r * 1.2, ny + needle.r * 0.35);
+      ctx.lineTo(sx + needle.r * 1.35, ny - needle.r * 0.5);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+
   visibleBouncePads.forEach((b) => {
     const y = terrainY(b.x) - b.yOffset;
     const sx = b.x - cameraX;
@@ -2586,6 +2851,12 @@ function drawActor() {
   if (selectedCharacter.id === "eli" && actor.backflipRotation > 0) {
     ctx.translate(sx, sy);
     ctx.rotate(actor.backflipRotation);
+    ctx.translate(-sx, -sy);
+  }
+
+  if (selectedCharacter.id === "jjfootballboss" && actor.state !== "ready") {
+    ctx.translate(sx, sy);
+    ctx.rotate(actor.jjRollAngle || 0);
     ctx.translate(-sx, -sy);
   }
   
@@ -3024,6 +3295,16 @@ function preloadCharacterImages() {
     }
   };
   myerPotGoldImg.src = myerPotGoldImageCandidates[myerPotGoldIndex];
+
+  jjNeedleImg = new Image();
+  let jjNeedleIndex = 0;
+  jjNeedleImg.onerror = () => {
+    jjNeedleIndex += 1;
+    if (jjNeedleIndex < jjNeedleImageCandidates.length) {
+      jjNeedleImg.src = jjNeedleImageCandidates[jjNeedleIndex];
+    }
+  };
+  jjNeedleImg.src = jjNeedleImageCandidates[jjNeedleIndex];
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;

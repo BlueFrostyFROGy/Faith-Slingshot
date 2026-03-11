@@ -90,6 +90,10 @@ canvas {
 
 .panel.large { width: min(920px, 95vw); }
 
+.jj-cutscene-panel {
+  width: min(980px, 96vw);
+}
+
 .panel h2 { margin-top: 0; }
 
 .btn {
