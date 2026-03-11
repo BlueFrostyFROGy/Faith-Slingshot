@@ -589,8 +589,10 @@ function startScreenShake(strength = 8, duration = 0.24) {
 }
 
 function triggerCandyOverdrive() {
-  actor.rainbowModeTimer = 1.0;
+  actor.rainbowModeTimer = 10.0;
   actor.rainbowBeamTimer = 1.0;
+  actor.vy -= 520;
+  actor.vx += 180;
   startScreenShake(14, 0.35);
   tone(740, 0.08, "triangle", 0.09);
   tone(910, 0.08, "triangle", 0.08);
@@ -889,6 +891,13 @@ function collideRect(rect) {
   const dy = actor.y - nearestY;
   if (dx * dx + dy * dy <= actor.radius * actor.radius) {
     if (rect.fatal) {
+      if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0) {
+        actor.vx += 240;
+        actor.vy -= 120;
+        spawnParticles(actor.x, actor.y, 28, "#ffffff");
+        startScreenShake(10, 0.22);
+        return;
+      }
       if (actor.isTrucking) {
         actor.vx += 220;
         spawnParticles(actor.x, actor.y, 40, "#ffcd3c");
@@ -967,8 +976,8 @@ function update(dt) {
       if (actor.rainbowModeTimer > 0) {
         actor.rainbowModeTimer = Math.max(0, actor.rainbowModeTimer - dt);
         actor.rainbowBeamTimer = Math.max(0, actor.rainbowBeamTimer - dt);
-        const beamAngle = -0.62;
-        const beamForce = 980;
+        const beamAngle = -0.98;
+        const beamForce = 1320;
         actor.vx += Math.cos(beamAngle) * beamForce * dt;
         actor.vy += Math.sin(beamAngle) * beamForce * dt;
       }
