@@ -71,9 +71,14 @@ const JJ_JUMP_REGEN_SECONDS = 3;
 const KADE_JUMP_RESET_SPEED = 100; // px/s — base speed after jump penalty
 const KADE_ACCEL = 280;            // px/s² passive BMW acceleration
 const KADE_MAX_SPEED = 5000;       // px/s top speed cap
-const CALEB_JUMP_VY = 760;         // fixed jump strength (clears Hugh Henderson)
+const CALEB_JUMP_VY = 760;         // fixed jump strength
+const CALEB_JUMP_COOLDOWN = 2.5;   // seconds between jumps
 const CALEB_ACCEL = 190;           // px/s² passive T-Rex acceleration
 const CALEB_MAX_SPEED = 3600;      // px/s top speed cap
+const CALEB_ON_FOOT_RADIUS = 24;
+const CALEB_ON_FOOT_DRAG = 0.064;
+const CALEB_ON_FOOT_BOUNCE = 0.5;
+const CALEB_ON_FOOT_GRAVITY = 0.96;
 
 // Sal (anthony) shrink-on-distance constants
 const SAL_SHRINK_INTERVAL = 100;   // metres between each shrink
@@ -441,6 +446,7 @@ const actor = {
   kadeSpeed: KADE_JUMP_RESET_SPEED,
   kadeSlowdownPending: false,
   calebSpeed: KADE_JUMP_RESET_SPEED,
+  calebHasDino: true,
   lincolnAdhd: 0,
   lincolnImmunityTimer: 0,
   lukeItemCount: 0,
@@ -1140,6 +1146,7 @@ function resetActor() {
   actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
   actor.kadeSlowdownPending = false;
   actor.calebSpeed = KADE_JUMP_RESET_SPEED;
+  actor.calebHasDino = true;
   actor.lincolnAdhd = 0;
   actor.lincolnImmunityTimer = 0;
   actor.lukeItemCount = 0;
@@ -1497,6 +1504,8 @@ function useAbility() {
     actor.abilityCooldown = 0;
   } else if (selectedCharacter.id === "myer") {
     actor.abilityCooldown = 1.15;
+  } else if (selectedCharacter.id === "calebparker") {
+    actor.abilityCooldown = CALEB_JUMP_COOLDOWN;
   } else if (selectedCharacter.id === "lincolnjames") {
     actor.abilityCooldown = 2;
   } else if (selectedCharacter.id === "lukepueppke") {
@@ -1668,18 +1677,9 @@ function useAbility() {
       startScreenShake(8, 0.18);
       break;
     case "trexjump": {
-      // Only allow jump when on the ground
-      const groundY = terrainY(actor.x);
-      const isGrounded = actor.y + actor.radius >= groundY - 18;
-      if (!isGrounded) {
-        tone(120, 0.04, "sine", 0.04);
-        break;
-      }
-      // Jump to exactly 30m height: v = sqrt(2 * g * h), h = 30m = 300px
-      const effectiveGravity = world.gravity * actor.gravityMult;
-      const jumpVy = Math.sqrt(2 * effectiveGravity * 300);
-      actor.vy = -jumpVy;
-      actor.abilityCooldown = 0.52;
+      actor.vy -= CALEB_JUMP_VY;
+      actor.vx += actor.calebHasDino ? 80 : 55;
+      actor.abilityCooldown = CALEB_JUMP_COOLDOWN;
       tone(240, 0.07, "square", 0.08);
       tone(520, 0.05, "triangle", 0.06);
       spawnParticles(actor.x, actor.y, 20, "#9bff74");
@@ -1904,6 +1904,23 @@ function collideRect(rect) {
         startScreenShake(8, 0.18);
         return;
       }
+      if (selectedCharacter.id === "calebparker" && actor.calebHasDino) {
+        actor.calebHasDino = false;
+        actor.radius = CALEB_ON_FOOT_RADIUS;
+        actor.drag = CALEB_ON_FOOT_DRAG;
+        actor.bounce = CALEB_ON_FOOT_BOUNCE;
+        actor.gravityMult = CALEB_ON_FOOT_GRAVITY;
+        actor.vx = Math.max(actor.vx * 0.78, 260);
+        actor.vy = Math.min(actor.vy - 140, -140);
+        destroyedJanets.add(rect.index);
+        spawnParticles(actor.x, actor.y, 34, "#9bff74");
+        spawnParticles(actor.x, actor.y, 14, "#ffffff");
+        tone(170, 0.08, "square", 0.09);
+        tone(110, 0.08, "triangle", 0.08);
+        startScreenShake(13, 0.24);
+        runStateLabel.textContent = "Caleb lost the T-Rex but keeps running!";
+        return;
+      }
       if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
         destroyedJanets.add(rect.index);
         actor.vy = Math.min(actor.vy, -1200);
@@ -2055,7 +2072,7 @@ function update(dt) {
       actor.kadeSpeed = Math.min(KADE_MAX_SPEED, actor.kadeSpeed + KADE_ACCEL * dt);
     }
 
-    if (selectedCharacter.id === "calebparker" && actor.state === "flying") {
+    if (selectedCharacter.id === "calebparker" && actor.state === "flying" && actor.calebHasDino) {
       actor.calebSpeed = Math.min(CALEB_MAX_SPEED, actor.calebSpeed + CALEB_ACCEL * dt);
     }
 
@@ -2105,7 +2122,7 @@ function update(dt) {
       // BMW engine never lets vx drop below current accumulated speed
       actor.vx = Math.max(actor.vx, actor.kadeSpeed);
     }
-    if (selectedCharacter.id === "calebparker" && actor.state === "flying") {
+    if (selectedCharacter.id === "calebparker" && actor.state === "flying" && actor.calebHasDino) {
       // T-Rex momentum keeps building through the run
       actor.vx = Math.max(actor.vx, actor.calebSpeed);
     }
@@ -2618,8 +2635,14 @@ function updateAbilityHint() {
   }
 
   if (selectedCharacter.id === "calebparker") {
-    const mphApprox = (actor.calebSpeed / 22.4).toFixed(0);
-    abilityHint.textContent = `T-Rex speed: ~${mphApprox} mph  |  Space: fixed jump (clears Hugh)`;
+    const jumpReady = actor.abilityCooldown <= 0;
+    const cooldownText = jumpReady ? "Jump ready" : `Jump in ${actor.abilityCooldown.toFixed(1)}s`;
+    if (actor.calebHasDino) {
+      const mphApprox = (actor.calebSpeed / 22.4).toFixed(0);
+      abilityHint.textContent = `T-Rex speed: ~${mphApprox} mph  |  Space: jump  |  ${cooldownText}`;
+    } else {
+      abilityHint.textContent = `On foot (T-Rex lost)  |  Space: jump  |  ${cooldownText}`;
+    }
     return;
   }
 
@@ -3714,7 +3737,7 @@ function drawKadeBMW() {
 }
 
 function drawCalebTrex() {
-  if (selectedCharacter.id !== "calebparker" || actor.state === "ready") return;
+  if (selectedCharacter.id !== "calebparker" || actor.state === "ready" || !actor.calebHasDino) return;
   const sx = actor.x - cameraX;
   const sy = actor.y;
   const r = actor.radius;
