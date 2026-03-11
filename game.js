@@ -267,6 +267,7 @@ const JANET_BASE = {
 };
 
 const fatalObstacleImageCandidates = [
+  "Obstacle Hugh Henderson.jpeg",
   "Obstacle Hugh Henderson.png",
   "Obstacle TB.png",
   "assets/images/obstacle-hugh-henderson.png",
