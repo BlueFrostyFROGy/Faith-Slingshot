@@ -436,6 +436,9 @@ const jacksonFootballImageCandidates = [
 ];
 
 const myerPotGoldImageCandidates = [
+  "characters props/Myers Lucky Charms.jpg",
+  "characters props/Myers Lucky Charms.png",
+  "Myers Lucky Charms.jpg",
   "characters props/Myers Pot of gold.png",
   "characters props/Myers Pot Of Gold.png",
   "Myers Pot of gold.png",
