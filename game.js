@@ -792,15 +792,15 @@ function triggerBeerRage() {
 }
 
 function triggerReedBasicFartJump() {
-  actor.vy -= 520;
-  actor.vx += 85;
+  actor.vy -= 620;
+  actor.vx += 120;
   tone(120, 0.05, "sawtooth", 0.06);
   spawnParticles(actor.x, actor.y + actor.radius * 0.5, 20, "#6b3e1f");
 }
 
 function triggerReedSkyLaunch() {
-  actor.vy -= 1250;
-  actor.vx += 260;
+  actor.vy -= 1450;
+  actor.vx += 320;
   startScreenShake(14, 0.36);
   tone(140, 0.09, "sawtooth", 0.09);
   tone(95, 0.08, "triangle", 0.08);
