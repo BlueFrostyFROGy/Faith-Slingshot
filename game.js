@@ -74,6 +74,9 @@ const JJ_JUMP_REGEN_SECONDS = 1;
 const KADE_JUMP_RESET_SPEED = 100; // px/s ≈ "10 mph" after jump
 const KADE_ACCEL = 160;            // px/s² passive BMW acceleration
 const KADE_MAX_SPEED = 3200;       // px/s top speed cap
+const CALEB_JUMP_VY = 760;         // fixed jump strength (clears Hugh Henderson)
+const CALEB_ACCEL = 190;           // px/s² passive T-Rex acceleration
+const CALEB_MAX_SPEED = 3600;      // px/s top speed cap
 
 // Sal (anthony) shrink-on-distance constants
 const SAL_SHRINK_INTERVAL = 100;   // metres between each shrink
@@ -306,6 +309,22 @@ const characters = [
     unlockAt: 0,
     ability: "bmwjump",
   },
+  {
+    id: "calebparker",
+    name: "Caleb Parker",
+    trait: "T-Rex rider",
+    bio: "Rides a T-Rex that gets faster and faster. Space does a fixed-height jump high enough to clear Hugh Henderson.",
+    imageBase: "Caleb Parker",
+    initials: "CP",
+    mass: 1.44,
+    radius: 33,
+    drag: 0.03,
+    bounce: 0.5,
+    gravityMult: 0.94,
+    launchBoost: 1.14,
+    unlockAt: 0,
+    ability: "trexjump",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -376,6 +395,8 @@ const actor = {
   jjJumpRegenTimer: 0,
   jjJumpCharges: 1,
   kadeSpeed: KADE_JUMP_RESET_SPEED,
+  kadeSlowdownPending: false,
+  calebSpeed: KADE_JUMP_RESET_SPEED,
 };
 
 const obstacles = [];
@@ -437,6 +458,7 @@ let jjNeedleImg = null;
 const candyImgs = [];
 
 let kadeBMWImg = null;
+let calebTrexImg = null;
 
 let jjCutsceneActive = false;
 let jjCutsceneResumeState = null;
@@ -994,6 +1016,8 @@ function resetActor() {
   actor.jjJumpRegenTimer = JJ_JUMP_REGEN_SECONDS;
   actor.jjJumpCharges = JJ_JUMP_MAX;
   actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
+  actor.kadeSlowdownPending = false;
+  actor.calebSpeed = KADE_JUMP_RESET_SPEED;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -1583,16 +1607,25 @@ function useAbility() {
       spawnMyerRainbowTrail(1.2);
       break;
     case "bmwjump":
-      // Jump — but slam BMW speed back to 10 mph
+      // Jump now, then slow BMW AFTER landing from this jump
       actor.vy -= 500;
-      actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
-      actor.vx = Math.min(actor.vx, KADE_JUMP_RESET_SPEED + 60);
+      actor.kadeSlowdownPending = true;
       actor.abilityCooldown = 0.6;
       tone(320, 0.07, "triangle", 0.08);
       tone(180, 0.06, "sawtooth", 0.07);
       spawnParticles(actor.x, actor.y, 22, "#1a5cff");
       spawnParticles(actor.x, actor.y, 10, "#ffffff");
       startScreenShake(8, 0.18);
+      break;
+    case "trexjump":
+      // Fixed jump height every time
+      actor.vy = -CALEB_JUMP_VY;
+      actor.abilityCooldown = 0.52;
+      tone(240, 0.07, "square", 0.08);
+      tone(520, 0.05, "triangle", 0.06);
+      spawnParticles(actor.x, actor.y, 20, "#9bff74");
+      spawnParticles(actor.x, actor.y, 10, "#ffffff");
+      startScreenShake(7, 0.16);
       break;
     default:
       break;
@@ -1935,6 +1968,10 @@ function update(dt) {
       actor.kadeSpeed = Math.min(KADE_MAX_SPEED, actor.kadeSpeed + KADE_ACCEL * dt);
     }
 
+    if (selectedCharacter.id === "calebparker" && actor.state === "flying") {
+      actor.calebSpeed = Math.min(CALEB_MAX_SPEED, actor.calebSpeed + CALEB_ACCEL * dt);
+    }
+
     if (selectedCharacter.id === "anthony" && actor.state === "flying") {
       const travelled = Math.max(0, (actor.maxX - world.launchX) / 10);
       const newStage = Math.floor(travelled / SAL_SHRINK_INTERVAL);
@@ -1964,6 +2001,10 @@ function update(dt) {
     if (selectedCharacter.id === "kaderess" && actor.state === "flying") {
       // BMW engine never lets vx drop below current accumulated speed
       actor.vx = Math.max(actor.vx, actor.kadeSpeed);
+    }
+    if (selectedCharacter.id === "calebparker" && actor.state === "flying") {
+      // T-Rex momentum keeps building through the run
+      actor.vx = Math.max(actor.vx, actor.calebSpeed);
     }
     actor.x += actor.vx * dt;
     actor.y += actor.vy * dt;
@@ -2159,6 +2200,13 @@ function update(dt) {
         actor.vx *= 0.975;
       }
 
+      if (selectedCharacter.id === "kaderess" && actor.kadeSlowdownPending) {
+        actor.kadeSlowdownPending = false;
+        actor.kadeSpeed = KADE_JUMP_RESET_SPEED;
+        actor.vx = Math.min(actor.vx, KADE_JUMP_RESET_SPEED + 60);
+        spawnParticles(actor.x, actor.y, 12, "#9bc1ff");
+      }
+
       if (Math.abs(actor.vx) < 55) {
         actor.vx = 55;
       }
@@ -2242,6 +2290,10 @@ function getAbilityLabel(character) {
       return "fart boost (passive)";
     case "leprejump":
       return "leprechaun jump";
+    case "bmwjump":
+      return "BMW jump";
+    case "trexjump":
+      return "T-Rex jump";
     default:
       return "ability";
   }
@@ -2383,7 +2435,14 @@ function updateAbilityHint() {
 
   if (selectedCharacter.id === "kaderess") {
     const mphApprox = (actor.kadeSpeed / 22.4).toFixed(0);
-    abilityHint.textContent = `BMW speed: ~${mphApprox} mph  |  Space: jump (resets to 10 mph)`;
+    const resetText = actor.kadeSlowdownPending ? "reset queued on landing" : "next jump queues reset";
+    abilityHint.textContent = `BMW speed: ~${mphApprox} mph  |  Space: jump (${resetText})`;
+    return;
+  }
+
+  if (selectedCharacter.id === "calebparker") {
+    const mphApprox = (actor.calebSpeed / 22.4).toFixed(0);
+    abilityHint.textContent = `T-Rex speed: ~${mphApprox} mph  |  Space: fixed jump (clears Hugh)`;
     return;
   }
 
@@ -2778,6 +2837,9 @@ function getCharacterImageCandidates(character) {
   }
   if (character.id === "kaderess") {
     return ["characters/Kade Ress.png", "Kade Ress.png"];
+  }
+  if (character.id === "calebparker") {
+    return ["characters/Caleb Parker.png", "Caleb Parker.png"];
   }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
@@ -3332,6 +3394,51 @@ function drawKadeBMW() {
   ctx.restore();
 }
 
+function drawCalebTrex() {
+  if (selectedCharacter.id !== "calebparker" || actor.state === "ready") return;
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const r = actor.radius;
+
+  const trexW = r * 5.8;
+  const trexH = r * 3.2;
+  const trexX = sx - trexW * 0.52;
+  const trexY = sy - r * 0.35;
+
+  ctx.save();
+  if (calebTrexImg && calebTrexImg.complete && calebTrexImg.naturalWidth > 10) {
+    ctx.drawImage(calebTrexImg, trexX, trexY, trexW, trexH);
+  } else {
+    // Fallback dinosaur shape
+    ctx.fillStyle = "#4f6d3a";
+    ctx.beginPath();
+    ctx.ellipse(sx - r * 0.4, sy + r * 0.2, r * 2.2, r * 1.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(sx + r * 1.7, sy - r * 0.3, r * 1.0, r * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(sx - r * 2.2, sy);
+    ctx.lineTo(sx - r * 3.5, sy - r * 0.9);
+    ctx.lineTo(sx - r * 2.8, sy + r * 0.2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  if (actor.calebSpeed > 650) {
+    const alpha = Math.min(0.5, (actor.calebSpeed - 650) / 2700);
+    const grd = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, r * 3.0);
+    grd.addColorStop(0, `rgba(135,255,120,${alpha})`);
+    grd.addColorStop(1, "rgba(135,255,120,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.ellipse(sx - r * 1.4, sy + r * 0.4, r * 2.6, r * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawTennisBalls() {
   tennisBalls.forEach((ball) => {
     const sx = ball.x - cameraX;
@@ -3477,6 +3584,7 @@ function draw() {
   drawSlingshotBands();
   drawTrajectory();
   drawKadeBMW();
+  drawCalebTrex();
   drawActor();
   drawFishingRod();
   drawBraydenRacket();
@@ -3674,6 +3782,9 @@ function preloadCharacterImages() {
 
   kadeBMWImg = new Image();
   kadeBMWImg.src = "characters props/Kade BMW.png";
+
+  calebTrexImg = new Image();
+  calebTrexImg.src = "characters props/Caleb Trex.webp";
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
