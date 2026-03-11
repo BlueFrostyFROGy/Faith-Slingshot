@@ -296,14 +296,27 @@ const candyImageCandidates = [
 
 const braydenBeerImageCandidates = [
   "characters props/Brayden Beer Prop.png",
+  "characters props/Brayen Beer Prop.png",
+  "Brayden Beer Prop.png",
+  "Brayen Beer Prop.png",
 ];
 
 const braydenRacketImageCandidates = [
   "characters props/Brayden Tennis Raqet.png",
+  "characters props/Brayden Tennis Racket.png",
+  "characters props/Brayden Tennis.png",
+  "Brayden Tennis Raqet.png",
+  "Brayden Tennis Racket.png",
+  "Brayden Tennis.png",
 ];
 
 const tennisBallImageCandidates = [
   "characters props/Brayden Tennis ball.webp",
+  "characters props/Brayden Tennis Ball.webp",
+  "characters props/Brayden Tennis ball.png",
+  "characters props/Brayden Tennis Ball.png",
+  "Brayden Tennis ball.webp",
+  "Brayden Tennis Ball.webp",
 ];
 
 function seededNoise(seed) {
