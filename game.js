@@ -185,7 +185,7 @@ const characters = [
     id: "eli",
     name: "Eli Ailshie",
     trait: "Backflip master",
-    bio: "Nimble acrobat. Backflips on every bounce. Space for powered backflip.",
+    bio: "Nimble acrobat. Backflips on every bounce. Space for powered backflip — can do 2 per airtime!",
     imageBase: "Eli Ailshie",
     initials: "E",
     mass: 0.72,
@@ -372,6 +372,7 @@ const actor = {
   spencerBombsUsed: 0,
   backflipRotation: 0,
   backflipActive: false,
+  eliFlipsUsed: 0,
   overdriveDunksLeft: 0,
   candyDunkCount: 0,
   candyOverdrivesUsed: 0,
@@ -989,6 +990,7 @@ function resetActor() {
   actor.spencerBombsUsed = 0;
   actor.backflipRotation = 0;
   actor.backflipActive = false;
+  actor.eliFlipsUsed = 0;
   actor.candyCount = 0;
   actor.candySpeedBonus = 0;
   actor.rainbowModeTimer = 0;
@@ -1535,12 +1537,14 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 30, "#d39cff");
       break;
     case "backflip":
-      // Eli's powered backflip - massive upward boost
+      // Eli's powered backflip - 2 uses per airtime
       actor.vy -= 700;
       actor.vx += 120;
       actor.vx *= 0.92;
       actor.backflipActive = true;
       actor.backflipRotation = 0;
+      actor.eliFlipsUsed += 1;
+      actor.abilityCooldown = 0.35; // short delay between the two flips
       tone(600, 0.08, "triangle", 0.1);
       tone(420, 0.06, "square", 0.08);
       spawnParticles(actor.x, actor.y, 32, "#ff66ff");
@@ -2202,10 +2206,12 @@ function update(dt) {
         if (selectedCharacter.id === "eli" && impactVy > 230) {
           actor.backflipActive = true;
           actor.backflipRotation = 0;
+          actor.eliFlipsUsed = 0; // reset so next airtime allows 2 more flips
         }
       } else {
         actor.vy = 0;
         actor.vx *= 0.975;
+        if (selectedCharacter.id === "eli") actor.eliFlipsUsed = 0;
       }
 
       if (selectedCharacter.id === "kaderess" && actor.kadeSlowdownPending) {
