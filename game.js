@@ -1,7 +1,9 @@
 const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const MAX_LEADERBOARD_ENTRIES = 10;
-const CLOUD_LEADERBOARD_URL = "https://jsonblob.com/api/jsonBlob/019cdab9-1bee-72d4-836d-dedfc759a05f";
+const SUPABASE_URL = "https://ntbmkktrjwxcfrogonhha.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
+const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -1453,10 +1455,25 @@ function addScoreToLeaderboard(playerName, distance) {
 
 async function fetchCloudLeaderboard() {
   try {
-    const res = await fetch(CLOUD_LEADERBOARD_URL, { cache: "no-store" });
-    if (!res.ok) return false;
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=name,distance,created_at&order=distance.desc&limit=${MAX_LEADERBOARD_ENTRIES}`,
+      {
+        cache: "no-store",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        },
+      }
+    );
+    if (!res.ok) {
+      console.warn(`Supabase fetch failed: ${res.status} ${res.statusText}`);
+      return false;
+    }
     const data = await res.json();
-    if (!Array.isArray(data)) return false;
+    if (!Array.isArray(data)) {
+      console.warn("Supabase returned non-array data");
+      return false;
+    }
     const normalized = data
       .filter((s) => s && typeof s.name === "string" && typeof s.distance === "number")
       .sort((a, b) => b.distance - a.distance)
@@ -1464,7 +1481,7 @@ async function fetchCloudLeaderboard() {
       .map((s) => ({
         name: s.name.slice(0, 20),
         distance: Number(s.distance.toFixed(1)),
-        date: s.date || new Date().toLocaleDateString(),
+        date: s.created_at ? new Date(s.created_at).toLocaleDateString() : new Date().toLocaleDateString(),
       }));
     saveLeaderboard(normalized);
     return true;
@@ -1475,26 +1492,29 @@ async function fetchCloudLeaderboard() {
 
 async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
   try {
-    await fetchCloudLeaderboard();
-    const current = loadLeaderboard();
-    current.push({
-      name: playerName.slice(0, 20),
-      distance: Number(travelledMeters.toFixed(1)),
-      date: new Date().toLocaleDateString(),
+    const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        name: playerName.slice(0, 20),
+        distance: Number(travelledMeters.toFixed(1)),
+      }),
     });
-    const merged = current.sort((a, b) => b.distance - a.distance).slice(0, MAX_LEADERBOARD_ENTRIES);
-
-    const putRes = await fetch(CLOUD_LEADERBOARD_URL, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(merged),
-    });
-    if (putRes.ok) {
-      saveLeaderboard(merged);
+    if (insertRes.ok) {
+      console.log("Score inserted to Supabase");
+      await fetchCloudLeaderboard();
       return true;
     }
+    const errText = await insertRes.text();
+    console.warn(`Supabase insert failed: ${insertRes.status} ${insertRes.statusText}`, errText);
     return false;
-  } catch {
+  } catch (e) {
+    console.error("pushCloudLeaderboardEntry error:", e);
     return false;
   }
 }
