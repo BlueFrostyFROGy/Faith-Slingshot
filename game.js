@@ -1,5 +1,6 @@
 const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
+const AUTH_SESSION_KEY = "faith-flight-auth-session";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
@@ -36,6 +37,14 @@ const submitScoreBtn = document.getElementById("submitScoreBtn");
 const playAgainBtn = document.getElementById("playAgainBtn");
 const finalScore = document.getElementById("finalScore");
 const leaderboardList = document.getElementById("leaderboardList");
+const accountEmailInput = document.getElementById("accountEmailInput");
+const accountPasswordInput = document.getElementById("accountPasswordInput");
+const signUpBtn = document.getElementById("signUpBtn");
+const signInBtn = document.getElementById("signInBtn");
+const signOutBtn = document.getElementById("signOutBtn");
+const accountStatus = document.getElementById("accountStatus");
+
+let authSession = null;
 
 const world = {
   width: 12000,
@@ -1804,6 +1813,72 @@ function saveLeaderboard(scores) {
   window.sharedLeaderboardCache = scores;
 }
 
+function getAuthToken() {
+  return authSession?.access_token || SUPABASE_ANON_KEY;
+}
+
+function updateAccountUI() {
+  if (!accountStatus) return;
+  if (authSession?.user?.email) {
+    accountStatus.textContent = `Account: ${authSession.user.email}`;
+  } else {
+    accountStatus.textContent = "Account: Guest";
+  }
+}
+
+function loadAuthSession() {
+  try {
+    const raw = localStorage.getItem(AUTH_SESSION_KEY);
+    authSession = raw ? JSON.parse(raw) : null;
+  } catch {
+    authSession = null;
+  }
+  updateAccountUI();
+}
+
+function saveAuthSession(session) {
+  authSession = session;
+  if (session) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+  else localStorage.removeItem(AUTH_SESSION_KEY);
+  updateAccountUI();
+}
+
+async function signUpAccount(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Sign up failed");
+  if (data?.access_token) {
+    saveAuthSession(data);
+  }
+  return data;
+}
+
+async function signInAccount(email, password) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Sign in failed");
+  saveAuthSession(data);
+  return data;
+}
+
+function signOutAccount() {
+  saveAuthSession(null);
+}
+
 function addScoreToLeaderboard(playerName, distance) {
   const leaderboard = loadLeaderboard();
   const travelled = parseFloat((distance / 10).toFixed(1));
@@ -1822,7 +1897,7 @@ async function fetchCloudLeaderboard() {
       cache: "no-store",
       headers: {
         apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Authorization: `Bearer ${getAuthToken()}`,
       },
     });
     console.log("Supabase fetch response:", res.status, res.statusText);
@@ -1865,7 +1940,7 @@ async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
       method: "POST",
       headers: {
         apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        Authorization: `Bearer ${getAuthToken()}`,
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
@@ -2767,6 +2842,41 @@ document.getElementById("changeCharBtn").addEventListener("click", () => {
   showCharacterSelect();
 });
 switchMapBtn?.addEventListener("click", toggleMap);
+signUpBtn?.addEventListener("click", async () => {
+  try {
+    const email = accountEmailInput?.value?.trim();
+    const password = accountPasswordInput?.value || "";
+    if (!email || !password) {
+      alert("Enter email and password first.");
+      return;
+    }
+    const data = await signUpAccount(email, password);
+    if (!data?.access_token) {
+      alert("Sign-up created. If email confirmation is enabled, confirm then sign in.");
+    }
+  } catch (e) {
+    alert(e.message || "Sign-up failed");
+  }
+});
+
+signInBtn?.addEventListener("click", async () => {
+  try {
+    const email = accountEmailInput?.value?.trim();
+    const password = accountPasswordInput?.value || "";
+    if (!email || !password) {
+      alert("Enter email and password first.");
+      return;
+    }
+    await signInAccount(email, password);
+  } catch (e) {
+    alert(e.message || "Sign-in failed");
+  }
+});
+
+signOutBtn?.addEventListener("click", () => {
+  signOutAccount();
+});
+
 playBtn.addEventListener("click", () => {
   if (!isUnlocked(selectedCharacter)) {
     selectedCharacter = characters.find((c) => isUnlocked(c)) || characters[0];
@@ -2919,6 +3029,7 @@ canvas.addEventListener("mouseleave", () => {
 preloadCharacterImages();
 updateHighScoreUI();
 updateMapUI();
+loadAuthSession();
 subscribeToLeaderboard();
 showMenu();
 resetActor();

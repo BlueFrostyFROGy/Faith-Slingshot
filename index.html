@@ -64,6 +64,14 @@
               <h3>Leaderboard</h3>
               <div id="leaderboardList" style="max-height: 300px; overflow-y: auto;"></div>
             </div>
+            <div id="accountForm" style="margin: 14px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center;">
+              <input id="accountEmailInput" type="email" placeholder="Email" style="padding: 10px; border: 2px solid #dce4ff; border-radius: 8px;" />
+              <input id="accountPasswordInput" type="password" placeholder="Password" style="padding: 10px; border: 2px solid #dce4ff; border-radius: 8px;" />
+              <button id="signUpBtn" class="btn btn-secondary">Sign Up</button>
+              <button id="signInBtn" class="btn btn-secondary">Sign In</button>
+              <button id="signOutBtn" class="btn btn-secondary">Sign Out</button>
+            </div>
+            <div id="accountStatus" style="font-size: 0.9rem; color: #445; margin-bottom: 10px;">Account: Guest</div>
             <div id="submitForm" style="margin: 20px 0;">
               <input id="playerNameInput" type="text" placeholder="Enter your name" maxlength="20" />
               <button id="submitScoreBtn" class="btn btn-primary">Submit Score</button>
@@ -74,6 +82,6 @@
       </main>
     </div>
 
-    <script src="game.js?v=20260311-17"></script>
+    <script src="game.js?v=20260311-18"></script>
   </body>
 </html>
