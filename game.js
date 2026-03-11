@@ -184,12 +184,12 @@ const characters = [
     bio: "Starts fast. Space for jump, double-Space for bomb. Bombs destroy Hugh Henderson but slow him down.",
     imageBase: "Spencer",
     initials: "S",
-    mass: 1.82,
+    mass: 1.68,
     radius: 38,
-    drag: 0.06,
-    bounce: 0.56,
-    gravityMult: 0.90,
-    launchBoost: 1.38,
+    drag: 0.053,
+    bounce: 0.62,
+    gravityMult: 0.86,
+    launchBoost: 1.44,
     unlockAt: 0,
     ability: "jumpbomb",
   },
@@ -1747,11 +1747,11 @@ function useSpencerJump() {
   if (selectedCharacter.id !== "spencer") return;
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
-  const jumpPower = Math.max(260, 520 - actor.spencerBombsUsed * 70);
+  const jumpPower = Math.max(340, 620 - actor.spencerBombsUsed * 55);
   actor.vy -= jumpPower;
-  actor.vx += 95;
+  actor.vx += 130;
   actor.usedAbility = true;
-  actor.abilityCooldown = 0.55;
+  actor.abilityCooldown = 0.45;
   tone(520, 0.07, "triangle", 0.08);
   spawnParticles(actor.x, actor.y, 16, "#99ddff");
   updateAbilityHint();
@@ -1819,10 +1819,11 @@ function useSpencerBomb() {
   });
 
   actor.spencerBombsUsed += 1;
-  actor.vx *= 0.86;
-  actor.vy = Math.max(actor.vy, -140);
+  actor.vx *= 0.93;
+  actor.vx += 35;
+  actor.vy = Math.max(actor.vy, -210);
   actor.usedAbility = true;
-  actor.abilityCooldown = 0.95;
+  actor.abilityCooldown = 0.7;
 
   spawnParticles(actor.x, actor.y, 22, "#ffbf66");
   tone(250, 0.06, "square", 0.09);
@@ -2519,7 +2520,7 @@ function updateAbilityHint() {
       abilityHint.textContent = "Space: jump  |  Double-Space: bomb (kills Hugh Henderson, slows you)";
       return;
     }
-    const jumpPower = Math.max(220, 560 - actor.spencerBombsUsed * 95);
+    const jumpPower = Math.max(340, 620 - actor.spencerBombsUsed * 55);
     if (actor.abilityCooldown > 0) {
       abilityHint.textContent = `Recharging: ${actor.abilityCooldown.toFixed(1)}s | Jump power: ${Math.round(jumpPower)}`;
       return;
