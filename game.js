@@ -482,6 +482,7 @@ const jjNeedleImageCandidates = [
 ];
 
 const jjCutsceneVideoCandidates = [
+  "JJ FOotball Boss ofical video.MOV",
   "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mp4",
   "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mp4",
   "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.webm",
