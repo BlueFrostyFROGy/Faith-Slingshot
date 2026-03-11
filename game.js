@@ -1617,7 +1617,14 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 10, "#ffffff");
       startScreenShake(8, 0.18);
       break;
-    case "trexjump":
+    case "trexjump": {
+      // Only allow jump when on the ground
+      const groundY = terrainY(actor.x);
+      const isGrounded = actor.y + actor.radius >= groundY - 18;
+      if (!isGrounded) {
+        tone(120, 0.04, "sine", 0.04);
+        break;
+      }
       // Fixed jump height every time
       actor.vy = -CALEB_JUMP_VY;
       actor.abilityCooldown = 0.52;
@@ -1627,6 +1634,7 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 10, "#ffffff");
       startScreenShake(7, 0.16);
       break;
+    }
     default:
       break;
   }
