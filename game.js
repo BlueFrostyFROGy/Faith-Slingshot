@@ -27,6 +27,7 @@ const angleLabel = document.getElementById("angleLabel");
 const powerLabel = document.getElementById("powerLabel");
 const abilityHint = document.getElementById("abilityHint");
 const distanceValue = document.getElementById("distanceValue");
+const heightValue = document.getElementById("heightValue");
 const highScoreValue = document.getElementById("highScoreValue");
 const mapNameLabel = document.getElementById("mapNameLabel");
 const runStateLabel = document.getElementById("runStateLabel");
@@ -829,7 +830,16 @@ function resetActor() {
 
   runStateLabel.textContent = "Click and drag to aim";
   launchBtn.disabled = false;
+  if (heightValue) {
+    heightValue.textContent = "0";
+  }
   updateAbilityHint();
+}
+
+function updateHeightUI() {
+  if (!heightValue) return;
+  const currentHeight = Math.max(0, (terrainY(actor.x) - (actor.y + actor.radius)) / 10);
+  heightValue.textContent = currentHeight.toFixed(1);
 }
 
 function applyCharacterStats(character) {
@@ -1756,6 +1766,7 @@ function update(dt) {
 
     const travelled = Math.max(0, (actor.maxX - world.launchX) / 10);
     distanceValue.textContent = travelled.toFixed(1);
+    updateHeightUI();
 
     if (travelled > world.bestDistance) {
       world.bestDistance = travelled;
@@ -3102,6 +3113,7 @@ launchBtn.addEventListener("click", launch);
 restartBtn.addEventListener("click", () => {
   resetActor();
   distanceValue.textContent = "0";
+  updateHeightUI();
 });
 
 window.addEventListener("keydown", (ev) => {
@@ -3242,6 +3254,7 @@ canvas.addEventListener("mouseleave", () => {
 
 preloadCharacterImages();
 updateHighScoreUI();
+updateHeightUI();
 updateMapUI();
 loadAuthSession();
 subscribeToLeaderboard();
