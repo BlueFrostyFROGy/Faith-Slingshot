@@ -1319,10 +1319,10 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
   actor.vy = 0;
   updateAbilityHint();
 
-  // Instantly roll into the next run with the same character.
+  // Show leaderboard page after a short delay.
   setTimeout(() => {
-    startNextRunSameCharacter();
-  }, 450);
+    showLeaderboardScreen(actor.maxX - world.launchX);
+  }, 800);
 }
 
 function useAbility() {
