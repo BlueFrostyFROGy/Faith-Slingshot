@@ -1052,6 +1052,9 @@ function getLukeCoffeeInRange(startX, endX) {
 }
 
 
+let audioCtx = null;
+
+
 
 function ensureAudio() {
   if (!audioCtx) {
