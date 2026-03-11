@@ -64,10 +64,10 @@ const world = {
 };
 
 const ABILITY_COOLDOWN_SECONDS = 3;
-const JJ_TRUCK_MAX = 2;
-const JJ_TRUCK_REGEN_SECONDS = 3;
+const JJ_TRUCK_MAX = 1;
+const JJ_TRUCK_REGEN_SECONDS = 6;
 const JJ_JUMP_MAX = 1;
-const JJ_JUMP_REGEN_SECONDS = 1;
+const JJ_JUMP_REGEN_SECONDS = 3;
 const KADE_JUMP_RESET_SPEED = 100; // px/s — base speed after jump penalty
 const KADE_ACCEL = 280;            // px/s² passive BMW acceleration
 const KADE_MAX_SPEED = 5000;       // px/s top speed cap
@@ -298,10 +298,10 @@ const characters = [
     initials: "JJ",
     mass: 1.22,
     radius: 30,
-    drag: 0.082,
-    bounce: 0.64,
-    gravityMult: 0.94,
-    launchBoost: 1.18,
+    drag: 0.096,
+    bounce: 0.56,
+    gravityMult: 1.02,
+    launchBoost: 1.08,
     unlockAt: 0,
     ability: "truck",
   },
@@ -1732,8 +1732,8 @@ function useTruck() {
     actor.jjTruckRegenTimer = JJ_TRUCK_REGEN_SECONDS;
   }
   actor.isTrucking = true;
-  actor.truckTimer = 2.5;
-  actor.vx = Math.max(actor.vx + 380, 580); // nerfed forward burst
+  actor.truckTimer = 1.5;
+  actor.vx = Math.max(actor.vx + 220, 360);
   actor.vy *= 0.4;                            // dampen vertical
   spawnParticles(actor.x, actor.y, 28, "#ffcd3c");
   spawnParticles(actor.x, actor.y, 14, "#ff9b72");
@@ -1767,9 +1767,8 @@ function useJJDoubleJump() {
 
   actor.jjJumpCharges -= 1;
   actor.jjJumpRegenTimer = JJ_JUMP_REGEN_SECONDS;
-  actor.vy -= 320;
-  actor.vx += 40;
-  actor.vx = Math.max(actor.vx, 160);
+  actor.vy -= 210;
+  actor.vx += 15;
   spawnParticles(actor.x, actor.y, 18, "#9be9ff");
   tone(620, 0.06, "triangle", 0.07);
   tone(760, 0.05, "triangle", 0.06);
@@ -2245,9 +2244,9 @@ function update(dt) {
       if (dx * dx + dy * dy <= hitR * hitR) {
         collectedNeedles.add(needle.index);
         actor.jjNeedleCount += 1;
-        actor.radius = Math.min(48, actor.radius + 0.35);
-        actor.vx = Math.max(120, actor.vx * 1.012 + 10);
-        actor.drag = Math.max(0.065, actor.drag - 0.0008);
+        actor.radius = Math.min(42, actor.radius + 0.18);
+        actor.vx = Math.max(90, actor.vx * 1.005 + 4);
+        actor.drag = Math.max(0.082, actor.drag - 0.00035);
         spawnParticles(needle.x, ny, 16, "#8ee8ff");
         tone(520 + Math.min(260, actor.jjNeedleCount * 7), 0.05, "triangle", 0.06);
       }
