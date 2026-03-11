@@ -1033,75 +1033,27 @@ function updateAbilityHint() {
   abilityHint.textContent = `Ability ready — press Space for ${getAbilityLabel(selectedCharacter)}.`;
 }
 
-let cachedLeaderboard = [];
-
 function loadLeaderboard() {
-  // Return cached version (updated via Firebase in real-time)
-  return cachedLeaderboard;
+  const stored = localStorage.getItem(LEADERBOARD_KEY);
+  return stored ? JSON.parse(stored) : [];
 }
 
 function saveLeaderboard(scores) {
   localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(scores));
-  cachedLeaderboard = scores;
 }
 
-async function addScoreToLeaderboard(playerName, distance) {
-  const travelled = parseFloat((distance / 10).toFixed(1));
-  
-  // Save to localStorage first
+function addScoreToLeaderboard(playerName, distance) {
   const leaderboard = loadLeaderboard();
+  const travelled = parseFloat((distance / 10).toFixed(1));
   leaderboard.push({ name: playerName, distance: travelled, date: new Date().toLocaleDateString() });
   leaderboard.sort((a, b) => b.distance - a.distance);
   const topScores = leaderboard.slice(0, MAX_LEADERBOARD_ENTRIES);
   saveLeaderboard(topScores);
-  
-  // Try to save to Firebase if available
-  if (window.firebaseDB) {
-    try {
-      const db = window.firebaseDB;
-      const ref = window.firebaseRef;
-      const push = window.firebasePush;
-      const scoresRef = ref(db, "leaderboard");
-      await push(scoresRef, {
-        name: playerName,
-        distance: travelled,
-        timestamp: Date.now(),
-        date: new Date().toLocaleDateString()
-      });
-    } catch (err) {
-      console.error("Firebase error:", err);
-    }
-  }
-  
   return topScores;
 }
 
 function subscribeToLeaderboard() {
-  if (!window.firebaseDB) return;
-  
-  try {
-    const db = window.firebaseDB;
-    const ref = window.firebaseRef;
-    const onValue = window.firebaseOnValue;
-    const query = window.firebaseQuery;
-    const orderByChild = window.firebaseOrderByChild;
-    const limitToFirst = window.firebaseLimitToFirst;
-    
-    const scoresRef = ref(db, "leaderboard");
-    const topScoresQuery = query(scoresRef, orderByChild("distance"), limitToFirst(MAX_LEADERBOARD_ENTRIES * 3));
-    
-    onValue(topScoresQuery, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const scores = Object.values(data).sort((a, b) => b.distance - a.distance).slice(0, MAX_LEADERBOARD_ENTRIES);
-        cachedLeaderboard = scores;
-      }
-    }, (err) => {
-      console.error("Firebase subscription error:", err);
-    });
-  } catch (err) {
-    console.error("Firebase setup error:", err);
-  }
+  // Placeholder for future cloud sync
 }
 
 function displayLeaderboard() {
