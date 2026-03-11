@@ -184,10 +184,10 @@ const characters = [
     initials: "R",
     mass: 1.05,
     radius: 31,
-    drag: 0.1,
+    drag: 0.09,
     bounce: 0.57,
-    gravityMult: 0.96,
-    launchBoost: 1.12,
+    gravityMult: 0.94,
+    launchBoost: 1.16,
     unlockAt: 0,
     ability: "fartpassive",
   },
@@ -348,9 +348,13 @@ const tennisBallImageCandidates = [
 
 const reedBurgerImageCandidates = [
   "characters props/Reed Blair Cheese Burger.webp",
+  "characters props/Reedblair cheeseburger.png",
+  "characters props/Reed Blair Cheeseburger.png",
   "characters props/Reed Blair Cheeseburger.webp",
+  "Reedblair cheeseburger.png",
   "Reed Blair Cheese Burger.webp",
   "Reed Blair Cheeseburger.webp",
+  "Reed Blair Cheeseburger.png",
 ];
 
 function seededNoise(seed) {
@@ -787,8 +791,8 @@ function triggerBeerRage() {
 }
 
 function triggerFartBoost() {
-  actor.vy -= 560;
-  actor.vx += 90;
+  actor.vy -= 590;
+  actor.vx += 115;
   startScreenShake(9, 0.28);
   tone(140, 0.08, "sawtooth", 0.08);
   tone(95, 0.07, "triangle", 0.06);
@@ -1736,7 +1740,7 @@ function getCharacterImageCandidates(character) {
     return ["characters/Eli Ailshie.png", "Eli Ailshie.png"];
   }
   if (character.id === "reed") {
-    return ["characters/Reed Blair.png", "Reed Blair.png"];
+    return ["characters/Reed Blair.png", "characters/Reed Blair.jpg"];
   }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
