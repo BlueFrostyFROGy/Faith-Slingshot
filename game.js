@@ -1,6 +1,7 @@
 const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const MAX_LEADERBOARD_ENTRIES = 10;
+const CLOUD_LEADERBOARD_URL = "https://jsonblob.com/api/jsonBlob/019cdab9-1bee-72d4-836d-dedfc759a05f";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -219,6 +220,7 @@ const actor = {
   spencerBombsUsed: 0,
   backflipRotation: 0,
   backflipActive: false,
+  overdriveDunksLeft: 0,
   beerCount: 0,
   beerRageTimer: 0,
 };
@@ -529,6 +531,7 @@ function resetActor() {
   actor.candySpeedBonus = 0;
   actor.rainbowModeTimer = 0;
   actor.rainbowBeamTimer = 0;
+  actor.overdriveDunksLeft = 0;
   actor.beerCount = 0;
   actor.beerRageTimer = 0;
   cameraX = 0;
@@ -671,6 +674,7 @@ function startScreenShake(strength = 8, duration = 0.24) {
 function triggerCandyOverdrive() {
   actor.rainbowModeTimer = 10.0;
   actor.rainbowBeamTimer = 1.0;
+  actor.overdriveDunksLeft = 5;
   actor.vy -= 420;
   actor.vx += 80;
   startScreenShake(14, 0.35);
@@ -754,6 +758,11 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
 
 function useAbility() {
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
+
+  if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0 && actor.overdriveDunksLeft <= 0) {
+    tone(140, 0.05, "sine", 0.05);
+    return;
+  }
 
   actor.usedAbility = true;
   if (selectedCharacter.id === "manning") {
@@ -861,6 +870,9 @@ function useAbility() {
       startScreenShake(11, 0.26);
       break;
     case "dunk":
+      if (actor.rainbowModeTimer > 0) {
+        actor.overdriveDunksLeft = Math.max(0, actor.overdriveDunksLeft - 1);
+      }
       actor.vy -= 360;
       actor.vx += 170;
       actor.vx *= 1.03;
@@ -1361,7 +1373,7 @@ function updateAbilityHint() {
       return;
     }
     if (actor.rainbowModeTimer > 0) {
-      abilityHint.textContent = `${candyText}  |  RAINBOW OVERDRIVE! Infinite dunks`;
+      abilityHint.textContent = `${candyText}  |  OVERDRIVE ${actor.rainbowModeTimer.toFixed(1)}s | Dunks left: ${actor.overdriveDunksLeft}`;
       return;
     }
     if (actor.abilityCooldown > 0) {
@@ -1404,12 +1416,16 @@ function updateAbilityHint() {
 }
 
 function loadLeaderboard() {
+  if (Array.isArray(window.sharedLeaderboardCache) && window.sharedLeaderboardCache.length > 0) {
+    return window.sharedLeaderboardCache;
+  }
   const stored = localStorage.getItem(LEADERBOARD_KEY);
   return stored ? JSON.parse(stored) : [];
 }
 
 function saveLeaderboard(scores) {
   localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(scores));
+  window.sharedLeaderboardCache = scores;
 }
 
 function addScoreToLeaderboard(playerName, distance) {
@@ -1422,8 +1438,62 @@ function addScoreToLeaderboard(playerName, distance) {
   return topScores;
 }
 
+async function fetchCloudLeaderboard() {
+  try {
+    const res = await fetch(CLOUD_LEADERBOARD_URL, { cache: "no-store" });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!Array.isArray(data)) return false;
+    const normalized = data
+      .filter((s) => s && typeof s.name === "string" && typeof s.distance === "number")
+      .sort((a, b) => b.distance - a.distance)
+      .slice(0, MAX_LEADERBOARD_ENTRIES)
+      .map((s) => ({
+        name: s.name.slice(0, 20),
+        distance: Number(s.distance.toFixed(1)),
+        date: s.date || new Date().toLocaleDateString(),
+      }));
+    saveLeaderboard(normalized);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
+  try {
+    await fetchCloudLeaderboard();
+    const current = loadLeaderboard();
+    current.push({
+      name: playerName.slice(0, 20),
+      distance: Number(travelledMeters.toFixed(1)),
+      date: new Date().toLocaleDateString(),
+    });
+    const merged = current.sort((a, b) => b.distance - a.distance).slice(0, MAX_LEADERBOARD_ENTRIES);
+
+    const putRes = await fetch(CLOUD_LEADERBOARD_URL, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(merged),
+    });
+    if (putRes.ok) {
+      saveLeaderboard(merged);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function subscribeToLeaderboard() {
-  // Placeholder for future cloud sync
+  fetchCloudLeaderboard().then(() => displayLeaderboard());
+  if (window.leaderboardPollTimer) {
+    clearInterval(window.leaderboardPollTimer);
+  }
+  window.leaderboardPollTimer = setInterval(() => {
+    fetchCloudLeaderboard();
+  }, 12000);
 }
 
 function displayLeaderboard() {
@@ -2326,7 +2396,7 @@ subscribeToLeaderboard();
 showMenu();
 resetActor();
 
-submitScoreBtn.addEventListener("click", () => {
+submitScoreBtn.addEventListener("click", async () => {
   const name = playerNameInput.value.trim();
   if (!name) {
     alert("Please enter your name!");
@@ -2334,6 +2404,9 @@ submitScoreBtn.addEventListener("click", () => {
   }
   const distance = actor.maxX - world.launchX;
   addScoreToLeaderboard(name, distance);
+  const travelled = parseFloat((distance / 10).toFixed(1));
+  await pushCloudLeaderboardEntry(name, travelled);
+  await fetchCloudLeaderboard();
   displayLeaderboard();
   submitScoreBtn.disabled = true;
   playerNameInput.disabled = true;
