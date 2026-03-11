@@ -1,7 +1,7 @@
 const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const MAX_LEADERBOARD_ENTRIES = 10;
-const SUPABASE_URL = "https://ntbmkktrjwxcfrogonhha.supabase.co";
+const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
 
@@ -1598,7 +1598,7 @@ function showLeaderboardScreen(distance) {
     triggerConfetti();
   }
   
-  displayLeaderboard();
+  fetchCloudLeaderboard().then(() => displayLeaderboard());
 }
 
 function getCharacterImageCandidates(character) {
@@ -2454,9 +2454,11 @@ submitScoreBtn.addEventListener("click", async () => {
     return;
   }
   const distance = actor.maxX - world.launchX;
-  addScoreToLeaderboard(name, distance);
   const travelled = parseFloat((distance / 10).toFixed(1));
   const cloudOk = await pushCloudLeaderboardEntry(name, travelled);
+  if (!cloudOk) {
+    addScoreToLeaderboard(name, distance);
+  }
   await fetchCloudLeaderboard();
   displayLeaderboard();
   submitScoreBtn.disabled = true;
