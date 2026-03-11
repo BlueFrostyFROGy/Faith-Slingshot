@@ -552,6 +552,7 @@ const jjNeedleImageCandidates = [
 ];
 
 const jjCutsceneVideoCandidates = [
+  "https://raw.githubusercontent.com/BlueFrostyFROGy/Faith-Slingshot/main/JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mp4",
   "JJ FOotball Boss ofical video.Mp4",
   "JJ FOotball Boss ofical video.MOV",
   "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mp4",
@@ -569,6 +570,10 @@ function encodeAssetPath(path) {
 }
 
 function buildSiteAssetUrl(path) {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
   const encoded = encodeAssetPath(path);
   const pathname = window.location.pathname || "/";
   const baseDir = pathname.endsWith("/")
