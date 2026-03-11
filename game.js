@@ -552,8 +552,8 @@ const jjNeedleImageCandidates = [
 ];
 
 const jjCutsceneVideoCandidates = [
-  "https://raw.githubusercontent.com/BlueFrostyFROGy/Faith-Slingshot/main/JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mp4",
   "JJ FOotball Boss ofical video.Mp4",
+  "JJ FOotball Boss ofical video.mp4",
   "JJ FOotball Boss ofical video.MOV",
   "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mp4",
   "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mp4",
@@ -1398,22 +1398,21 @@ async function triggerJJCutscene() {
     jjCutsceneFrame.style.display = "block";
   };
 
-  const cutsceneVideoUrl = await findAvailableCutsceneVideoUrl();
-  if (cutsceneVideoUrl && jjCutsceneVideo) {
-    jjCutsceneVideo.onerror = () => {
-      jjCutsceneVideo.style.display = "none";
+  // Try each video candidate directly in the video element — no fetch check needed
+  const tryVideoAtIndex = (idx) => {
+    if (!jjCutsceneVideo || idx >= jjCutsceneVideoCandidates.length) {
       playPdfFallback();
-    };
-    jjCutsceneVideo.src = cutsceneVideoUrl;
-    jjCutsceneVideo.currentTime = 0;
+      return;
+    }
+    const url = buildSiteAssetUrl(jjCutsceneVideoCandidates[idx]);
+    jjCutsceneVideo.onerror = null;
+    jjCutsceneVideo.onerror = () => tryVideoAtIndex(idx + 1);
+    jjCutsceneVideo.src = url;
+    jjCutsceneVideo.load();
     jjCutsceneVideo.style.display = "block";
-    jjCutsceneVideo.play().catch(() => {
-      jjCutsceneVideo.style.display = "none";
-      playPdfFallback();
-    });
-  } else {
-    await playPdfFallback();
-  }
+    jjCutsceneVideo.play().catch(() => tryVideoAtIndex(idx + 1));
+  };
+  tryVideoAtIndex(0);
 
   jjCutsceneTimeout = setTimeout(() => {
     endJJCutsceneAndResume();
