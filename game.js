@@ -79,6 +79,8 @@ const CALEB_ON_FOOT_RADIUS = 24;
 const CALEB_ON_FOOT_DRAG = 0.064;
 const CALEB_ON_FOOT_BOUNCE = 0.5;
 const CALEB_ON_FOOT_GRAVITY = 0.96;
+const BRAYDEN_BASE_JUMP_COOLDOWN = 0.9;
+const BRAYDEN_RAGE_JUMP_COOLDOWN = 1.5;
 
 // Sal (anthony) shrink-on-distance constants
 const SAL_SHRINK_INTERVAL = 100;   // metres between each shrink
@@ -137,7 +139,7 @@ const characters = [
   {
     id: "hunter",
     name: "Hunter",
-    trait: "Texas Tech rocket",
+    bio: "Collect beers. Every 5 beers starts spin mode for 7.5s with a 1.5s jump cooldown. At 20 beers, you die.",
     bio: "Mid-small build. Low drag and a floaty arc.",
     imageBase: "assets/images/hunter",
     initials: "H",
@@ -1495,7 +1497,7 @@ function useAbility() {
   } else if (selectedCharacter.id === "candyjew") {
     actor.abilityCooldown = actor.rainbowModeTimer > 0 ? 0 : 0.45;
   } else if (selectedCharacter.id === "brayden") {
-    actor.abilityCooldown = actor.beerRageTimer > 0 ? 0 : 0.65;
+    actor.abilityCooldown = actor.beerRageTimer > 0 ? BRAYDEN_RAGE_JUMP_COOLDOWN : BRAYDEN_BASE_JUMP_COOLDOWN;
   } else if (selectedCharacter.id === "reed") {
     actor.abilityCooldown = 3.5;
   } else if (selectedCharacter.id === "jackson") {
@@ -1643,8 +1645,8 @@ function useAbility() {
         radius: 10,
       });
 
-      actor.vy -= actor.beerRageTimer > 0 ? 300 : 220;
-      actor.vx += actor.beerRageTimer > 0 ? 160 : 110;
+      actor.vy -= actor.beerRageTimer > 0 ? 240 : 190;
+      actor.vx += actor.beerRageTimer > 0 ? 130 : 90;
 
       tone(520, 0.06, "square", 0.08);
       tone(700, 0.05, "triangle", 0.06);
@@ -2577,7 +2579,7 @@ function updateAbilityHint() {
       return;
     }
     if (actor.beerRageTimer > 0) {
-      abilityHint.textContent = `${beerText}  |  SPIN MODE ${actor.beerRageTimer.toFixed(1)}s | Infinite jumps`;
+      abilityHint.textContent = `${beerText}  |  SPIN MODE ${actor.beerRageTimer.toFixed(1)}s | Jump every ${BRAYDEN_RAGE_JUMP_COOLDOWN.toFixed(1)}s`;
       return;
     }
     if (actor.abilityCooldown > 0) {
