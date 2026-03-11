@@ -481,15 +481,17 @@ const jjNeedleImageCandidates = [
   "assets/images/jjfootballbossneedle.png",
 ];
 
-const jjCutsceneVideoCandidates = [
-  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mp4",
-  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).webm",
-  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mov",
-];
 const jjCutscenePdfPath = "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.pdf";
 
 function encodeAssetPath(path) {
   return path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+}
+
+function buildSiteAssetUrl(path) {
+  const encoded = encodeAssetPath(path);
+  const parts = window.location.pathname.split("/").filter(Boolean);
+  const repoSegment = parts.length > 0 ? parts[0] : "";
+  return repoSegment ? `/${repoSegment}/${encoded}` : `/${encoded}`;
 }
 
 function seededNoise(seed) {
@@ -1242,7 +1244,7 @@ function endJJCutsceneAndResume() {
   jjCutsceneResumeState = null;
 }
 
-async function triggerJJCutscene() {
+function triggerJJCutscene() {
   if (jjCutsceneActive || actor.jjTriggeredCutscene || selectedCharacter.id !== "jjfootballboss") return;
   actor.jjTriggeredCutscene = true;
   jjCutsceneActive = true;
@@ -1266,45 +1268,11 @@ async function triggerJJCutscene() {
   const playPdfFallback = () => {
     if (!jjCutsceneFrame) return;
     jjCutsceneFrame.removeAttribute("srcdoc");
-    jjCutsceneFrame.src = encodeAssetPath(jjCutscenePdfPath);
+    jjCutsceneFrame.src = buildSiteAssetUrl(jjCutscenePdfPath);
     jjCutsceneFrame.style.display = "block";
   };
 
-  if (jjCutsceneVideo) {
-    let chosenVideo = null;
-    for (const candidate of jjCutsceneVideoCandidates) {
-      if (candidate.toLowerCase().endsWith(".mp4") && jjCutsceneVideo.canPlayType("video/mp4")) {
-        chosenVideo = candidate;
-        break;
-      }
-      if (candidate.toLowerCase().endsWith(".webm") && jjCutsceneVideo.canPlayType("video/webm")) {
-        chosenVideo = candidate;
-        break;
-      }
-      if (candidate.toLowerCase().endsWith(".mov") && jjCutsceneVideo.canPlayType("video/quicktime")) {
-        chosenVideo = candidate;
-        break;
-      }
-    }
-
-    if (chosenVideo) {
-      jjCutsceneVideo.onerror = () => {
-        jjCutsceneVideo.style.display = "none";
-        playPdfFallback();
-      };
-      jjCutsceneVideo.src = encodeAssetPath(chosenVideo);
-      jjCutsceneVideo.currentTime = 0;
-      jjCutsceneVideo.style.display = "block";
-      jjCutsceneVideo.play().catch(() => {
-        jjCutsceneVideo.style.display = "none";
-        playPdfFallback();
-      });
-    } else {
-      playPdfFallback();
-    }
-  } else {
-    playPdfFallback();
-  }
+  playPdfFallback();
 
   jjCutsceneTimeout = setTimeout(() => {
     endJJCutsceneAndResume();
