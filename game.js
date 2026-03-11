@@ -481,6 +481,15 @@ const jjNeedleImageCandidates = [
   "assets/images/jjfootballbossneedle.png",
 ];
 
+const jjCutsceneVideoCandidates = [
+  "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mp4",
+  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mp4",
+  "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.webm",
+  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).webm",
+  "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.mov",
+  "JJFOOTBALLBOSS VIDEO(STOP AT 20 Seconds).mov",
+];
+
 const jjCutscenePdfPath = "JJFOOTBALLBOSS_VIDEO_STOP_AT_20_SECONDS.pdf";
 
 function encodeAssetPath(path) {
@@ -492,6 +501,19 @@ function buildSiteAssetUrl(path) {
   const parts = window.location.pathname.split("/").filter(Boolean);
   const repoSegment = parts.length > 0 ? parts[0] : "";
   return repoSegment ? `/${repoSegment}/${encoded}` : `/${encoded}`;
+}
+
+async function findAvailableCutsceneVideoUrl() {
+  for (const candidate of jjCutsceneVideoCandidates) {
+    const url = buildSiteAssetUrl(candidate);
+    try {
+      const res = await fetch(url, { method: "HEAD", cache: "no-store" });
+      if (res.ok) return url;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
 }
 
 function seededNoise(seed) {
@@ -1244,7 +1266,7 @@ function endJJCutsceneAndResume() {
   jjCutsceneResumeState = null;
 }
 
-function triggerJJCutscene() {
+async function triggerJJCutscene() {
   if (jjCutsceneActive || actor.jjTriggeredCutscene || selectedCharacter.id !== "jjfootballboss") return;
   actor.jjTriggeredCutscene = true;
   jjCutsceneActive = true;
@@ -1272,7 +1294,22 @@ function triggerJJCutscene() {
     jjCutsceneFrame.style.display = "block";
   };
 
-  playPdfFallback();
+  const cutsceneVideoUrl = await findAvailableCutsceneVideoUrl();
+  if (cutsceneVideoUrl && jjCutsceneVideo) {
+    jjCutsceneVideo.onerror = () => {
+      jjCutsceneVideo.style.display = "none";
+      playPdfFallback();
+    };
+    jjCutsceneVideo.src = cutsceneVideoUrl;
+    jjCutsceneVideo.currentTime = 0;
+    jjCutsceneVideo.style.display = "block";
+    jjCutsceneVideo.play().catch(() => {
+      jjCutsceneVideo.style.display = "none";
+      playPdfFallback();
+    });
+  } else {
+    playPdfFallback();
+  }
 
   jjCutsceneTimeout = setTimeout(() => {
     endJJCutsceneAndResume();
