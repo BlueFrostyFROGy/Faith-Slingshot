@@ -1526,6 +1526,19 @@ function useSpencerJump() {
   updateAbilityHint();
 }
 
+function useJJDoubleJump() {
+  if (selectedCharacter.id !== "jjfootballboss") return;
+  if (actor.state === "ready" || actor.state === "ended") return;
+
+  actor.vy -= 520;
+  actor.vx += 90;
+  actor.vx = Math.max(actor.vx, 220);
+  spawnParticles(actor.x, actor.y, 18, "#9be9ff");
+  tone(620, 0.06, "triangle", 0.07);
+  tone(760, 0.05, "triangle", 0.06);
+  updateAbilityHint();
+}
+
 function explodeBomb(bomb) {
   if (bomb.exploded) return;
   bomb.exploded = true;
@@ -2184,8 +2197,9 @@ function updateAbilityHint() {
     const truckText = actor.truckCount > 0
       ? `Space: truck (${actor.truckCount} left)`
       : "No trucks left";
+    const jumpText = "Double-Space: jump";
     const cutsceneText = actor.jjTriggeredCutscene ? "Highlight done" : "Highlight at 20,000m";
-    abilityHint.textContent = `${needleText}  |  ${truckText}  |  ${cutsceneText}`;
+    abilityHint.textContent = `${needleText}  |  ${truckText}  |  ${jumpText}  |  ${cutsceneText}`;
     return;
   }
 
@@ -3421,6 +3435,9 @@ window.addEventListener("keydown", (ev) => {
     if (selectedCharacter.id === "anthony" && now - lastSpaceTime < 320) {
       useTruck();
       lastSpaceTime = 0; // reset so triple-tap doesn't double-trigger
+    } else if (selectedCharacter.id === "jjfootballboss" && now - lastSpaceTime < 320) {
+      useJJDoubleJump();
+      lastSpaceTime = 0;
     } else {
       useAbility();
       lastSpaceTime = now;
