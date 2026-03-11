@@ -870,9 +870,9 @@ function startScreenShake(strength = 8, duration = 0.24) {
 }
 
 function triggerCandyOverdrive() {
-  if (actor.candyOverdrivesUsed >= 5) return;
+  if (actor.candyOverdrivesUsed >= 10) return;
   actor.candyOverdrivesUsed += 1;
-  actor.rainbowModeTimer = 10.0;
+  actor.rainbowModeTimer = 6.0;
   actor.rainbowBeamTimer = 1.0;
   actor.overdriveDunksLeft = 5;
   actor.vy -= 420;
@@ -1472,7 +1472,7 @@ function update(dt) {
         actor.vx += 8 + Math.min(60, actor.candyCount * 1.2);
         spawnParticles(candy.x, cy, 14, "#ffd95e");
         tone(560 + Math.min(360, actor.candyCount * 4), 0.05, "triangle", 0.06);
-        if (actor.candyCount % 10 === 0 && actor.candyOverdrivesUsed < 5) {
+        if (actor.candyCount % 10 === 0 && actor.candyOverdrivesUsed < 10) {
           triggerCandyOverdrive();
         }
       }
@@ -1722,24 +1722,24 @@ function updateAbilityHint() {
   if (selectedCharacter.id === "candyjew") {
     const candyText = `Candies: ${actor.candyCount}`;
     const dunksLeft = 5 - actor.candyDunkCount;
-    const overdrivesLeft = 5 - actor.candyOverdrivesUsed;
+    const overdrivesLeft = 10 - actor.candyOverdrivesUsed;
     if (actor.state === "ready") {
-      abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/5  |  Space: dunk (${dunksLeft}/5 left)`;
+      abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/10  |  Space: dunk (${dunksLeft}/5 left)`;
       return;
     }
     if (actor.rainbowModeTimer > 0) {
-      abilityHint.textContent = `${candyText}  |  OVERDRIVE ${actor.rainbowModeTimer.toFixed(1)}s | Dunks left: ${actor.overdriveDunksLeft} | ODs left: ${overdrivesLeft}/5`;
+      abilityHint.textContent = `${candyText}  |  OVERDRIVE ${actor.rainbowModeTimer.toFixed(1)}s | Dunks left: ${actor.overdriveDunksLeft} | ODs left: ${overdrivesLeft}/10`;
       return;
     }
     if (actor.abilityCooldown > 0) {
-      abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/5  |  Dunk: ${actor.abilityCooldown.toFixed(1)}s (${dunksLeft}/5 left)`;
+      abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/10  |  Dunk: ${actor.abilityCooldown.toFixed(1)}s (${dunksLeft}/5 left)`;
       return;
     }
     if (dunksLeft <= 0) {
-      abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/5  |  Out of dunks!`;
+      abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/10  |  Out of dunks!`;
       return;
     }
-    abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/5  |  Space: dunk (${dunksLeft}/5 left)`;
+    abilityHint.textContent = `${candyText}  |  ODs left: ${overdrivesLeft}/10  |  Space: dunk (${dunksLeft}/5 left)`;
     return;
   }
 
