@@ -781,7 +781,7 @@ function useAbility() {
   if (selectedCharacter.id === "manning") {
     actor.abilityCooldown = 5.0;
   } else if (selectedCharacter.id === "eli") {
-    actor.abilityCooldown = 5.5;
+    actor.abilityCooldown = 2.0;
   } else if (selectedCharacter.id === "hunter") {
     actor.abilityCooldown = 4.0;
   } else if (selectedCharacter.id === "candyjew") {
