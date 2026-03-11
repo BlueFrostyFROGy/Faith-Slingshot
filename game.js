@@ -194,7 +194,7 @@ const characters = [
     mass: 1.68,
     radius: 38,
     drag: 0.053,
-    bounce: 0.62,
+    bounce: 0.78,
     gravityMult: 0.86,
     launchBoost: 1.44,
     unlockAt: 0,
@@ -1782,7 +1782,7 @@ function explodeBomb(bomb) {
   bomb.exploded = true;
   bomb.life = -0.2;
 
-  const blastRadius = 130;
+  const blastRadius = 260;
   let kills = 0;
   const nearbyJanets = getJanetsInRange(bomb.x - 220, bomb.x + 220);
 
@@ -1816,7 +1816,7 @@ function useSpencerBomb() {
     vx: actor.vx * 0.68 + 70,
     vy: actor.vy * 0.32 + 120,
     life: 1.35,
-    radius: 18,
+    radius: 26,
     exploded: false,
   });
 
