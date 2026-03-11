@@ -683,7 +683,7 @@ function resetActor() {
   actor.abilityCooldown = 0;
   actor.stoppedTimer = 0;
   actor.maxX = world.launchX;
-  actor.truckCount = 3;
+  actor.truckCount = selectedCharacter.id === "jackson" ? 25 : 3;
   actor.isTrucking = false;
   actor.truckTimer = 0;
   actor.rocketSpiked = false;
@@ -1508,7 +1508,8 @@ function update(dt) {
       } else {
         actor.jacksonDiveDelay = Math.max(0, actor.jacksonDiveDelay - dt);
         if (actor.jacksonDiveDelay <= 0) {
-          const tx = target.x + target.w * 0.5;
+          const txRaw = target.x + target.w * 0.5;
+          const tx = Math.max(txRaw, actor.x + 140); // never steer backward
           const ty = terrainY(target.x) - target.yOffset + target.h * 0.5;
           const ddx = tx - actor.x;
           const ddy = ty - actor.y;
@@ -1524,10 +1525,11 @@ function update(dt) {
           const nearestY = Math.max(targetY, Math.min(actor.y, targetY + target.h));
           const hx = actor.x - nearestX;
           const hy = actor.y - nearestY;
-          if (hx * hx + hy * hy <= actor.radius * actor.radius) {
+          const reachedForward = actor.x >= target.x + target.w * 0.45 && actor.y >= targetY - actor.radius * 0.2;
+          if (hx * hx + hy * hy <= actor.radius * actor.radius || reachedForward) {
             destroyedJanets.add(target.index);
-            actor.vy = -1300;
-            actor.vx = Math.max(actor.vx + 140, 520);
+            actor.vy = -1500;
+            actor.vx = Math.max(actor.vx + 240, 760);
             actor.jacksonDiveActive = false;
             actor.jacksonDiveTargetIndex = null;
             spawnImpactBurst(actor.x, actor.y, 2.0);
