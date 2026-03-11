@@ -223,6 +223,7 @@ const actor = {
   backflipRotation: 0,
   backflipActive: false,
   overdriveDunksLeft: 0,
+  candyDunkCount: 0,
   beerCount: 0,
   beerRageTimer: 0,
 };
@@ -547,6 +548,7 @@ function resetActor() {
   actor.rainbowModeTimer = 0;
   actor.rainbowBeamTimer = 0;
   actor.overdriveDunksLeft = 0;
+  actor.candyDunkCount = 0;
   actor.beerCount = 0;
   actor.beerRageTimer = 0;
   cameraX = 0;
@@ -885,6 +887,11 @@ function useAbility() {
       startScreenShake(11, 0.26);
       break;
     case "dunk":
+      if (actor.candyDunkCount >= 5) {
+        tone(140, 0.05, "sine", 0.05);
+        return;
+      }
+      actor.candyDunkCount += 1;
       if (actor.rainbowModeTimer > 0) {
         actor.overdriveDunksLeft = Math.max(0, actor.overdriveDunksLeft - 1);
       }
@@ -1383,8 +1390,9 @@ function updateAbilityHint() {
 
   if (selectedCharacter.id === "candyjew") {
     const candyText = `Candies: ${actor.candyCount}`;
+    const dunksLeft = 5 - actor.candyDunkCount;
     if (actor.state === "ready") {
-      abilityHint.textContent = `${candyText}  |  Space: dunk`;
+      abilityHint.textContent = `${candyText}  |  Space: dunk (${dunksLeft}/5 left)`;
       return;
     }
     if (actor.rainbowModeTimer > 0) {
@@ -1392,10 +1400,14 @@ function updateAbilityHint() {
       return;
     }
     if (actor.abilityCooldown > 0) {
-      abilityHint.textContent = `${candyText}  |  Dunk: ${actor.abilityCooldown.toFixed(1)}s`;
+      abilityHint.textContent = `${candyText}  |  Dunk: ${actor.abilityCooldown.toFixed(1)}s (${dunksLeft}/5 left)`;
       return;
     }
-    abilityHint.textContent = `${candyText}  |  Space: dunk`;
+    if (dunksLeft <= 0) {
+      abilityHint.textContent = `${candyText}  |  Out of dunks!`;
+      return;
+    }
+    abilityHint.textContent = `${candyText}  |  Space: dunk (${dunksLeft}/5 left)`;
     return;
   }
 
