@@ -3155,6 +3155,10 @@ function drawCloud(x, y) {
 }
 
 function drawGround() {
+  if (getCurrentMap().id === "town-square") {
+    return;
+  }
+
   ctx.fillStyle = "#78bf6e";
   ctx.beginPath();
   ctx.moveTo(0, canvas.height);
