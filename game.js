@@ -166,6 +166,8 @@ const LUKE_SUPERSPEED_THRESHOLD = 10;
 const LUKE_SUPERSPEED_VX        = 3000; // px/s during superspeed
 const LUKE_SUPERSPEED_DURATION  = 3;    // seconds
 const NATE_PHASE_COOLDOWN       = 10;
+const TRAVIS_CRADDLES_FOR_LAUNCH = 10;
+const TRAVIS_LAUNCH_FORWARD_METERS = 300;
 const SAM_DUMBBELLS_PER_BENCH = 5;
 const SAM_BENCH_VISIBLE_SECONDS = 8;
 const SAM_SWIM_ACTIVE_SECONDS = 3.2;
@@ -278,6 +280,22 @@ const characters = [
     launchBoost: 1.30,
     unlockAt: 0,
     ability: "warp",
+  },
+  {
+    id: "traviswilliams",
+    name: "Travis Williams",
+    trait: "Craddle snatcher",
+    bio: "A lightweight chaos runner who snatches craddles off the track. Grab 10 craddles to rocket skyward and sling 300m forward.",
+    imageBase: "Travis Williams",
+    initials: "TW",
+    mass: 0.58,
+    radius: 20,
+    drag: 0.062,
+    bounce: 0.72,
+    gravityMult: 0.88,
+    launchBoost: 1.30,
+    unlockAt: 0,
+    ability: "travisjump",
   },
   {
     id: "spencer",
@@ -640,6 +658,7 @@ const actor = {
   samJumpCharges: 1,
   samJumpRegenTimer: 0,
   natePhaseCooldown: 0,
+  travisCraddleCount: 0,
   nathanHasTruck: true,
   nathanSpeed: NATHAN_JUMP_RESET_SPEED,
   nathanSlowdownPending: false,
@@ -668,6 +687,7 @@ const potGoldCache = new Map();
 const needleCache = new Map();
 const samDumbbellCache = new Map();
 const nathanGasCache = new Map();
+const travisCraddleCache = new Map();
 const collectedCandies = new Set();
 const collectedBeers = new Set();
 const collectedBurgers = new Set();
@@ -677,6 +697,7 @@ const collectedNeedles = new Set();
 const collectedOwenMilk = new Set();
 const collectedSamDumbbells = new Set();
 const collectedNathanGas = new Set();
+const collectedTravisCraddles = new Set();
 let samBenchPickup = null;
 
 const JANET_BASE = {
@@ -741,6 +762,7 @@ let samBenchPressImg = null;
 let evanBasketballImg = null;
 let nathanTacomaImg = null;
 let nathanGasImg = null;
+let travisCraddleImg = null;
 let nathanTrumpImg = null;
 let nathanJetImg = null;
 let nathanBombImg = null;
@@ -902,6 +924,13 @@ const nathanGasImageCandidates = [
   "Nathans Gas.png",
   "Nathan Fuel.png",
   "Nathan Gas.png",
+];
+
+const travisCraddleImageCandidates = [
+  "characters props/Travis Craddle Snatch.png",
+  "Travis Craddle Snatch.png",
+  "characters props/Travis Cradle Snatch.png",
+  "Travis Cradle Snatch.png",
 ];
 
 const nathanTrumpImageCandidates = [
@@ -1795,6 +1824,34 @@ function getNathanGasInRange(startX, endX) {
   return items;
 }
 
+function createTravisCraddle(index) {
+  const spacing = 420;
+  const startX = 930;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1701) * 220) - 90;
+  const yOffset = 112 + Math.floor(seededNoise(index + 1702) * 30);
+  return { index, x: baseX + offset, yOffset, r: 15 };
+}
+
+function getTravisCraddle(index) {
+  if (!travisCraddleCache.has(index)) travisCraddleCache.set(index, createTravisCraddle(index));
+  return travisCraddleCache.get(index);
+}
+
+function getTravisCraddlesInRange(startX, endX) {
+  const spacing = 420;
+  const startXBase = 930;
+  const first = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const last = Math.max(first, Math.floor((endX - startXBase) / spacing) + 2);
+  const items = [];
+  for (let i = first; i <= last; i += 1) {
+    const craddle = getTravisCraddle(i);
+    if (collectedTravisCraddles.has(craddle.index)) continue;
+    if (craddle.x + craddle.r >= startX && craddle.x - craddle.r <= endX) items.push(craddle);
+  }
+  return items;
+}
+
 
 let audioCtx = null;
 
@@ -1904,6 +1961,7 @@ function resetActor() {
   actor.samJumpCharges = 1;
   actor.samJumpRegenTimer = 0;
   actor.natePhaseCooldown = 0;
+  actor.travisCraddleCount = 0;
   actor.nathanHasTruck = true;
   actor.nathanSpeed = NATHAN_JUMP_RESET_SPEED;
   actor.nathanSlowdownPending = false;
@@ -1946,6 +2004,7 @@ function resetActor() {
   collectedOwenMilk.clear();
   collectedSamDumbbells.clear();
   collectedNathanGas.clear();
+  collectedTravisCraddles.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -2453,6 +2512,8 @@ function useAbility() {
     actor.abilityCooldown = 2;
   } else if (selectedCharacter.id === "owen") {
     actor.abilityCooldown = 1.1;
+  } else if (selectedCharacter.id === "traviswilliams") {
+    actor.abilityCooldown = 1.1;
   } else if (selectedCharacter.id === "samhallet") {
     actor.abilityCooldown = 0.25;
   } else if (selectedCharacter.id === "nathan") {
@@ -2692,6 +2753,15 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 20, "#4fc3f7");
       spawnParticles(actor.x, actor.y, 10, "#ffffff");
       startScreenShake(7 + Math.min(8, actor.lukeItemCount / 4), 0.16);
+      break;
+    }
+    case "travisjump": {
+      actor.vx += 95;
+      actor.vy -= 540;
+      actor.abilityCooldown = 1.1;
+      tone(520, 0.06, "triangle", 0.08);
+      tone(760, 0.05, "square", 0.06);
+      spawnParticles(actor.x, actor.y, 18, "#f1d6b8");
       break;
     }
     case "owenjump": {
@@ -3350,6 +3420,9 @@ function update(dt) {
     const nearbyNathanGas = selectedCharacter.id === "nathan"
       ? getNathanGasInRange(actor.x - 260, actor.x + 560)
       : [];
+    const nearbyTravisCraddles = selectedCharacter.id === "traviswilliams"
+      ? getTravisCraddlesInRange(actor.x - 260, actor.x + 560)
+      : [];
 
     updateStricWoodsHazards(dt, nearbyJanets);
     if (updateEnemyLasers(dt)) {
@@ -3595,6 +3668,34 @@ function update(dt) {
           spawnParticles(actor.x, actor.y, 28, "#ffffff");
           tone(740, 0.07, "triangle", 0.08);
           runStateLabel.textContent = `${NATHAN_GAS_TARGET} gallons! Flag up — airstrike incoming.`;
+        }
+      }
+    }
+
+    for (const craddle of nearbyTravisCraddles) {
+      const cy = terrainY(craddle.x) - craddle.yOffset;
+      const dx = actor.x - craddle.x;
+      const dy = actor.y - cy;
+      const hitR = actor.radius + craddle.r * 0.84;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedTravisCraddles.add(craddle.index);
+        actor.travisCraddleCount += 1;
+        actor.vx += 14;
+        spawnParticles(craddle.x, cy, 18, "#dcb892");
+        tone(380 + Math.min(280, actor.travisCraddleCount * 9), 0.05, "triangle", 0.06);
+
+        if (actor.travisCraddleCount >= TRAVIS_CRADDLES_FOR_LAUNCH) {
+          actor.travisCraddleCount -= TRAVIS_CRADDLES_FOR_LAUNCH;
+          actor.y -= 80;
+          actor.vy = -1650;
+          actor.x += TRAVIS_LAUNCH_FORWARD_METERS * 10;
+          actor.vx = Math.max(actor.vx + 900, 1400);
+          spawnParticles(actor.x, actor.y, 44, "#ffe0bf");
+          spawnParticles(actor.x, actor.y, 28, "#ffffff");
+          startScreenShake(16, 0.32);
+          tone(820, 0.08, "triangle", 0.1);
+          tone(620, 0.06, "square", 0.08);
+          runStateLabel.textContent = `Craddle launch! Travis blasted ${TRAVIS_LAUNCH_FORWARD_METERS}m forward.`;
         }
       }
     }
@@ -4288,6 +4389,8 @@ function getAbilityLabel(character) {
       return "T-Rex jump";
     case "owenjump":
       return "steady jump";
+    case "travisjump":
+      return "craddle hop";
     case "samswim":
       return "swim through Hugh / double-jump";
     case "basketshot":
@@ -4461,6 +4564,16 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${phaseText}  |  Space: blink warp  |  Auto-phase through Hugh every ${NATE_PHASE_COOLDOWN}s`;
+    return;
+  }
+
+  if (selectedCharacter.id === "traviswilliams") {
+    const craddleText = `Craddles: ${actor.travisCraddleCount}/${TRAVIS_CRADDLES_FOR_LAUNCH}`;
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${craddleText}  |  Jump in ${actor.abilityCooldown.toFixed(1)}s  |  10 craddles = +${TRAVIS_LAUNCH_FORWARD_METERS}m launch`;
+      return;
+    }
+    abilityHint.textContent = `${craddleText}  |  Space: basic jump  |  10 craddles = fly up +${TRAVIS_LAUNCH_FORWARD_METERS}m`;
     return;
   }
 
@@ -4946,6 +5059,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "nathan") {
     return ["Nathan.png", "characters/Nate.png"];
   }
+  if (character.id === "traviswilliams") {
+    return ["characters/Travis Williams.png", "Travis Williams.png"];
+  }
   if (character.id === "kaderess") {
     return ["characters/Kade Ress.png", "Kade Ress.png"];
   }
@@ -5209,6 +5325,9 @@ function drawMapDecor() {
     : [];
   const visibleNathanGas = selectedCharacter.id === "nathan"
     ? getNathanGasInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
+  const visibleTravisCraddles = selectedCharacter.id === "traviswilliams"
+    ? getTravisCraddlesInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
 
   visibleCandies.forEach((candy) => {
@@ -5519,6 +5638,28 @@ function drawMapDecor() {
       ctx.textAlign = "center";
       ctx.fillText("G", sx, gy + gas.r * 0.28);
       ctx.textAlign = "start";
+    }
+  });
+
+  visibleTravisCraddles.forEach((craddle) => {
+    const cy = terrainY(craddle.x) - craddle.yOffset;
+    const sx = craddle.x - cameraX;
+    if (sx < -100 || sx > canvas.width + 100) return;
+    const size = craddle.r * 3.2;
+    if (travisCraddleImg && travisCraddleImg.complete && travisCraddleImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, cy);
+      ctx.rotate(Math.sin((performance.now() * 0.0024) + craddle.index) * 0.08);
+      ctx.drawImage(travisCraddleImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#9a6b3d";
+      ctx.beginPath();
+      ctx.roundRect(sx - craddle.r * 1.2, cy - craddle.r * 0.95, craddle.r * 2.4, craddle.r * 1.9, craddle.r * 0.32);
+      ctx.fill();
+      ctx.strokeStyle = "#d8b384";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx - craddle.r * 1.05, cy - craddle.r * 0.8, craddle.r * 2.1, craddle.r * 1.6);
     }
   });
 
@@ -6637,6 +6778,14 @@ function preloadCharacterImages() {
     if (nathanGasIdx < nathanGasImageCandidates.length) nathanGasImg.src = nathanGasImageCandidates[nathanGasIdx];
   };
   nathanGasImg.src = nathanGasImageCandidates[0];
+
+  travisCraddleImg = new Image();
+  let travisCraddleIdx = 0;
+  travisCraddleImg.onerror = () => {
+    travisCraddleIdx += 1;
+    if (travisCraddleIdx < travisCraddleImageCandidates.length) travisCraddleImg.src = travisCraddleImageCandidates[travisCraddleIdx];
+  };
+  travisCraddleImg.src = travisCraddleImageCandidates[0];
 
   nathanTrumpImg = new Image();
   let nathanTrumpIdx = 0;
