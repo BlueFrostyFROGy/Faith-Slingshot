@@ -107,17 +107,26 @@ const LUKE_ITEM_JUMP_MAX    = 960; // cap
 const LUKE_SUPERSPEED_THRESHOLD = 20;
 const LUKE_SUPERSPEED_VX        = 4200; // px/s during superspeed
 const LUKE_SUPERSPEED_DURATION  = 8;    // seconds
+const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
 
 const maps = [
   { id: "campus", name: "Campus" },
   { id: "town-square", name: "Town Square" },
+  { id: "stric-woods", name: "The Stric Woods" },
 ];
 let currentMapIndex = 0;
 let townSquareMapImg = null;
+let stricWoodsMapImgs = [];
 const townSquareMapImageCandidates = [
   "Map 2 (Town Sqaure).png",
   "Map 2 (Town Square).png",
   "assets/images/town-square.png",
+];
+const stricWoodsMapImageCandidates = [
+  ["New Map Boss Level (strickerland)/Page 1.png", "Page 1.png"],
+  ["New Map Boss Level (strickerland)/2.png", "2.png"],
+  ["New Map Boss Level (strickerland)/3.png", "3.png"],
+  ["New Map Boss Level (strickerland)/4.png", "4.png"],
 ];
 
 const characters = [
@@ -393,7 +402,18 @@ let lastMouseX = canvas.width / 2;
 let lastMouseY = canvas.height / 2;
 let bombs = [];
 let tennisBalls = [];
+let enemyLasers = [];
 const destroyedJanets = new Set();
+const mikeLaserCooldowns = new Map();
+const stricBossState = {
+  active: false,
+  x: 0,
+  y: 0,
+  phase: 0,
+  phaseTimer: 0,
+  shotTimer: 0,
+  angleTimer: 0,
+};
 
 // Slingshot drag state
 let isDragging = false;
@@ -461,6 +481,7 @@ const confetti = [];
 
 const bouncePadCache = new Map();
 const janetCache = new Map();
+const mikeCache = new Map();
 const candyCache = new Map();
 const beerCache = new Map();
 const burgerCache = new Map();
@@ -502,7 +523,21 @@ const fatalObstacleImageCandidates = [
   "office-obstacle.jpg",
 ];
 
+const mikeObstacleImageCandidates = [
+  "New Map Boss Level (strickerland)/Mike.png",
+  "New Map Boss Level (strickerland)/Mike.webp",
+  "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
+];
+
+const strickerBossImageCandidates = [
+  "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
+  "New Map Boss Level (strickerland)/Stricker.webp",
+  "New Map Boss Level (strickerland)/Stricker.png",
+];
+
 let fatalObstacleImg = null;
+let mikeObstacleImg = null;
+let strickerBossImg = null;
 let spencerBombImg = null;
 let manningFishingRodImg = null;
 let braydenBeerImg = null;
@@ -723,6 +758,160 @@ function getJanetsInRange(startX, endX) {
   }
 
   return janets;
+}
+
+function createMike(index) {
+  const spacing = 1500;
+  const startX = 2600;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 401) * 360) - 100;
+  const yOffset = 62 + Math.floor(seededNoise(index + 402) * 18);
+
+  return {
+    index: 100000 + index,
+    x: baseX + offset,
+    yOffset,
+    w: 58,
+    h: 60,
+    color: "#ffe3d5",
+    label: "Mike",
+    fatal: true,
+    isMike: true,
+  };
+}
+
+function getMike(index) {
+  if (!mikeCache.has(index)) {
+    mikeCache.set(index, createMike(index));
+  }
+  return mikeCache.get(index);
+}
+
+function getMikesInRange(startX, endX) {
+  const spacing = 1500;
+  const startXBase = 2600;
+  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 1);
+  const mikes = [];
+
+  for (let index = firstIndex; index <= lastIndex; index += 1) {
+    const mike = getMike(index);
+    if (destroyedJanets.has(mike.index)) continue;
+    if (mike.x + mike.w >= startX && mike.x <= endX) {
+      mikes.push(mike);
+    }
+  }
+
+  return mikes;
+}
+
+function getFatalObstaclesInRange(startX, endX) {
+  if (getCurrentMap().id === "stric-woods") {
+    return getMikesInRange(startX, endX);
+  }
+  return getJanetsInRange(startX, endX);
+}
+
+function spawnEnemyLaser(x, y, angle, speed = 920, life = 3.2, color = "#ff3b3b") {
+  enemyLasers.push({
+    x,
+    y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    life,
+    radius: 7,
+    color,
+  });
+}
+
+function updateEnemyLasers(dt) {
+  if (!enemyLasers.length) return false;
+
+  for (const laser of enemyLasers) {
+    laser.life -= dt;
+    laser.x += laser.vx * dt;
+    laser.y += laser.vy * dt;
+
+    const dx = actor.x - laser.x;
+    const dy = actor.y - laser.y;
+    const hitR = actor.radius + laser.radius;
+    if (dx * dx + dy * dy <= hitR * hitR) {
+      spawnParticles(actor.x, actor.y, 30, "#ff6b6b");
+      tone(160, 0.08, "sawtooth", 0.09);
+      finishRun("Run ended: hit by laser fire.");
+      return true;
+    }
+  }
+
+  enemyLasers = enemyLasers.filter((laser) => laser.life > 0 && laser.x > actor.x - 3000 && laser.x < actor.x + 4500 && laser.y > -500 && laser.y < canvas.height + 500);
+  return false;
+}
+
+function updateStricWoodsHazards(dt, nearbyFatals) {
+  if (getCurrentMap().id !== "stric-woods") {
+    stricBossState.active = false;
+    return;
+  }
+
+  for (const mike of nearbyFatals) {
+    const current = mikeLaserCooldowns.get(mike.index) ?? (0.9 + seededNoise(mike.index + 17) * 0.8);
+    const next = current - dt;
+    if (next <= 0) {
+      const my = terrainY(mike.x) - mike.yOffset + mike.h * 0.45;
+      spawnEnemyLaser(mike.x + 4, my, Math.PI, 900, 3.2, "#ff3b3b");
+      mikeLaserCooldowns.set(mike.index, 1.2 + seededNoise(mike.index + 71) * 1.0);
+    } else {
+      mikeLaserCooldowns.set(mike.index, next);
+    }
+  }
+
+  const travelled = Math.max(0, (actor.maxX - world.launchX) / 10);
+  if (!stricBossState.active && travelled >= STRIC_WOODS_BOSS_TRIGGER_M) {
+    stricBossState.active = true;
+    stricBossState.x = actor.x + 620;
+    stricBossState.y = terrainY(stricBossState.x) - 260;
+    stricBossState.phase = 0;
+    stricBossState.phaseTimer = 3;
+    stricBossState.shotTimer = 0.4;
+    stricBossState.angleTimer = 0;
+    startScreenShake(14, 0.32);
+    tone(120, 0.12, "sawtooth", 0.1);
+    tone(190, 0.1, "triangle", 0.09);
+  }
+
+  if (!stricBossState.active) return;
+
+  const targetX = actor.x + 560;
+  stricBossState.x += (targetX - stricBossState.x) * Math.min(1, dt * 3.8);
+  stricBossState.angleTimer += dt;
+  stricBossState.y = terrainY(stricBossState.x) - 250 + Math.sin(stricBossState.angleTimer * 1.6) * 65;
+
+  stricBossState.phaseTimer -= dt;
+  if (stricBossState.phaseTimer <= 0) {
+    stricBossState.phase = (stricBossState.phase + 1) % 3;
+    stricBossState.phaseTimer = 3.2;
+  }
+
+  stricBossState.shotTimer -= dt;
+  if (stricBossState.shotTimer <= 0) {
+    const bx = stricBossState.x;
+    const by = stricBossState.y;
+    if (stricBossState.phase === 0) {
+      spawnEnemyLaser(bx - 20, by - 14, Math.PI - 0.2, 1100, 3.6, "#ff2a2a");
+      spawnEnemyLaser(bx - 20, by, Math.PI, 1150, 3.6, "#ff2a2a");
+      spawnEnemyLaser(bx - 20, by + 14, Math.PI + 0.2, 1100, 3.6, "#ff2a2a");
+      stricBossState.shotTimer = 0.42;
+    } else if (stricBossState.phase === 1) {
+      const wave = Math.sin(stricBossState.angleTimer * 5.4) * 0.4;
+      spawnEnemyLaser(bx - 20, by, Math.PI + wave, 1200, 3.8, "#ff4b4b");
+      stricBossState.shotTimer = 0.24;
+    } else {
+      for (let i = -2; i <= 2; i += 1) {
+        spawnEnemyLaser(bx - 20, by + i * 8, Math.PI + i * 0.14, 1080, 3.8, "#ff6b6b");
+      }
+      stricBossState.shotTimer = 0.58;
+    }
+  }
 }
 
 function createCandy(index) {
@@ -1162,7 +1351,14 @@ function resetActor() {
   impactBursts.length = 0;
   bombs.length = 0;
   tennisBalls.length = 0;
+  enemyLasers.length = 0;
   destroyedJanets.clear();
+  mikeLaserCooldowns.clear();
+  stricBossState.active = false;
+  stricBossState.phase = 0;
+  stricBossState.phaseTimer = 0;
+  stricBossState.shotTimer = 0;
+  stricBossState.angleTimer = 0;
   collectedCandies.clear();
   collectedBeers.clear();
   collectedBurgers.clear();
@@ -1788,7 +1984,7 @@ function explodeBomb(bomb) {
 
   const blastRadius = 260;
   let kills = 0;
-  const nearbyJanets = getJanetsInRange(bomb.x - 220, bomb.x + 220);
+  const nearbyJanets = getFatalObstaclesInRange(bomb.x - 220, bomb.x + 220);
 
   nearbyJanets.forEach((janet) => {
     const centerX = janet.x + janet.w * 0.5;
@@ -1861,7 +2057,7 @@ function updateTennisBalls(dt) {
     ball.x += ball.vx * dt;
     ball.y += ball.vy * dt;
 
-    const nearbyJanets = getJanetsInRange(ball.x - 90, ball.x + 90);
+    const nearbyJanets = getFatalObstaclesInRange(ball.x - 90, ball.x + 90);
     for (const janet of nearbyJanets) {
       const janetY = terrainY(janet.x) - janet.yOffset;
       const nearestX = Math.max(janet.x, Math.min(ball.x, janet.x + janet.w));
@@ -1947,7 +2143,7 @@ function collideRect(rect) {
       actor.y = y - actor.radius;
       spawnParticles(actor.x, actor.y, 24, "#ff7d5f");
       tone(120, 0.12, "sawtooth", 0.08);
-      finishRun("Run ended: Hugh Henderson collision.");
+      finishRun(`Run ended: ${rect.label || "fatal obstacle"} collision.`);
       return;
     }
     actor.y = y - actor.radius;
@@ -2145,7 +2341,7 @@ function update(dt) {
     }
 
     const nearbyBouncePads = getBouncePadsInRange(actor.x - 260, actor.x + 520);
-    const nearbyJanets = getJanetsInRange(actor.x - 220, actor.x + 560);
+    const nearbyJanets = getFatalObstaclesInRange(actor.x - 220, actor.x + 560);
     const nearbyCandies = selectedCharacter.id === "candyjew"
       ? getCandiesInRange(actor.x - 260, actor.x + 560)
       : [];
@@ -2173,6 +2369,11 @@ function update(dt) {
     const nearbyLukeCoffee = selectedCharacter.id === "lukepueppke"
       ? getLukeCoffeeInRange(actor.x - 260, actor.x + 560)
       : [];
+
+    updateStricWoodsHazards(dt, nearbyJanets);
+    if (updateEnemyLasers(dt)) {
+      return;
+    }
 
     obstacles.forEach(collideRect);
     nearbyJanets.forEach(collideRect);
@@ -3091,6 +3292,31 @@ function getCharacterImageCandidates(character) {
 function drawBackground() {
   const currentMap = getCurrentMap();
 
+  if (currentMap.id === "stric-woods") {
+    const distanceM = Math.max(0, (actor.maxX - world.launchX) / 10);
+    const pageIndex = Math.floor(distanceM / 2500) % 4;
+    const bg = stricWoodsMapImgs[pageIndex];
+
+    if (bg && bg.complete && bg.naturalWidth > 8) {
+      const drawH = canvas.height + 90;
+      const drawW = drawH * (bg.naturalWidth / bg.naturalHeight);
+      const scroll = cameraX * 0.17;
+      const offset = ((scroll % drawW) + drawW) % drawW;
+
+      for (let x = -offset - drawW; x < canvas.width + drawW; x += drawW) {
+        ctx.drawImage(bg, x, -45, drawW, drawH);
+      }
+      return;
+    }
+
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, "#1e2a23");
+    grad.addColorStop(1, "#0f1712");
+    ctx.fillStyle = grad;
+    ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
+    return;
+  }
+
   if (currentMap.id === "town-square" && townSquareMapImg && townSquareMapImg.complete && townSquareMapImg.naturalWidth > 8) {
     const drawH = canvas.height + 80;
     const drawW = drawH * (townSquareMapImg.naturalWidth / townSquareMapImg.naturalHeight);
@@ -3185,9 +3411,12 @@ function drawGround() {
 function drawMapDecor() {
   ctx.fillStyle = "#ffffff";
   ctx.font = "bold 20px Trebuchet MS";
-  const mapTitle = getCurrentMap().id === "town-square"
+  const mapId = getCurrentMap().id;
+  const mapTitle = mapId === "town-square"
     ? "Town Square"
-    : "Faith Christian Campus (Fictional)";
+    : mapId === "stric-woods"
+      ? "The Stric Woods"
+      : "Faith Christian Campus (Fictional)";
   ctx.fillText(mapTitle, 18, 35);
 
   const markerStep = world.markersEvery * 10;
@@ -3222,34 +3451,35 @@ function drawMapDecor() {
     ctx.fillText(o.label, sx + 6, y - 6);
   });
 
-  const visibleJanets = getJanetsInRange(cameraX - 120, cameraX + canvas.width + 120);
-  visibleJanets.forEach((janet) => {
-    const janetY = terrainY(janet.x) - janet.yOffset;
-    const janetSX = janet.x - cameraX;
-    if (janetSX <= -janet.w - 60 || janetSX >= canvas.width + 60) return;
+  const visibleFatals = getFatalObstaclesInRange(cameraX - 120, cameraX + canvas.width + 120);
+  visibleFatals.forEach((fatalRect) => {
+    const janetY = terrainY(fatalRect.x) - fatalRect.yOffset;
+    const janetSX = fatalRect.x - cameraX;
+    if (janetSX <= -fatalRect.w - 60 || janetSX >= canvas.width + 60) return;
 
-    if (fatalObstacleImg && fatalObstacleImg.complete && fatalObstacleImg.naturalWidth > 10) {
+    const obstacleImg = getCurrentMap().id === "stric-woods" ? mikeObstacleImg : fatalObstacleImg;
+    if (obstacleImg && obstacleImg.complete && obstacleImg.naturalWidth > 10) {
       ctx.save();
       ctx.fillStyle = "#ffffffd9";
-      ctx.fillRect(janetSX - 6, janetY - 6, janet.w + 12, janet.h + 12);
-      ctx.drawImage(fatalObstacleImg, janetSX, janetY, janet.w, janet.h);
+      ctx.fillRect(janetSX - 6, janetY - 6, fatalRect.w + 12, fatalRect.h + 12);
+      ctx.drawImage(obstacleImg, janetSX, janetY, fatalRect.w, fatalRect.h);
       ctx.restore();
     } else {
-      ctx.fillStyle = janet.color;
-      ctx.fillRect(janetSX, janetY, janet.w, janet.h);
+      ctx.fillStyle = fatalRect.color;
+      ctx.fillRect(janetSX, janetY, fatalRect.w, fatalRect.h);
       ctx.fillStyle = "#8f4f64";
       ctx.beginPath();
-      ctx.arc(janetSX + janet.w / 2, janetY + 40, 26, 0, Math.PI * 2);
+      ctx.arc(janetSX + fatalRect.w / 2, janetY + 40, 26, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#fff";
       ctx.font = "bold 38px Trebuchet MS";
       ctx.textAlign = "center";
-      ctx.fillText("!", janetSX + janet.w / 2, janetY + 54);
+      ctx.fillText("!", janetSX + fatalRect.w / 2, janetY + 54);
       ctx.textAlign = "start";
     }
     ctx.fillStyle = "#8f3f5b";
     ctx.font = "bold 13px Trebuchet MS";
-    ctx.fillText(janet.label, janetSX + 4, janetY - 8);
+    ctx.fillText(fatalRect.label, janetSX + 4, janetY - 8);
   });
 
   const visibleBouncePads = getBouncePadsInRange(cameraX - 120, cameraX + canvas.width + 120);
@@ -3900,6 +4130,46 @@ function drawBombs() {
   });
 }
 
+function drawEnemyLasersAndBoss() {
+  if (stricBossState.active) {
+    const bx = stricBossState.x - cameraX;
+    const by = stricBossState.y;
+    const size = 210;
+    if (strickerBossImg && strickerBossImg.complete && strickerBossImg.naturalWidth > 10) {
+      ctx.save();
+      ctx.globalAlpha = 0.96;
+      ctx.drawImage(strickerBossImg, bx - size * 0.5, by - size * 0.55, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#ffb4b4";
+      ctx.beginPath();
+      ctx.arc(bx, by, 72, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#4a0f0f";
+      ctx.font = "bold 18px Trebuchet MS";
+      ctx.textAlign = "center";
+      ctx.fillText("STRICKER", bx, by + 6);
+      ctx.textAlign = "start";
+    }
+  }
+
+  enemyLasers.forEach((laser) => {
+    const sx = laser.x - cameraX;
+    if (sx < -220 || sx > canvas.width + 220) return;
+    ctx.strokeStyle = laser.color;
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(sx, laser.y);
+    ctx.lineTo(sx - laser.vx * 0.018, laser.y - laser.vy * 0.018);
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffd6d6";
+    ctx.beginPath();
+    ctx.arc(sx, laser.y, laser.radius * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
 function drawTrajectory() {
   if (!isDragging || !launchVector) return;
   
@@ -3942,6 +4212,7 @@ function draw() {
   drawBackground();
   drawGround();
   drawMapDecor();
+  drawEnemyLasersAndBoss();
   drawCatapult();
   drawSlingshotBands();
   drawTrajectory();
@@ -4061,6 +4332,26 @@ function preloadCharacterImages() {
     }
   };
   fatalObstacleImg.src = fatalObstacleImageCandidates[fatalIndex];
+
+  mikeObstacleImg = new Image();
+  let mikeIdx = 0;
+  mikeObstacleImg.onerror = () => {
+    mikeIdx += 1;
+    if (mikeIdx < mikeObstacleImageCandidates.length) {
+      mikeObstacleImg.src = mikeObstacleImageCandidates[mikeIdx];
+    }
+  };
+  mikeObstacleImg.src = mikeObstacleImageCandidates[mikeIdx];
+
+  strickerBossImg = new Image();
+  let strickerIdx = 0;
+  strickerBossImg.onerror = () => {
+    strickerIdx += 1;
+    if (strickerIdx < strickerBossImageCandidates.length) {
+      strickerBossImg.src = strickerBossImageCandidates[strickerIdx];
+    }
+  };
+  strickerBossImg.src = strickerBossImageCandidates[strickerIdx];
 
   spencerBombImg = new Image();
   let bombIndex = 0;
@@ -4191,6 +4482,19 @@ function preloadCharacterImages() {
     }
   };
   townSquareMapImg.src = townSquareMapImageCandidates[townSquareIdx];
+
+  stricWoodsMapImgs = stricWoodsMapImageCandidates.map((candidates) => {
+    const img = new Image();
+    let idx = 0;
+    img.onerror = () => {
+      idx += 1;
+      if (idx < candidates.length) {
+        img.src = candidates[idx];
+      }
+    };
+    img.src = candidates[idx];
+    return img;
+  });
 
   candyImgs.length = 0;
   candyImageCandidates.forEach((path) => {
