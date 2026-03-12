@@ -444,7 +444,7 @@ const characters = [
     id: "cael",
     name: "Cael",
     trait: "Sky-hoop shooter",
-    bio: "A bouncier basketball sniper who fires forward like Evan, but gets a bigger launch upward every time he lets it fly.",
+    bio: "A bouncier basketball sniper who launches the ball forward and gets a bigger burst upward every time he lets it fly.",
     imageBase: "Cael",
     initials: "CA",
     mass: 0.94,
@@ -2291,13 +2291,15 @@ function useAbility() {
       const dirY = dy / dist;
 
       const jumpBoost = selectedCharacter.id === "cael" ? 1040 : 880;
-      actor.vx += dirX * 780;
+      const horizontalBoost = selectedCharacter.id === "evan" ? 860 : 720;
+      const ballSpeed = selectedCharacter.id === "evan" ? 1120 : 900;
+      actor.vx += dirX * horizontalBoost;
       actor.vy += dirY * jumpBoost;
 
       evanBasketballs.push({
         x: actor.x + actor.radius * 0.7,
         y: actor.y - actor.radius * 0.15,
-        vx: Math.max(760, actor.vx + 920),
+        vx: Math.max(760, actor.vx + ballSpeed),
         vy: Math.min(-60, actor.vy * 0.18 - 60),
         life: 2.7,
         radius: 16,
