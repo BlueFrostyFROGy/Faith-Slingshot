@@ -525,14 +525,12 @@ const fatalObstacleImageCandidates = [
 
 const mikeObstacleImageCandidates = [
   "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
-  "New Map Boss Level (strickerland)/(the Stricker.webp",
-  "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
+  "New Boss (the Stricker.webp",
 ];
 
 const strickerBossImageCandidates = [
   "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
-  "New Map Boss Level (strickerland)/(the Stricker.webp",
-  "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
+  "New Boss (the Stricker.webp",
 ];
 
 let fatalObstacleImg = null;
@@ -4339,20 +4337,20 @@ function preloadCharacterImages() {
   mikeObstacleImg.onerror = () => {
     mikeIdx += 1;
     if (mikeIdx < mikeObstacleImageCandidates.length) {
-      mikeObstacleImg.src = mikeObstacleImageCandidates[mikeIdx];
+      mikeObstacleImg.src = buildSiteAssetUrl(mikeObstacleImageCandidates[mikeIdx]);
     }
   };
-  mikeObstacleImg.src = mikeObstacleImageCandidates[mikeIdx];
+  mikeObstacleImg.src = buildSiteAssetUrl(mikeObstacleImageCandidates[mikeIdx]);
 
   strickerBossImg = new Image();
   let strickerIdx = 0;
   strickerBossImg.onerror = () => {
     strickerIdx += 1;
     if (strickerIdx < strickerBossImageCandidates.length) {
-      strickerBossImg.src = strickerBossImageCandidates[strickerIdx];
+      strickerBossImg.src = buildSiteAssetUrl(strickerBossImageCandidates[strickerIdx]);
     }
   };
-  strickerBossImg.src = strickerBossImageCandidates[strickerIdx];
+  strickerBossImg.src = buildSiteAssetUrl(strickerBossImageCandidates[strickerIdx]);
 
   spencerBombImg = new Image();
   let bombIndex = 0;
@@ -4490,10 +4488,10 @@ function preloadCharacterImages() {
     img.onerror = () => {
       idx += 1;
       if (idx < candidates.length) {
-        img.src = candidates[idx];
+        img.src = buildSiteAssetUrl(candidates[idx]);
       }
     };
-    img.src = candidates[idx];
+    img.src = buildSiteAssetUrl(candidates[idx]);
     return img;
   });
 
