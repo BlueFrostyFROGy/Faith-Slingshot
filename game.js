@@ -440,6 +440,22 @@ const characters = [
     unlockAt: 0,
     ability: "basketshot",
   },
+  {
+    id: "cael",
+    name: "Cael",
+    trait: "Sky-hoop shooter",
+    bio: "A bouncier basketball sniper who fires forward like Evan, but gets a bigger launch upward every time he lets it fly.",
+    imageBase: "Cael",
+    initials: "CA",
+    mass: 0.94,
+    radius: 25,
+    drag: 0.074,
+    bounce: 0.61,
+    gravityMult: 0.91,
+    launchBoost: 1.22,
+    unlockAt: 0,
+    ability: "basketshot",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -2028,7 +2044,7 @@ function useAbility() {
     actor.abilityCooldown = 1.1;
   } else if (selectedCharacter.id === "samhallet") {
     actor.abilityCooldown = 0.25;
-  } else if (selectedCharacter.id === "evan") {
+  } else if (selectedCharacter.id === "evan" || selectedCharacter.id === "cael") {
     actor.abilityCooldown = EVAN_BASKETBALL_COOLDOWN;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
@@ -2274,8 +2290,9 @@ function useAbility() {
       const dirX = dx / dist;
       const dirY = dy / dist;
 
+      const jumpBoost = selectedCharacter.id === "cael" ? 1040 : 880;
       actor.vx += dirX * 780;
-      actor.vy += dirY * 880;
+      actor.vy += dirY * jumpBoost;
 
       evanBasketballs.push({
         x: actor.x + actor.radius * 0.7,
@@ -3458,6 +3475,15 @@ function updateAbilityHint() {
     return;
   }
 
+  if (selectedCharacter.id === "cael") {
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `Basketball reload: ${actor.abilityCooldown.toFixed(1)}s  |  Space: shoot ball + higher jump boost`;
+      return;
+    }
+    abilityHint.textContent = "Space: shoot basketball forward + extra-high jump boost";
+    return;
+  }
+
   if (selectedCharacter.id === "myer") {
     const potText = `Lucky Charms: ${actor.myerPotCount}`;
     const nextBoostIn = 10 - (actor.myerPotCount % 10 || 10);
@@ -3867,6 +3893,9 @@ function getCharacterImageCandidates(character) {
   }
   if (character.id === "evan") {
     return ["characters/Evan.png", "Evan.png"];
+  }
+  if (character.id === "cael") {
+    return ["characters/Cael.png", "Cael.png"];
   }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
