@@ -107,6 +107,9 @@ const LUKE_ITEM_JUMP_MAX    = 960; // cap
 const LUKE_SUPERSPEED_THRESHOLD = 20;
 const LUKE_SUPERSPEED_VX        = 4200; // px/s during superspeed
 const LUKE_SUPERSPEED_DURATION  = 8;    // seconds
+const SAM_DUMBBELLS_PER_BENCH = 5;
+const SAM_BENCH_VISIBLE_SECONDS = 8;
+const SAM_SWIM_ACTIVE_SECONDS = 3.2;
 const OWEN_MILKS_PER_LIFE = 5;
 const OWEN_FALL_DAMAGE_VY = 980;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
@@ -404,6 +407,22 @@ const characters = [
     unlockAt: 0,
     ability: "owenjump",
   },
+  {
+    id: "samhallet",
+    name: "Sam Hallet",
+    trait: "Bench press swimmer",
+    bio: "Slower mover with high bounce. Collect dumbbells. Every 5 dumbbells spawns a temporary bench press. Hit bench for +1 swim charge and +1 Hugh pass per swim.",
+    imageBase: "Sam Hallet",
+    initials: "SH",
+    mass: 1.32,
+    radius: 29,
+    drag: 0.135,
+    bounce: 0.74,
+    gravityMult: 1.01,
+    launchBoost: 0.97,
+    unlockAt: 0,
+    ability: "samswim",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -494,6 +513,13 @@ const actor = {
   lukeSuperspeedTimer: 0,
   owenMilks: 0,
   owenLives: 3,
+  samDumbbellCount: 0,
+  samBenchSets: 0,
+  samSwimCharges: 0,
+  samSwimPerTurn: 1,
+  samSwimActive: false,
+  samSwimPassesLeft: 0,
+  samSwimTimer: 0,
 };
 
 const obstacles = [];
@@ -509,6 +535,7 @@ const burgerCache = new Map();
 const footballCache = new Map();
 const potGoldCache = new Map();
 const needleCache = new Map();
+const samDumbbellCache = new Map();
 const collectedCandies = new Set();
 const collectedBeers = new Set();
 const collectedBurgers = new Set();
@@ -516,6 +543,8 @@ const collectedFootballs = new Set();
 const collectedPots = new Set();
 const collectedNeedles = new Set();
 const collectedOwenMilk = new Set();
+const collectedSamDumbbells = new Set();
+let samBenchPickup = null;
 
 const JANET_BASE = {
   w: 56,
@@ -573,6 +602,8 @@ let lincolnAdhdImg = null;
 let lukeRedBullImg = null;
 let lukeCoffeeImg = null;
 let owenMilkImg = null;
+let samDumbbellImg = null;
+let samBenchPressImg = null;
 
 
 const spencerBombImageCandidates = [
@@ -682,6 +713,18 @@ const owenMilkImageCandidates = [
   "characters props/Owens Milk.png",
   "Owens Milk .png",
   "Owens Milk.png",
+];
+
+const samDumbbellImageCandidates = [
+  "characters props/Sams Dumbells.png",
+  "Sams Dumbells.png",
+  "characters props/Sams Dumbbells.png",
+  "Sams Dumbbells.png",
+];
+
+const samBenchPressImageCandidates = [
+  "characters props/Sams Bench Press.png",
+  "Sams Bench Press.png",
 ];
 
 
@@ -1318,6 +1361,35 @@ function getOwenMilkInRange(startX, endX) {
   return items;
 }
 
+// ── Sam: Dumbbells + bench press ───────────────────────────────────────────
+function createSamDumbbell(index) {
+  const spacing = 390;
+  const startX = 940;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1501) * 220) - 90;
+  const yOffset = 104 + Math.floor(seededNoise(index + 1502) * 30);
+  return { index, x: baseX + offset, yOffset, r: 14 };
+}
+
+function getSamDumbbell(index) {
+  if (!samDumbbellCache.has(index)) samDumbbellCache.set(index, createSamDumbbell(index));
+  return samDumbbellCache.get(index);
+}
+
+function getSamDumbbellsInRange(startX, endX) {
+  const spacing = 390;
+  const startXBase = 940;
+  const first = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const last = Math.max(first, Math.floor((endX - startXBase) / spacing) + 2);
+  const items = [];
+  for (let i = first; i <= last; i += 1) {
+    const dumbbell = getSamDumbbell(i);
+    if (collectedSamDumbbells.has(dumbbell.index)) continue;
+    if (dumbbell.x + dumbbell.r >= startX && dumbbell.x - dumbbell.r <= endX) items.push(dumbbell);
+  }
+  return items;
+}
+
 
 let audioCtx = null;
 
@@ -1417,6 +1489,14 @@ function resetActor() {
   actor.lukeSuperspeedTimer = 0;
   actor.owenMilks = 0;
   actor.owenLives = 3;
+  actor.samDumbbellCount = 0;
+  actor.samBenchSets = 0;
+  actor.samSwimCharges = 0;
+  actor.samSwimPerTurn = 1;
+  actor.samSwimActive = false;
+  actor.samSwimPassesLeft = 0;
+  actor.samSwimTimer = 0;
+  samBenchPickup = null;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -1440,6 +1520,7 @@ function resetActor() {
   collectedLukeRedBull.clear();
   collectedLukeCoffee.clear();
   collectedOwenMilk.clear();
+  collectedSamDumbbells.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -1763,6 +1844,16 @@ function trySpendOwenLife(statusMessage) {
   return true;
 }
 
+function spawnSamBenchPress() {
+  samBenchPickup = {
+    x: actor.x + 560 + Math.floor(seededNoise(actor.samDumbbellCount + actor.maxX) * 180),
+    yOffset: 118,
+    w: 170,
+    h: 94,
+    life: SAM_BENCH_VISIBLE_SECONDS,
+  };
+}
+
 function useAbility() {
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
@@ -1798,6 +1889,8 @@ function useAbility() {
     actor.abilityCooldown = 2;
   } else if (selectedCharacter.id === "owen") {
     actor.abilityCooldown = 1.1;
+  } else if (selectedCharacter.id === "samhallet") {
+    actor.abilityCooldown = 0.25;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -2011,6 +2104,25 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 16, "#e7eef8");
       break;
     }
+    case "samswim": {
+      if (actor.samSwimCharges <= 0) {
+        tone(130, 0.06, "sine", 0.05);
+        actor.abilityCooldown = 0.2;
+        break;
+      }
+      actor.samSwimCharges -= 1;
+      actor.samSwimActive = true;
+      actor.samSwimTimer = SAM_SWIM_ACTIVE_SECONDS;
+      actor.samSwimPassesLeft = Math.max(1, actor.samSwimPerTurn);
+      actor.abilityCooldown = 1.2;
+      actor.vx += 120;
+      actor.vy -= 70;
+      tone(300, 0.08, "triangle", 0.08);
+      tone(460, 0.06, "triangle", 0.07);
+      spawnParticles(actor.x, actor.y, 24, "#bde7ff");
+      startScreenShake(9, 0.2);
+      break;
+    }
   }
 
   updateAbilityHint();
@@ -2186,6 +2298,19 @@ function collideRect(rect) {
   const dy = actor.y - nearestY;
   if (dx * dx + dy * dy <= actor.radius * actor.radius) {
     if (rect.fatal) {
+      if (selectedCharacter.id === "samhallet" && actor.samSwimActive && actor.samSwimPassesLeft > 0 && rect.label === "Hugh Henderson") {
+        destroyedJanets.add(rect.index);
+        actor.samSwimPassesLeft -= 1;
+        actor.vx = Math.max(actor.vx + 120, 260);
+        actor.vy = Math.min(actor.vy, -80);
+        spawnParticles(actor.x, actor.y, 22, "#9ad8ff");
+        tone(520, 0.05, "triangle", 0.07);
+        if (actor.samSwimPassesLeft <= 0) {
+          actor.samSwimActive = false;
+          actor.samSwimTimer = 0;
+        }
+        return;
+      }
       if (selectedCharacter.id === "candyjew" && actor.rainbowModeTimer > 0) {
         actor.vx += 240;
         actor.vy -= 120;
@@ -2395,6 +2520,25 @@ function update(dt) {
       }
     }
 
+    if (selectedCharacter.id === "samhallet") {
+      if (actor.samSwimActive) {
+        actor.samSwimTimer = Math.max(0, actor.samSwimTimer - dt);
+        actor.vx += 34 * dt;
+        if (Math.random() < 0.4) spawnParticles(actor.x - actor.radius * 0.4, actor.y, 2, "#9ad8ff");
+        if (actor.samSwimTimer <= 0 || actor.samSwimPassesLeft <= 0) {
+          actor.samSwimActive = false;
+          actor.samSwimTimer = 0;
+        }
+      }
+
+      if (samBenchPickup) {
+        samBenchPickup.life = Math.max(0, samBenchPickup.life - dt);
+        if (samBenchPickup.life <= 0) {
+          samBenchPickup = null;
+        }
+      }
+    }
+
     if (selectedCharacter.id === "anthony" && actor.state === "flying") {
       const travelled = Math.max(0, (actor.maxX - world.launchX) / 10);
       const newStage = Math.floor(travelled / SAL_SHRINK_INTERVAL);
@@ -2472,6 +2616,9 @@ function update(dt) {
       : [];
     const nearbyOwenMilk = selectedCharacter.id === "owen"
       ? getOwenMilkInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbySamDumbbells = selectedCharacter.id === "samhallet"
+      ? getSamDumbbellsInRange(actor.x - 260, actor.x + 560)
       : [];
 
     updateStricWoodsHazards(dt, nearbyJanets);
@@ -2680,6 +2827,44 @@ function update(dt) {
       }
     }
 
+    for (const dumbbell of nearbySamDumbbells) {
+      const dyPos = terrainY(dumbbell.x) - dumbbell.yOffset;
+      const dx = actor.x - dumbbell.x;
+      const dy = actor.y - dyPos;
+      const hitR = actor.radius + dumbbell.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedSamDumbbells.add(dumbbell.index);
+        actor.samDumbbellCount += 1;
+        spawnParticles(dumbbell.x, dyPos, 14, "#d5d5d5");
+        tone(350 + Math.min(240, actor.samDumbbellCount * 8), 0.05, "triangle", 0.06);
+
+        if (actor.samDumbbellCount % SAM_DUMBBELLS_PER_BENCH === 0) {
+          spawnSamBenchPress();
+          startScreenShake(8, 0.18);
+          runStateLabel.textContent = "Bench spawned! Hit it before it disappears.";
+        }
+      }
+    }
+
+    if (selectedCharacter.id === "samhallet" && samBenchPickup) {
+      const by = terrainY(samBenchPickup.x) - samBenchPickup.yOffset;
+      const nearestX = Math.max(samBenchPickup.x, Math.min(actor.x, samBenchPickup.x + samBenchPickup.w));
+      const nearestY = Math.max(by, Math.min(actor.y, by + samBenchPickup.h));
+      const dx = actor.x - nearestX;
+      const dy = actor.y - nearestY;
+      if (dx * dx + dy * dy <= actor.radius * actor.radius) {
+        actor.samBenchSets += 1;
+        actor.samSwimCharges += 1;
+        actor.samSwimPerTurn = 1 + actor.samBenchSets;
+        spawnParticles(actor.x, actor.y, 32, "#9ad8ff");
+        tone(620, 0.08, "triangle", 0.08);
+        tone(810, 0.06, "triangle", 0.07);
+        startScreenShake(12, 0.24);
+        runStateLabel.textContent = `Bench set complete! Swim charges: ${actor.samSwimCharges}. Hugh passes per swim: ${actor.samSwimPerTurn}.`;
+        samBenchPickup = null;
+      }
+    }
+
     if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
       nearbyJanets.forEach((hugh) => {
         if (destroyedJanets.has(hugh.index)) return;
@@ -2847,6 +3032,8 @@ function getAbilityLabel(character) {
       return "T-Rex jump";
     case "owenjump":
       return "steady jump";
+    case "samswim":
+      return "swim through Hugh";
     default:
       return "ability";
   }
@@ -3034,6 +3221,26 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${milkText}  |  ${lifeText}  |  Space: jump  |  +1 life every ${OWEN_MILKS_PER_LIFE} milks`;
+    return;
+  }
+
+  if (selectedCharacter.id === "samhallet") {
+    const dumbbellText = `Dumbbells: ${actor.samDumbbellCount}`;
+    const benchText = samBenchPickup
+      ? `Bench live: ${samBenchPickup.life.toFixed(1)}s`
+      : `Bench every ${SAM_DUMBBELLS_PER_BENCH} dumbbells`;
+    const chargeText = `Swim charges: ${actor.samSwimCharges}`;
+    const powerText = `Passes/swim: ${actor.samSwimPerTurn}`;
+
+    if (actor.samSwimActive) {
+      abilityHint.textContent = `${dumbbellText}  |  ${chargeText}  |  SWIM ${actor.samSwimTimer.toFixed(1)}s (${actor.samSwimPassesLeft} passes left)`;
+      return;
+    }
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${dumbbellText}  |  ${benchText}  |  ${chargeText}  |  ${powerText}  |  Ability in ${actor.abilityCooldown.toFixed(1)}s`;
+      return;
+    }
+    abilityHint.textContent = `${dumbbellText}  |  ${benchText}  |  ${chargeText}  |  ${powerText}  |  Space: swim through Hugh`;
     return;
   }
 
@@ -3441,6 +3648,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "owen") {
     return ["characters/Owen .png", "Owen .png"];
   }
+  if (character.id === "samhallet") {
+    return ["characters/Sam Hallet.png", "Sam Hallet.png"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 
@@ -3674,6 +3884,9 @@ function drawMapDecor() {
     : [];
   const visibleOwenMilk = selectedCharacter.id === "owen"
     ? getOwenMilkInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
+  const visibleSamDumbbells = selectedCharacter.id === "samhallet"
+    ? getSamDumbbellsInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
 
   visibleCandies.forEach((candy) => {
@@ -3935,6 +4148,53 @@ function drawMapDecor() {
       ctx.textAlign = "start";
     }
   });
+
+  // Sam dumbbells
+  visibleSamDumbbells.forEach((dumbbell) => {
+    const dyPos = terrainY(dumbbell.x) - dumbbell.yOffset;
+    const sx = dumbbell.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+    const size = dumbbell.r * 2.8;
+    if (samDumbbellImg && samDumbbellImg.complete && samDumbbellImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, dyPos);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + dumbbell.index) * 0.11);
+      ctx.drawImage(samDumbbellImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#2d2d2d";
+      ctx.fillRect(sx - dumbbell.r * 0.7, dyPos - 3, dumbbell.r * 1.4, 6);
+      ctx.beginPath();
+      ctx.arc(sx - dumbbell.r * 0.9, dyPos, dumbbell.r * 0.4, 0, Math.PI * 2);
+      ctx.arc(sx + dumbbell.r * 0.9, dyPos, dumbbell.r * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  if (selectedCharacter.id === "samhallet" && samBenchPickup) {
+    const bx = samBenchPickup.x - cameraX;
+    const by = terrainY(samBenchPickup.x) - samBenchPickup.yOffset;
+    if (bx > -samBenchPickup.w - 120 && bx < canvas.width + 120) {
+      if (samBenchPressImg && samBenchPressImg.complete && samBenchPressImg.naturalWidth > 8) {
+        ctx.drawImage(samBenchPressImg, bx, by, samBenchPickup.w, samBenchPickup.h);
+      } else {
+        ctx.fillStyle = "#1f1f1f";
+        ctx.fillRect(bx + 18, by + samBenchPickup.h * 0.55, samBenchPickup.w - 36, 14);
+        ctx.fillRect(bx + 26, by + samBenchPickup.h * 0.2, 10, samBenchPickup.h * 0.55);
+        ctx.fillRect(bx + samBenchPickup.w - 36, by + samBenchPickup.h * 0.2, 10, samBenchPickup.h * 0.55);
+      }
+
+      const samImg = selectedCharacter?._img;
+      if (samImg && samImg.complete && samImg.naturalWidth > 8) {
+        const faceSize = 42;
+        ctx.save();
+        ctx.fillStyle = "#ffffffd9";
+        ctx.fillRect(bx + samBenchPickup.w * 0.5 - faceSize * 0.5 - 3, by + 8, faceSize + 6, faceSize + 6);
+        ctx.drawImage(samImg, bx + samBenchPickup.w * 0.5 - faceSize * 0.5, by + 11, faceSize, faceSize);
+        ctx.restore();
+      }
+    }
+  }
 
   // Lincoln immunity glow ring
   if (selectedCharacter.id === "lincolnjames" && actor.lincolnImmunityTimer > 0) {
@@ -4660,6 +4920,22 @@ function preloadCharacterImages() {
     if (owenMilkIdx < owenMilkImageCandidates.length) owenMilkImg.src = owenMilkImageCandidates[owenMilkIdx];
   };
   owenMilkImg.src = owenMilkImageCandidates[0];
+
+  samDumbbellImg = new Image();
+  let samDumbbellIdx = 0;
+  samDumbbellImg.onerror = () => {
+    samDumbbellIdx += 1;
+    if (samDumbbellIdx < samDumbbellImageCandidates.length) samDumbbellImg.src = samDumbbellImageCandidates[samDumbbellIdx];
+  };
+  samDumbbellImg.src = samDumbbellImageCandidates[0];
+
+  samBenchPressImg = new Image();
+  let samBenchIdx = 0;
+  samBenchPressImg.onerror = () => {
+    samBenchIdx += 1;
+    if (samBenchIdx < samBenchPressImageCandidates.length) samBenchPressImg.src = samBenchPressImageCandidates[samBenchIdx];
+  };
+  samBenchPressImg.src = samBenchPressImageCandidates[0];
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
