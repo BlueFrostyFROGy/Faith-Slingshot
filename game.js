@@ -3368,6 +3368,14 @@ function hideAllOverlays() {
   leaderboardScreen.classList.remove("active");
   matchmakingScreen?.classList.remove("active");
 }
+function isHeadToHeadLocked() {
+  return headToHeadState.mode === "searching"
+    || headToHeadState.mode === "roulette"
+    || headToHeadState.active;
+}
+function refreshHeadToHeadLocks() {
+  if (restartBtn) restartBtn.disabled = isHeadToHeadLocked();
+}
 
 function getNetworkPlayerName() {
   if (networkState.displayName) return networkState.displayName;
@@ -3604,6 +3612,7 @@ function beginHeadToHeadSearch() {
   hideAllOverlays();
   matchmakingScreen?.classList.add("active");
   controlsPanel.classList.add("hidden");
+  refreshHeadToHeadLocks();
   const liveStarted = startLiveNetworkSearch();
   if (matchmakingStatus) {
     matchmakingStatus.textContent = liveStarted
@@ -3618,6 +3627,7 @@ function cancelHeadToHeadSearch() {
   headToHeadState.active = false;
   headToHeadState.opponentActor = null;
   matchmakingScreen?.classList.remove("active");
+  refreshHeadToHeadLocks();
   showMenu();
 }
 
@@ -3651,6 +3661,7 @@ function startHeadToHeadMatch() {
   headToHeadState.localWonLastMatch = false;
   headToHeadState.opponentFinished = false;
   networkState.localFinishSent = false;
+  refreshHeadToHeadLocks();
 
   hideAllOverlays();
   controlsPanel.classList.remove("hidden");
@@ -3664,6 +3675,7 @@ function startHeadToHeadMatch() {
   } else {
     headToHeadState.opponentActor = cloneActorState(actor);
   }
+  refreshHeadToHeadLocks();
   runStateLabel.textContent = `Head-to-Head vs ${headToHeadState.rivalName} — ${selectedCharacter.name} on ${getCurrentMap().name}`;
   updateAbilityHint();
 }
@@ -5612,8 +5624,21 @@ function drawSceneCore() {
   drawParticles();
 }
 
-function drawHeadToHeadViewport(viewActor, viewCameraX, yOffset, panelLabel, panelDistance) {
+function getHeadToHeadPaneMetrics() {
   const panelHeight = canvas.height / 2;
+  const paneScale = panelHeight / canvas.height;
+  const paneDrawWidth = canvas.width * paneScale;
+  const paneXOffset = (canvas.width - paneDrawWidth) / 2;
+  return {
+    panelHeight,
+    paneScale,
+    paneDrawWidth,
+    paneXOffset,
+  };
+}
+
+function drawHeadToHeadViewport(viewActor, viewCameraX, yOffset, panelLabel, panelDistance) {
+  const { panelHeight, paneScale, paneXOffset } = getHeadToHeadPaneMetrics();
   const actorSnapshot = cloneActorState(actor);
   const cameraSnapshot = cameraX;
 
@@ -5626,8 +5651,8 @@ function drawHeadToHeadViewport(viewActor, viewCameraX, yOffset, panelLabel, pan
   ctx.beginPath();
   ctx.rect(0, yOffset, canvas.width, panelHeight);
   ctx.clip();
-  ctx.translate(0, yOffset);
-  ctx.scale(1, panelHeight / canvas.height);
+  ctx.translate(paneXOffset, yOffset);
+  ctx.scale(paneScale, paneScale);
   drawSceneCore();
   ctx.restore();
 
@@ -5646,7 +5671,7 @@ function drawHeadToHeadViewport(viewActor, viewCameraX, yOffset, panelLabel, pan
 }
 
 function drawHeadToHeadSplit() {
-  const panelHeight = Math.floor(canvas.height / 2);
+  const { panelHeight } = getHeadToHeadPaneMetrics();
   const bottomOffset = panelHeight;
   const playerDistance = Math.max(0, (actor.maxX - world.launchX) / 10);
   const opponentDistance = headToHeadState.opponentActor
@@ -6086,6 +6111,7 @@ playBtn.addEventListener("click", () => {
   headToHeadState.liveNetwork = false;
   headToHeadState.opponentActor = null;
   matchmakingScreen?.classList.remove("active");
+  refreshHeadToHeadLocks();
   if (!isUnlocked(selectedCharacter)) {
     selectedCharacter = characters.find((c) => isUnlocked(c)) || characters[0];
   }
@@ -6098,6 +6124,7 @@ playBtn.addEventListener("click", () => {
 });
 launchBtn.addEventListener("click", launch);
 restartBtn.addEventListener("click", () => {
+  if (isHeadToHeadLocked()) return;
   resetActor();
   distanceValue.textContent = "0";
   updateHeightUI();
@@ -6149,18 +6176,20 @@ function canvasCoords(ev) {
   const localY = (ev.clientY - rect.top) * scaleY;
 
   if (headToHeadState.active) {
-    const panelHeight = canvas.height / 2;
-    if (localY > panelHeight) {
+    const { panelHeight, paneScale, paneXOffset, paneDrawWidth } = getHeadToHeadPaneMetrics();
+    if (localY > panelHeight || localX < paneXOffset || localX > paneXOffset + paneDrawWidth) {
       return {
         wx: localX + cameraX,
         wy: null,
         inPlayerPane: false,
       };
     }
+
+    const logicalX = (localX - paneXOffset) / paneScale;
+    const logicalY = localY / paneScale;
     return {
-      wx: localX + cameraX,
-      // Top pane is vertically scaled to half-height, so map input back to world Y.
-      wy: localY * 2,
+      wx: logicalX + cameraX,
+      wy: logicalY,
       inPlayerPane: true,
     };
   }
@@ -6188,10 +6217,23 @@ canvas.addEventListener("mousedown", (ev) => {
 
 canvas.addEventListener("mousemove", (ev) => {
   const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
   const rawX = ev.clientX - rect.left;
   const rawY = ev.clientY - rect.top;
-  lastMouseX = rawX;
-  lastMouseY = headToHeadState.active ? Math.min(rect.height, rawY * 2) : rawY;
+
+  if (headToHeadState.active) {
+    const localX = rawX * scaleX;
+    const localY = rawY * scaleY;
+    const { paneScale, paneXOffset } = getHeadToHeadPaneMetrics();
+    const logicalX = (localX - paneXOffset) / paneScale;
+    const logicalY = localY / paneScale;
+    lastMouseX = logicalX / scaleX;
+    lastMouseY = logicalY / scaleY;
+  } else {
+    lastMouseX = rawX;
+    lastMouseY = rawY;
+  }
 
   if (!isDragging || actor.state !== "ready") return;
 
