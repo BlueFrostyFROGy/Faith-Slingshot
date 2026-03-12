@@ -125,6 +125,10 @@ const JJ_JUMP_REGEN_SECONDS = 3;
 const KADE_JUMP_RESET_SPEED = 100; // px/s — base speed after jump penalty
 const KADE_ACCEL = 280;            // px/s² passive BMW acceleration
 const KADE_MAX_SPEED = 5000;       // px/s top speed cap
+const NATHAN_JUMP_RESET_SPEED = 110;
+const NATHAN_ACCEL = 255;
+const NATHAN_MAX_SPEED = 4600;
+const NATHAN_GAS_TARGET = 10;
 const CALEB_JUMP_VY = 760;         // fixed jump strength
 const CALEB_JUMP_COOLDOWN = 2.5;   // seconds between jumps
 const CALEB_ACCEL = 190;           // px/s² passive T-Rex acceleration
@@ -244,19 +248,19 @@ const characters = [
   },
   {
     id: "nate",
-    name: "Nate",
-    trait: "Chaos mode",
-    bio: "Tiny and light. Goes the farthest of anyone. Pure chaos.",
-    imageBase: "assets/images/nate",
-    initials: "N",
-    mass: 0.58,
-    radius: 20,
-    drag: 0.062,
-    bounce: 0.72,
-    gravityMult: 0.88,
-    launchBoost: 1.30,
+    name: "Nathan",
+    trait: "Tacoma airstrike",
+    bio: "Cruises in his Tacoma. Collect gas cans. Space: jump + aimable Trump shot. At 10 gallons, a translucent flag appears and next Space calls a jet airstrike.",
+    imageBase: "Nate",
+    initials: "NA",
+    mass: 1.48,
+    radius: 33,
+    drag: 0.03,
+    bounce: 0.54,
+    gravityMult: 0.96,
+    launchBoost: 1.16,
     unlockAt: 0,
-    ability: "warp",
+    ability: "trumpjump",
   },
   {
     id: "spencer",
@@ -388,7 +392,7 @@ const characters = [
   },
   {
     id: "kaderess",
-    name: "Kade Ress",
+    name: "Kade Rees",
     trait: "BMW throttle",
     bio: "His BMW accelerates faster and faster — but every jump resets speed to 10 mph. Build that speed!",
     imageBase: "Kade Ress",
@@ -531,6 +535,8 @@ let lastMouseY = canvas.height / 2;
 let bombs = [];
 let tennisBalls = [];
 let evanBasketballs = [];
+let nathanTrumps = [];
+let nathanAirstrikeBombs = [];
 let enemyLasers = [];
 let owenGoKarts = [];
 let owenGoKartSpawnTimer = 4 + Math.random() * 6;
@@ -616,6 +622,15 @@ const actor = {
   samSwimTimer: 0,
   samJumpCharges: 1,
   samJumpRegenTimer: 0,
+  nathanSpeed: NATHAN_JUMP_RESET_SPEED,
+  nathanSlowdownPending: false,
+  nathanGas: 0,
+  nathanAirstrikeReady: false,
+  nathanAirstrikeTimer: 0,
+  nathanNextBombTimer: 0,
+  nathanBombsDropped: 0,
+  nathanJetX: 0,
+  nathanFlagTimer: 0,
 };
 
 const obstacles = [];
@@ -632,6 +647,7 @@ const footballCache = new Map();
 const potGoldCache = new Map();
 const needleCache = new Map();
 const samDumbbellCache = new Map();
+const nathanGasCache = new Map();
 const collectedCandies = new Set();
 const collectedBeers = new Set();
 const collectedBurgers = new Set();
@@ -640,6 +656,7 @@ const collectedPots = new Set();
 const collectedNeedles = new Set();
 const collectedOwenMilk = new Set();
 const collectedSamDumbbells = new Set();
+const collectedNathanGas = new Set();
 let samBenchPickup = null;
 
 const JANET_BASE = {
@@ -702,6 +719,12 @@ let owenGoKartImg = null;
 let samDumbbellImg = null;
 let samBenchPressImg = null;
 let evanBasketballImg = null;
+let nathanTacomaImg = null;
+let nathanGasImg = null;
+let nathanTrumpImg = null;
+let nathanJetImg = null;
+let nathanBombImg = null;
+let nathanFlagImg = null;
 
 
 const spencerBombImageCandidates = [
@@ -833,6 +856,73 @@ const samBenchPressImageCandidates = [
 const evanBasketballImageCandidates = [
   "characters props/Evans Basketball.png",
   "Evans Basketball.png",
+];
+
+const nathanTacomaImageCandidates = [
+  "Nathans Tacoma.png",
+  "characters props/Nathans Tacoma.png",
+  "characters props/Nathan Tacoma.png",
+  "characters props/Nate Tacoma.png",
+  "characters props/Nathans Truck.png",
+  "characters props/Nathan Truck.png",
+  "Nathans Tacoma.png",
+  "Nathan Tacoma.png",
+  "Nate Tacoma.png",
+];
+
+const nathanGasImageCandidates = [
+  "characters props/Nathans Gas.png",
+  "characters props/Nathan Gas.png",
+  "characters props/Nate Gas.png",
+  "characters props/Nathans Gas Can.png",
+  "characters props/Nathan Gas Can.png",
+  "Nathans Gas.png",
+  "Nathan Gas.png",
+];
+
+const nathanTrumpImageCandidates = [
+  "Nathans Trumps.png",
+  "characters props/Nathans Trumps.png",
+  "characters props/Nathan Trumps.png",
+  "characters props/Nate Trumps.png",
+  "characters props/Trumps.png",
+  "Nathans Trumps.png",
+  "Nathan Trumps.png",
+  "Trumps.png",
+];
+
+const nathanJetImageCandidates = [
+  "Nathans Jet.png",
+  "characters props/Nathans Jet.png",
+  "characters props/Nathan Jet.png",
+  "characters props/Nate Jet.png",
+  "characters props/Jet.png",
+  "Nathans Jet.png",
+  "Nathan Jet.png",
+  "Jet.png",
+];
+
+const nathanBombImageCandidates = [
+  "Nathans Jets Bomb.png",
+  "Nathans Bomb.png",
+  "characters props/Nathans Bomb.png",
+  "characters props/Nathan Bomb.png",
+  "characters props/Nate Bomb.png",
+  "characters props/Bomb.png",
+  "Nathans Bomb.png",
+  "Nathan Bomb.png",
+  "Bomb.png",
+];
+
+const nathanFlagImageCandidates = [
+  "Nathans Flag.png",
+  "characters props/Nathans Flag.png",
+  "characters props/Nathan Flag.png",
+  "characters props/American Flag.png",
+  "characters props/US Flag.png",
+  "Nathans Flag.png",
+  "Nathan Flag.png",
+  "American Flag.png",
 ];
 
 
@@ -1075,6 +1165,118 @@ function updateEvanBasketballs(dt) {
   });
 
   evanBasketballs = evanBasketballs.filter((ball) => ball.life > 0);
+}
+
+function updateNathanTrumps(dt) {
+  nathanTrumps.forEach((shot) => {
+    shot.life -= dt;
+    shot.vy += world.gravity * 0.38 * dt;
+    shot.x += shot.vx * dt;
+    shot.y += shot.vy * dt;
+    shot.rotation += (shot.vx * 0.0032) * dt * 60;
+
+    const nearbyHughs = getFatalObstaclesInRange(shot.x - 120, shot.x + 120);
+    for (const hugh of nearbyHughs) {
+      const hy = terrainY(hugh.x) - hugh.yOffset;
+      const nearestX = Math.max(hugh.x, Math.min(shot.x, hugh.x + hugh.w));
+      const nearestY = Math.max(hy, Math.min(shot.y, hy + hugh.h));
+      const dx = shot.x - nearestX;
+      const dy = shot.y - nearestY;
+      if (dx * dx + dy * dy <= shot.radius * shot.radius) {
+        destroyedJanets.add(hugh.index);
+        shot.life = -1;
+        spawnParticles(shot.x, shot.y, 20, "#ffd8a6");
+        tone(410, 0.05, "square", 0.06);
+        break;
+      }
+    }
+
+    const ground = terrainY(shot.x);
+    if (shot.y + shot.radius >= ground) {
+      shot.y = ground - shot.radius;
+      shot.life = -1;
+    }
+  });
+
+  nathanTrumps = nathanTrumps.filter((shot) => shot.life > 0);
+}
+
+function triggerNathanAirstrike() {
+  if (selectedCharacter.id !== "nate" || !actor.nathanAirstrikeReady || actor.nathanGas < NATHAN_GAS_TARGET) {
+    tone(130, 0.05, "sine", 0.05);
+    return;
+  }
+
+  actor.nathanGas = Math.max(0, actor.nathanGas - NATHAN_GAS_TARGET);
+  actor.nathanAirstrikeReady = false;
+  actor.nathanAirstrikeTimer = 2.7;
+  actor.nathanNextBombTimer = 0.1;
+  actor.nathanBombsDropped = 0;
+  actor.nathanJetX = actor.x - 920;
+  actor.nathanFlagTimer = Math.max(actor.nathanFlagTimer, 2.2);
+
+  const strikeTargets = getFatalObstaclesInRange(actor.x - 4500, actor.x + 60000);
+  strikeTargets.forEach((hugh) => destroyedJanets.add(hugh.index));
+
+  spawnParticles(actor.x, actor.y, 40, "#ffffff");
+  spawnParticles(actor.x, actor.y, 18, "#ff4d00");
+  startScreenShake(18, 0.35);
+  tone(180, 0.1, "sawtooth", 0.1);
+  tone(120, 0.1, "triangle", 0.08);
+  runStateLabel.textContent = "Nathan called the airstrike — Hugh got smoked.";
+}
+
+function updateNathanAirstrike(dt) {
+  if (actor.nathanAirstrikeTimer > 0) {
+    actor.nathanAirstrikeTimer = Math.max(0, actor.nathanAirstrikeTimer - dt);
+    actor.nathanJetX += 980 * dt;
+    actor.nathanNextBombTimer -= dt;
+
+    if (actor.nathanNextBombTimer <= 0 && actor.nathanBombsDropped < 16) {
+      actor.nathanNextBombTimer = 0.13;
+      actor.nathanBombsDropped += 1;
+      nathanAirstrikeBombs.push({
+        x: actor.nathanJetX - 100 - Math.random() * 40,
+        y: terrainY(actor.x) - 360 - Math.random() * 120,
+        vx: -40 + Math.random() * 80,
+        vy: 210 + Math.random() * 40,
+        radius: 16,
+        life: 3.2,
+      });
+    }
+  }
+
+  nathanAirstrikeBombs.forEach((bomb) => {
+    bomb.life -= dt;
+    bomb.vy += world.gravity * 0.92 * dt;
+    bomb.x += bomb.vx * dt;
+    bomb.y += bomb.vy * dt;
+
+    const nearbyHughs = getFatalObstaclesInRange(bomb.x - 180, bomb.x + 180);
+    let exploded = false;
+    for (const hugh of nearbyHughs) {
+      const hy = terrainY(hugh.x) - hugh.yOffset;
+      const centerX = hugh.x + hugh.w * 0.5;
+      const centerY = hy + hugh.h * 0.5;
+      const dx = centerX - bomb.x;
+      const dy = centerY - bomb.y;
+      const blast = 170 + Math.max(hugh.w, hugh.h) * 0.45;
+      if (dx * dx + dy * dy <= blast * blast) {
+        destroyedJanets.add(hugh.index);
+        exploded = true;
+      }
+    }
+
+    const ground = terrainY(bomb.x);
+    if (bomb.y + bomb.radius >= ground || exploded || bomb.life <= 0) {
+      spawnImpactBurst(bomb.x, Math.min(bomb.y, ground - 6), 0.95);
+      spawnParticles(bomb.x, Math.min(bomb.y, ground - 6), 24, "#ff5a1f");
+      startScreenShake(8, 0.14);
+      bomb.life = -1;
+    }
+  });
+
+  nathanAirstrikeBombs = nathanAirstrikeBombs.filter((bomb) => bomb.life > 0);
 }
 
 function updateStricWoodsHazards(dt, nearbyFatals) {
@@ -1539,6 +1741,34 @@ function getSamDumbbellsInRange(startX, endX) {
   return items;
 }
 
+function createNathanGas(index) {
+  const spacing = 410;
+  const startX = 880;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1601) * 230) - 90;
+  const yOffset = 108 + Math.floor(seededNoise(index + 1602) * 30);
+  return { index, x: baseX + offset, yOffset, r: 14 };
+}
+
+function getNathanGas(index) {
+  if (!nathanGasCache.has(index)) nathanGasCache.set(index, createNathanGas(index));
+  return nathanGasCache.get(index);
+}
+
+function getNathanGasInRange(startX, endX) {
+  const spacing = 410;
+  const startXBase = 880;
+  const first = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const last = Math.max(first, Math.floor((endX - startXBase) / spacing) + 2);
+  const items = [];
+  for (let i = first; i <= last; i += 1) {
+    const gas = getNathanGas(i);
+    if (collectedNathanGas.has(gas.index)) continue;
+    if (gas.x + gas.r >= startX && gas.x - gas.r <= endX) items.push(gas);
+  }
+  return items;
+}
+
 
 let audioCtx = null;
 
@@ -1647,6 +1877,15 @@ function resetActor() {
   actor.samSwimTimer = 0;
   actor.samJumpCharges = 1;
   actor.samJumpRegenTimer = 0;
+  actor.nathanSpeed = NATHAN_JUMP_RESET_SPEED;
+  actor.nathanSlowdownPending = false;
+  actor.nathanGas = 0;
+  actor.nathanAirstrikeReady = false;
+  actor.nathanAirstrikeTimer = 0;
+  actor.nathanNextBombTimer = 0;
+  actor.nathanBombsDropped = 0;
+  actor.nathanJetX = world.launchX - 920;
+  actor.nathanFlagTimer = 0;
   samBenchPickup = null;
   cameraX = 0;
   particles.length = 0;
@@ -1654,6 +1893,8 @@ function resetActor() {
   bombs.length = 0;
   tennisBalls.length = 0;
   evanBasketballs.length = 0;
+  nathanTrumps.length = 0;
+  nathanAirstrikeBombs.length = 0;
   enemyLasers.length = 0;
   owenGoKarts.length = 0;
   resetOwenGoKartTimer();
@@ -1675,6 +1916,7 @@ function resetActor() {
   collectedLukeCoffee.clear();
   collectedOwenMilk.clear();
   collectedSamDumbbells.clear();
+  collectedNathanGas.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -2184,6 +2426,8 @@ function useAbility() {
     actor.abilityCooldown = 1.1;
   } else if (selectedCharacter.id === "samhallet") {
     actor.abilityCooldown = 0.25;
+  } else if (selectedCharacter.id === "nate") {
+    actor.abilityCooldown = 0.7;
   } else if (selectedCharacter.id === "evan" || selectedCharacter.id === "cael") {
     actor.abilityCooldown = EVAN_BASKETBALL_COOLDOWN;
   } else {
@@ -2259,6 +2503,37 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 30, "#ff9b72");
       startScreenShake(32, 0.45);
       break;
+    case "trumpjump": {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseWorldX = lastMouseX * scaleX + cameraX;
+      const mouseWorldY = lastMouseY * scaleY;
+      const dx = mouseWorldX - actor.x;
+      const dy = mouseWorldY - actor.y;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const dirX = dx / dist;
+      const dirY = dy / dist;
+
+      nathanTrumps.push({
+        x: actor.x + dirX * (actor.radius + 8),
+        y: actor.y + dirY * (actor.radius + 8),
+        vx: dirX * 840 + actor.vx * 0.3,
+        vy: dirY * 840 + actor.vy * 0.2,
+        life: 2.4,
+        radius: 12,
+        rotation: 0,
+      });
+
+      actor.vy -= 430;
+      actor.vx += 120;
+      actor.nathanSlowdownPending = true;
+
+      tone(520, 0.06, "square", 0.08);
+      tone(700, 0.05, "triangle", 0.06);
+      spawnParticles(actor.x, actor.y, 20, "#ffd8a6");
+      break;
+    }
     case "warp":
       actor.x += 130;
       actor.vx += 210;
@@ -2774,6 +3049,8 @@ function update(dt) {
   updateBombs(dt);
   updateTennisBalls(dt);
   updateEvanBasketballs(dt);
+  updateNathanTrumps(dt);
+  updateNathanAirstrike(dt);
   updateConfetti(dt);
   if (updateOwenGoKarts(dt)) {
     return;
@@ -2862,6 +3139,16 @@ function update(dt) {
       actor.kadeSpeed = Math.min(KADE_MAX_SPEED, actor.kadeSpeed + KADE_ACCEL * dt);
     }
 
+    if (selectedCharacter.id === "nate" && actor.state === "flying") {
+      actor.nathanSpeed = Math.min(NATHAN_MAX_SPEED, actor.nathanSpeed + NATHAN_ACCEL * dt);
+      if (actor.nathanFlagTimer > 0) {
+        actor.nathanFlagTimer = Math.max(0, actor.nathanFlagTimer - dt);
+      }
+      if (actor.nathanAirstrikeReady && actor.nathanGas >= NATHAN_GAS_TARGET && actor.nathanFlagTimer <= 0) {
+        triggerNathanAirstrike();
+      }
+    }
+
     if (selectedCharacter.id === "calebparker" && actor.state === "flying" && actor.calebHasDino) {
       actor.calebSpeed = Math.min(CALEB_MAX_SPEED, actor.calebSpeed + CALEB_ACCEL * dt);
     }
@@ -2941,6 +3228,10 @@ function update(dt) {
       // BMW engine never lets vx drop below current accumulated speed
       actor.vx = Math.max(actor.vx, actor.kadeSpeed);
     }
+    if (selectedCharacter.id === "nate" && actor.state === "flying") {
+      // Tacoma momentum keeps climbing unless reset by jump landing
+      actor.vx = Math.max(actor.vx, actor.nathanSpeed);
+    }
     if (selectedCharacter.id === "calebparker" && actor.state === "flying" && actor.calebHasDino) {
       // T-Rex momentum keeps building through the run
       actor.vx = Math.max(actor.vx, actor.calebSpeed);
@@ -2991,6 +3282,9 @@ function update(dt) {
       : [];
     const nearbySamDumbbells = selectedCharacter.id === "samhallet"
       ? getSamDumbbellsInRange(actor.x - 260, actor.x + 560)
+      : [];
+    const nearbyNathanGas = selectedCharacter.id === "nate"
+      ? getNathanGasInRange(actor.x - 260, actor.x + 560)
       : [];
 
     updateStricWoodsHazards(dt, nearbyJanets);
@@ -3218,6 +3512,29 @@ function update(dt) {
       }
     }
 
+    for (const gas of nearbyNathanGas) {
+      const gy = terrainY(gas.x) - gas.yOffset;
+      const dx = actor.x - gas.x;
+      const dy = actor.y - gy;
+      const hitR = actor.radius + gas.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedNathanGas.add(gas.index);
+        actor.nathanGas += 1;
+        actor.vx += 18;
+        spawnParticles(gas.x, gy, 16, "#9be9ff");
+        tone(420 + Math.min(260, actor.nathanGas * 11), 0.05, "triangle", 0.06);
+
+        if (!actor.nathanAirstrikeReady && actor.nathanGas >= NATHAN_GAS_TARGET) {
+          actor.nathanAirstrikeReady = true;
+          actor.nathanFlagTimer = 1.4;
+          startScreenShake(10, 0.2);
+          spawnParticles(actor.x, actor.y, 28, "#ffffff");
+          tone(740, 0.07, "triangle", 0.08);
+          runStateLabel.textContent = "10 gallons! Flag up — airstrike incoming.";
+        }
+      }
+    }
+
     if (selectedCharacter.id === "samhallet" && samBenchPickup) {
       const by = terrainY(samBenchPickup.x) - samBenchPickup.yOffset;
       const nearestX = Math.max(samBenchPickup.x, Math.min(actor.x, samBenchPickup.x + samBenchPickup.w));
@@ -3303,6 +3620,13 @@ function update(dt) {
         actor.kadeSpeed = actor.kadeSpeed * 0.75;
         actor.vx = actor.vx * 0.75;
         spawnParticles(actor.x, actor.y, 12, "#9bc1ff");
+      }
+
+      if (selectedCharacter.id === "nate" && actor.nathanSlowdownPending) {
+        actor.nathanSlowdownPending = false;
+        actor.nathanSpeed = actor.nathanSpeed * 0.75;
+        actor.vx = actor.vx * 0.75;
+        spawnParticles(actor.x, actor.y, 12, "#c7e3ff");
       }
 
       if (Math.abs(actor.vx) < 55) {
@@ -3878,6 +4202,8 @@ function getAbilityLabel(character) {
       return "power slam";
     case "warp":
       return "blink warp";
+    case "trumpjump":
+      return "jump + Trump shot";
     case "jumpbomb":
       return "jump / bomb";
     case "backflip":
@@ -4044,6 +4370,20 @@ function updateAbilityHint() {
     const mphApprox = (actor.kadeSpeed / 22.4).toFixed(0);
     const resetText = actor.kadeSlowdownPending ? "reset queued on landing" : "next jump queues reset";
     abilityHint.textContent = `BMW speed: ~${mphApprox} mph  |  Space: jump (${resetText})`;
+    return;
+  }
+
+  if (selectedCharacter.id === "nate") {
+    const mphApprox = (actor.nathanSpeed / 22.4).toFixed(0);
+    const gasText = `Gas: ${actor.nathanGas}/${NATHAN_GAS_TARGET} gal`;
+    const strikeText = actor.nathanAirstrikeReady
+      ? `Flag up: airstrike in ${Math.max(0, actor.nathanFlagTimer).toFixed(1)}s`
+      : `Airstrike at ${NATHAN_GAS_TARGET} gal`;
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${gasText}  |  Tacoma speed: ~${mphApprox} mph  |  Reload: ${actor.abilityCooldown.toFixed(1)}s  |  ${strikeText}`;
+      return;
+    }
+    abilityHint.textContent = `${gasText}  |  Tacoma speed: ~${mphApprox} mph  |  Space: jump + aimable Trump shot  |  ${strikeText}`;
     return;
   }
 
@@ -4526,6 +4866,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "jjfootballboss") {
     return ["characters/JJFOOTBALLBOSS.png", "characters/JJFOOTBALLBOSS.jpg"];
   }
+  if (character.id === "nate") {
+    return ["Nathan.png", "characters/Nate.png"];
+  }
   if (character.id === "kaderess") {
     return ["characters/Kade Ress.png", "Kade Ress.png"];
   }
@@ -4786,6 +5129,9 @@ function drawMapDecor() {
     : [];
   const visibleSamDumbbells = selectedCharacter.id === "samhallet"
     ? getSamDumbbellsInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
+  const visibleNathanGas = selectedCharacter.id === "nate"
+    ? getNathanGasInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
 
   visibleCandies.forEach((candy) => {
@@ -5070,6 +5416,30 @@ function drawMapDecor() {
     }
   });
 
+  visibleNathanGas.forEach((gas) => {
+    const gy = terrainY(gas.x) - gas.yOffset;
+    const sx = gas.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+    const size = gas.r * 2.9;
+    if (nathanGasImg && nathanGasImg.complete && nathanGasImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, gy);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + gas.index) * 0.12);
+      ctx.drawImage(nathanGasImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#7fa3b7";
+      ctx.beginPath();
+      ctx.roundRect(sx - gas.r * 0.65, gy - gas.r, gas.r * 1.3, gas.r * 2, gas.r * 0.2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `bold ${Math.round(gas.r * 0.72)}px Trebuchet MS`;
+      ctx.textAlign = "center";
+      ctx.fillText("G", sx, gy + gas.r * 0.28);
+      ctx.textAlign = "start";
+    }
+  });
+
   if (selectedCharacter.id === "samhallet" && samBenchPickup) {
     const bx = samBenchPickup.x - cameraX;
     const by = terrainY(samBenchPickup.x) - samBenchPickup.yOffset;
@@ -5335,6 +5705,73 @@ function drawKadeBMW() {
   ctx.restore();
 }
 
+function drawNathanTacoma() {
+  if (selectedCharacter.id !== "nate" || actor.state === "ready") return;
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const r = actor.radius;
+
+  const truckW = r * 4.6;
+  const truckH = r * 2.15;
+  const truckX = sx - truckW / 2;
+  const truckY = sy - r * 0.36;
+
+  ctx.save();
+  if (nathanTacomaImg && nathanTacomaImg.complete && nathanTacomaImg.naturalWidth > 10) {
+    ctx.drawImage(nathanTacomaImg, truckX, truckY, truckW, truckH);
+  } else {
+    ctx.fillStyle = "#4f5964";
+    ctx.strokeStyle = "#1e2328";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(truckX, truckY + truckH * 0.32, truckW, truckH * 0.54, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.roundRect(truckX + truckW * 0.14, truckY + truckH * 0.02, truckW * 0.48, truckH * 0.43, 7);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#21262d";
+    ctx.beginPath(); ctx.arc(truckX + truckW * 0.2, truckY + truckH * 0.86, r * 0.38, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(truckX + truckW * 0.8, truckY + truckH * 0.86, r * 0.38, 0, Math.PI * 2); ctx.fill();
+  }
+
+  if (actor.nathanSpeed > 560) {
+    const alpha = Math.min(0.52, (actor.nathanSpeed - 560) / 2900);
+    const grd = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, r * 3.0);
+    grd.addColorStop(0, `rgba(120,180,255,${alpha})`);
+    grd.addColorStop(1, "rgba(120,180,255,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.ellipse(sx - r * 1.4, sy + r * 0.35, r * 2.4, r * 0.82, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (actor.nathanFlagTimer > 0) {
+    const fx = sx - r * 0.25;
+    const fy = sy - r * 2.55;
+    const fw = r * 2.6;
+    const fh = r * 1.45;
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.5, 0.22 + actor.nathanFlagTimer * 0.11);
+    if (nathanFlagImg && nathanFlagImg.complete && nathanFlagImg.naturalWidth > 8) {
+      ctx.drawImage(nathanFlagImg, fx, fy, fw, fh);
+    } else {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(fx, fy, fw, fh);
+      ctx.fillStyle = "#b22234";
+      for (let i = 0; i < 7; i += 1) {
+        ctx.fillRect(fx, fy + i * (fh / 7), fw, fh / 14);
+      }
+      ctx.fillStyle = "#3c3b6e";
+      ctx.fillRect(fx, fy, fw * 0.4, fh * 0.52);
+    }
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 function drawCalebTrex() {
   if (selectedCharacter.id !== "calebparker" || actor.state === "ready" || !actor.calebHasDino) return;
   const sx = actor.x - cameraX;
@@ -5391,6 +5828,70 @@ function drawTennisBalls() {
       ctx.fillStyle = "#b6ff6a";
       ctx.beginPath();
       ctx.arc(sx, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function drawNathanTrumps() {
+  nathanTrumps.forEach((shot) => {
+    const sx = shot.x - cameraX;
+    if (sx < -90 || sx > canvas.width + 90) return;
+    const size = shot.radius * 2.2;
+    if (nathanTrumpImg && nathanTrumpImg.complete && nathanTrumpImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, shot.y);
+      ctx.rotate(shot.rotation || 0);
+      ctx.drawImage(nathanTrumpImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#ffd8a6";
+      ctx.beginPath();
+      ctx.arc(sx, shot.y, shot.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function drawNathanAirstrike() {
+  if (actor.nathanAirstrikeTimer > 0) {
+    const sx = actor.nathanJetX - cameraX;
+    const sy = terrainY(actor.x) - 330;
+    if (sx > -240 && sx < canvas.width + 240) {
+      const w = 170;
+      const h = 90;
+      if (nathanJetImg && nathanJetImg.complete && nathanJetImg.naturalWidth > 8) {
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(nathanJetImg, sx - w * 0.5, sy - h * 0.5, w, h);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = "#aab5c2";
+        ctx.beginPath();
+        ctx.moveTo(sx - 75, sy);
+        ctx.lineTo(sx + 55, sy - 22);
+        ctx.lineTo(sx + 72, sy);
+        ctx.lineTo(sx + 55, sy + 22);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
+  nathanAirstrikeBombs.forEach((bomb) => {
+    const sx = bomb.x - cameraX;
+    if (sx < -90 || sx > canvas.width + 90) return;
+    const size = bomb.radius * 2.15;
+    if (nathanBombImg && nathanBombImg.complete && nathanBombImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, bomb.y);
+      ctx.rotate((bomb.vx * 0.003 + bomb.vy * 0.0012) * 0.8);
+      ctx.drawImage(nathanBombImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#2f3439";
+      ctx.beginPath();
+      ctx.arc(sx, bomb.y, bomb.radius, 0, Math.PI * 2);
       ctx.fill();
     }
   });
@@ -5639,16 +6140,19 @@ function drawSceneCore() {
   drawGround();
   drawMapDecor();
   drawEnemyLasersAndBoss();
+  drawNathanAirstrike();
   drawCatapult();
   drawSlingshotBands();
   drawTrajectory();
   drawKadeBMW();
+  drawNathanTacoma();
   drawCalebTrex();
   drawActor();
   drawFishingRod();
   drawBraydenRacket();
   drawCandyBeam();
   drawTennisBalls();
+  drawNathanTrumps();
   drawEvanBasketballs();
   drawBombs();
   drawParticles();
@@ -6031,6 +6535,54 @@ function preloadCharacterImages() {
     if (evanBasketballIdx < evanBasketballImageCandidates.length) evanBasketballImg.src = evanBasketballImageCandidates[evanBasketballIdx];
   };
   evanBasketballImg.src = evanBasketballImageCandidates[0];
+
+  nathanTacomaImg = new Image();
+  let nathanTacomaIdx = 0;
+  nathanTacomaImg.onerror = () => {
+    nathanTacomaIdx += 1;
+    if (nathanTacomaIdx < nathanTacomaImageCandidates.length) nathanTacomaImg.src = nathanTacomaImageCandidates[nathanTacomaIdx];
+  };
+  nathanTacomaImg.src = nathanTacomaImageCandidates[0];
+
+  nathanGasImg = new Image();
+  let nathanGasIdx = 0;
+  nathanGasImg.onerror = () => {
+    nathanGasIdx += 1;
+    if (nathanGasIdx < nathanGasImageCandidates.length) nathanGasImg.src = nathanGasImageCandidates[nathanGasIdx];
+  };
+  nathanGasImg.src = nathanGasImageCandidates[0];
+
+  nathanTrumpImg = new Image();
+  let nathanTrumpIdx = 0;
+  nathanTrumpImg.onerror = () => {
+    nathanTrumpIdx += 1;
+    if (nathanTrumpIdx < nathanTrumpImageCandidates.length) nathanTrumpImg.src = nathanTrumpImageCandidates[nathanTrumpIdx];
+  };
+  nathanTrumpImg.src = nathanTrumpImageCandidates[0];
+
+  nathanJetImg = new Image();
+  let nathanJetIdx = 0;
+  nathanJetImg.onerror = () => {
+    nathanJetIdx += 1;
+    if (nathanJetIdx < nathanJetImageCandidates.length) nathanJetImg.src = nathanJetImageCandidates[nathanJetIdx];
+  };
+  nathanJetImg.src = nathanJetImageCandidates[0];
+
+  nathanBombImg = new Image();
+  let nathanBombIdx = 0;
+  nathanBombImg.onerror = () => {
+    nathanBombIdx += 1;
+    if (nathanBombIdx < nathanBombImageCandidates.length) nathanBombImg.src = nathanBombImageCandidates[nathanBombIdx];
+  };
+  nathanBombImg.src = nathanBombImageCandidates[0];
+
+  nathanFlagImg = new Image();
+  let nathanFlagIdx = 0;
+  nathanFlagImg.onerror = () => {
+    nathanFlagIdx += 1;
+    if (nathanFlagIdx < nathanFlagImageCandidates.length) nathanFlagImg.src = nathanFlagImageCandidates[nathanFlagIdx];
+  };
+  nathanFlagImg.src = nathanFlagImageCandidates[0];
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
