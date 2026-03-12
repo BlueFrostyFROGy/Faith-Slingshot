@@ -524,15 +524,15 @@ const fatalObstacleImageCandidates = [
 ];
 
 const mikeObstacleImageCandidates = [
-  "New Map Boss Level (strickerland)/Mike.png",
-  "New Map Boss Level (strickerland)/Mike.webp",
+  "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
+  "New Map Boss Level (strickerland)/(the Stricker.webp",
   "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
 ];
 
 const strickerBossImageCandidates = [
   "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
-  "New Map Boss Level (strickerland)/Stricker.webp",
-  "New Map Boss Level (strickerland)/Stricker.png",
+  "New Map Boss Level (strickerland)/(the Stricker.webp",
+  "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
 ];
 
 let fatalObstacleImg = null;
@@ -3381,7 +3381,8 @@ function drawCloud(x, y) {
 }
 
 function drawGround() {
-  if (getCurrentMap().id === "town-square") {
+  const mapId = getCurrentMap().id;
+  if (mapId === "town-square" || mapId === "stric-woods") {
     return;
   }
 
