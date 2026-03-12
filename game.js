@@ -3651,6 +3651,36 @@ function updateHeadToHeadOpponent(dt) {
   opp.x += opp.vx * dt;
   opp.y += opp.vy * dt;
 
+  const nearbyOppFatals = getFatalObstaclesInRange(opp.x - 220, opp.x + 560);
+  for (const rect of nearbyOppFatals) {
+    const ry = terrainY(rect.x) - rect.yOffset;
+    const nearestX = Math.max(rect.x, Math.min(opp.x, rect.x + rect.w));
+    const nearestY = Math.max(ry, Math.min(opp.y, ry + rect.h));
+    const dx = opp.x - nearestX;
+    const dy = opp.y - nearestY;
+    if (dx * dx + dy * dy <= opp.radius * opp.radius) {
+      headToHeadState.opponentFinished = true;
+      opp.state = "ended";
+      opp.vx = 0;
+      opp.vy = 0;
+      return;
+    }
+  }
+
+  const nearbyOppPads = getBouncePadsInRange(opp.x - 260, opp.x + 520);
+  for (const pad of nearbyOppPads) {
+    const py = terrainY(pad.x) - pad.yOffset;
+    const onPad = opp.x + opp.radius > pad.x
+      && opp.x - opp.radius < pad.x + pad.w
+      && opp.y + opp.radius >= py
+      && opp.y < py + pad.h;
+    if (onPad && opp.vy > -220) {
+      opp.y = py - opp.radius;
+      opp.vy = -Math.max(620, Math.abs(opp.vy) * pad.boost);
+      opp.vx *= 1.06;
+    }
+  }
+
   const ground = terrainY(opp.x);
   if (opp.y + opp.radius >= ground) {
     opp.y = ground - opp.radius;
@@ -5475,6 +5505,8 @@ function drawHeadToHeadViewport(viewActor, viewCameraX, yOffset, panelLabel, pan
   cameraX = viewCameraX;
 
   ctx.save();
+  ctx.fillStyle = "#b6e8ff";
+  ctx.fillRect(0, yOffset, canvas.width, panelHeight);
   ctx.beginPath();
   ctx.rect(0, yOffset, canvas.width, panelHeight);
   ctx.clip();
@@ -5498,6 +5530,8 @@ function drawHeadToHeadViewport(viewActor, viewCameraX, yOffset, panelLabel, pan
 }
 
 function drawHeadToHeadSplit() {
+  const panelHeight = Math.floor(canvas.height / 2);
+  const bottomOffset = panelHeight;
   const playerDistance = Math.max(0, (actor.maxX - world.launchX) / 10);
   const opponentDistance = headToHeadState.opponentActor
     ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
@@ -5511,7 +5545,7 @@ function drawHeadToHeadSplit() {
     drawHeadToHeadViewport(
       headToHeadState.opponentActor,
       headToHeadState.opponentCameraX,
-      canvas.height / 2,
+      bottomOffset,
       `OPPONENT: ${headToHeadState.rivalName}`,
       opponentDistance,
     );
@@ -5519,7 +5553,7 @@ function drawHeadToHeadSplit() {
 
   ctx.save();
   ctx.fillStyle = "rgba(255,255,255,0.8)";
-  ctx.fillRect(0, canvas.height / 2 - 2, canvas.width, 4);
+  ctx.fillRect(0, panelHeight - 2, canvas.width, 4);
   ctx.restore();
 }
 
@@ -5985,16 +6019,38 @@ function canvasCoords(ev) {
   const rect   = canvas.getBoundingClientRect();
   const scaleX = canvas.width  / rect.width;
   const scaleY = canvas.height / rect.height;
+  const localX = (ev.clientX - rect.left) * scaleX;
+  const localY = (ev.clientY - rect.top) * scaleY;
+
+  if (headToHeadState.active) {
+    const panelHeight = canvas.height / 2;
+    if (localY > panelHeight) {
+      return {
+        wx: localX + cameraX,
+        wy: null,
+        inPlayerPane: false,
+      };
+    }
+    return {
+      wx: localX + cameraX,
+      // Top pane is vertically scaled to half-height, so map input back to world Y.
+      wy: localY * 2,
+      inPlayerPane: true,
+    };
+  }
+
   return {
-    wx: (ev.clientX - rect.left) * scaleX + cameraX,
-    wy: (ev.clientY - rect.top)  * scaleY,
+    wx: localX + cameraX,
+    wy: localY,
+    inPlayerPane: true,
   };
 }
 
 canvas.addEventListener("mousedown", (ev) => {
   if (actor.state !== "ready") return;
 
-  const { wx, wy } = canvasCoords(ev);
+  const { wx, wy, inPlayerPane } = canvasCoords(ev);
+  if (!inPlayerPane || wy == null) return;
   const dx = wx - actor.x;
   const dy = wy - actor.y;
 
@@ -6005,12 +6061,16 @@ canvas.addEventListener("mousedown", (ev) => {
 });
 
 canvas.addEventListener("mousemove", (ev) => {
-  lastMouseX = ev.clientX - canvas.getBoundingClientRect().left;
-  lastMouseY = ev.clientY - canvas.getBoundingClientRect().top;
+  const rect = canvas.getBoundingClientRect();
+  const rawX = ev.clientX - rect.left;
+  const rawY = ev.clientY - rect.top;
+  lastMouseX = rawX;
+  lastMouseY = headToHeadState.active ? Math.min(rect.height, rawY * 2) : rawY;
 
   if (!isDragging || actor.state !== "ready") return;
 
-  const { wx, wy } = canvasCoords(ev);
+  const { wx, wy, inPlayerPane } = canvasCoords(ev);
+  if (!inPlayerPane || wy == null) return;
   const anchorX = world.launchX;
   const anchorY = terrainY(world.launchX) - 70;
 
