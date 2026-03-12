@@ -951,6 +951,12 @@ function updateEnemyLasers(dt) {
     const dy = actor.y - laser.y;
     const hitR = actor.radius + laser.radius;
     if (dx * dx + dy * dy <= hitR * hitR) {
+      if (selectedCharacter.id === "lukepueppke" && actor.lukeSuperspeedTimer > 0) {
+        laser.life = -1;
+        spawnParticles(actor.x, actor.y, 14, "#4fc3f7");
+        tone(620, 0.04, "triangle", 0.05);
+        continue;
+      }
       spawnParticles(actor.x, actor.y, 30, "#ff6b6b");
       tone(160, 0.08, "sawtooth", 0.09);
       finishRun("Run ended: hit by laser fire.");
@@ -2481,6 +2487,16 @@ function collideRect(rect) {
   const dy = actor.y - nearestY;
   if (dx * dx + dy * dy <= actor.radius * actor.radius) {
     if (rect.fatal) {
+      if (selectedCharacter.id === "lukepueppke" && actor.lukeSuperspeedTimer > 0) {
+        destroyedJanets.add(rect.index);
+        actor.vx = Math.max(actor.vx + 160, 420);
+        actor.vy = Math.min(actor.vy - 60, -60);
+        spawnParticles(actor.x, actor.y, 26, "#4fc3f7");
+        spawnParticles(actor.x, actor.y, 10, "#ffffff");
+        startScreenShake(8, 0.18);
+        tone(700, 0.05, "sawtooth", 0.06);
+        return;
+      }
       if (selectedCharacter.id === "samhallet" && actor.samSwimActive && actor.samSwimPassesLeft > 0 && rect.label === "Hugh Henderson") {
         destroyedJanets.add(rect.index);
         actor.samSwimPassesLeft -= 1;
