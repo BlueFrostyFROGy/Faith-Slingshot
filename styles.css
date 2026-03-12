@@ -188,6 +188,17 @@ canvas {
   gap: 10px;
 }
 
+.headtohead-name-input {
+  width: min(360px, 88%);
+  margin: 8px auto 12px;
+  display: block;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 2px solid #dce4ff;
+  font: inherit;
+  font-weight: 700;
+}
+
 .map-select-row {
   display: flex;
   align-items: center;

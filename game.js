@@ -19,6 +19,7 @@ const characterGrid = document.getElementById("characterGrid");
 
 const toSelectBtn = document.getElementById("toSelectBtn");
 const headToHeadBtn = document.getElementById("headToHeadBtn");
+const headToHeadNameInput = document.getElementById("headToHeadNameInput");
 const matchmakingScreen = document.getElementById("matchmakingScreen");
 const matchmakingStatus = document.getElementById("matchmakingStatus");
 const cancelMatchmakingBtn = document.getElementById("cancelMatchmakingBtn");
@@ -78,6 +79,8 @@ const headToHeadState = {
   localFinished: false,
   localFinalDistance: 0,
   localFinishMessage: "",
+  resultText: "",
+  localWonLastMatch: false,
   liveNetwork: false,
 };
 
@@ -97,6 +100,7 @@ const networkState = {
   opponentFinished: false,
   opponentFinalDistance: 0,
   localFinishSent: false,
+  displayName: "",
 };
 
 const world = {
@@ -1981,11 +1985,15 @@ function finalizeHeadToHeadIfReady() {
       ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
       : 0);
 
-  const result = playerM >= oppM
+  const localWin = playerM >= oppM;
+  const result = localWin
     ? `You win the head-to-head! (${playerM.toFixed(1)}m vs ${oppM.toFixed(1)}m)`
     : `${headToHeadState.rivalName} wins the head-to-head. (${oppM.toFixed(1)}m vs ${playerM.toFixed(1)}m)`;
 
   const finalMessage = `${headToHeadState.localFinishMessage || "Run ended."} ${result}`;
+  headToHeadState.resultText = result;
+  headToHeadState.localWonLastMatch = localWin;
+  if (localWin) triggerConfetti();
 
   if (headToHeadState.liveNetwork) {
     stopLiveNetworkSession();
@@ -3360,6 +3368,7 @@ function hideAllOverlays() {
 }
 
 function getNetworkPlayerName() {
+  if (networkState.displayName) return networkState.displayName;
   const email = authSession?.user?.email;
   if (email && email.includes("@")) return email.split("@")[0].slice(0, 16);
   return `Player-${networkState.playerId.slice(-4)}`;
@@ -3563,6 +3572,15 @@ function stopLiveNetworkSession() {
 }
 
 function beginHeadToHeadSearch() {
+  const enteredName = (headToHeadNameInput?.value || "").trim();
+  if (!enteredName) {
+    alert("Type your name before searching for a head-to-head match.");
+    headToHeadNameInput?.focus();
+    return;
+  }
+  networkState.displayName = enteredName.slice(0, 16);
+  localStorage.setItem("faith-h2h-name", networkState.displayName);
+
   stopLiveNetworkSession();
   headToHeadState.mode = "searching";
   headToHeadState.active = false;
@@ -3618,6 +3636,8 @@ function startHeadToHeadMatch() {
   headToHeadState.localFinished = false;
   headToHeadState.localFinalDistance = 0;
   headToHeadState.localFinishMessage = "";
+  headToHeadState.resultText = "";
+  headToHeadState.localWonLastMatch = false;
   headToHeadState.opponentFinished = false;
   networkState.localFinishSent = false;
 
@@ -4401,7 +4421,8 @@ function showLeaderboardScreen(distance) {
   leaderboardScreen.classList.add("active");
   
   const travelled = (distance / 10).toFixed(1);
-  finalScore.textContent = `Your Score: ${travelled}m`;
+  const winnerLine = headToHeadState.resultText ? `${headToHeadState.resultText} • ` : "";
+  finalScore.textContent = `${winnerLine}Your Score: ${travelled}m`;
   leaderboardRunCharacterId = selectedCharacter?.id || "";
   leaderboardRunCharacterName = selectedCharacter?.name || "";
   leaderboardViewMode = "character";
@@ -4412,9 +4433,12 @@ function showLeaderboardScreen(distance) {
   const scores = getLeaderboardScoresForView();
   const tempScore = parseFloat(travelled);
   const isTop3 = scores.slice(0, 3).some(s => Math.abs(s.distance - tempScore) < 0.1) || scores.length < 3;
-  if (isTop3 && scores.length > 0) {
+  if ((isTop3 && scores.length > 0) || headToHeadState.localWonLastMatch) {
     triggerConfetti();
   }
+
+  headToHeadState.resultText = "";
+  headToHeadState.localWonLastMatch = false;
   
   fetchCloudLeaderboard().then(() => displayLeaderboard());
 }
@@ -6222,6 +6246,11 @@ canvas.addEventListener("mouseleave", () => {
 });
 
 preloadCharacterImages();
+const storedH2HName = localStorage.getItem("faith-h2h-name");
+if (storedH2HName) {
+  networkState.displayName = storedH2HName.slice(0, 16);
+  if (headToHeadNameInput) headToHeadNameInput.value = networkState.displayName;
+}
 updateHighScoreUI();
 updateHeightUI();
 updateMapUI();
