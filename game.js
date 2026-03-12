@@ -482,6 +482,7 @@ const confetti = [];
 const bouncePadCache = new Map();
 const janetCache = new Map();
 const mikeCache = new Map();
+const mikePositionCache = [];
 const candyCache = new Map();
 const beerCache = new Map();
 const burgerCache = new Map();
@@ -756,11 +757,24 @@ function getJanetsInRange(startX, endX) {
   return janets;
 }
 
+function getMikeBaseX(index) {
+  while (mikePositionCache.length <= index) {
+    const i = mikePositionCache.length;
+    if (i === 0) {
+      const firstX = 2200 + Math.floor(seededNoise(400) * 420);
+      mikePositionCache.push(firstX);
+    } else {
+      const prevX = mikePositionCache[i - 1];
+      const gap = 850 + Math.floor(seededNoise(i + 403) * 1700); // random spacing 850..2549
+      mikePositionCache.push(prevX + gap);
+    }
+  }
+  return mikePositionCache[index];
+}
+
 function createMike(index) {
-  const spacing = 1500;
-  const startX = 2600;
-  const baseX = startX + index * spacing;
-  const offset = Math.floor(seededNoise(index + 401) * 360) - 100;
+  const baseX = getMikeBaseX(index);
+  const offset = Math.floor(seededNoise(index + 401) * 240) - 120;
   const yOffset = 62 + Math.floor(seededNoise(index + 402) * 18);
 
   return {
@@ -784,13 +798,12 @@ function getMike(index) {
 }
 
 function getMikesInRange(startX, endX) {
-  const spacing = 1500;
-  const startXBase = 2600;
-  const firstIndex = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
-  const lastIndex = Math.max(firstIndex, Math.floor((endX - startXBase) / spacing) + 1);
   const mikes = [];
 
-  for (let index = firstIndex; index <= lastIndex; index += 1) {
+  for (let index = 0; index < 2000; index += 1) {
+    const baseX = getMikeBaseX(index);
+    if (baseX > endX + 3000) break;
+
     const mike = getMike(index);
     if (destroyedJanets.has(mike.index)) continue;
     if (mike.x + mike.w >= startX && mike.x <= endX) {
