@@ -493,7 +493,7 @@ const actor = {
   lukeItemCount: 0,
   lukeSuperspeedTimer: 0,
   owenMilks: 0,
-  owenLives: 0,
+  owenLives: 3,
 };
 
 const obstacles = [];
@@ -1416,7 +1416,7 @@ function resetActor() {
   actor.lukeItemCount = 0;
   actor.lukeSuperspeedTimer = 0;
   actor.owenMilks = 0;
-  actor.owenLives = 0;
+  actor.owenLives = 3;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -2003,8 +2003,8 @@ function useAbility() {
       break;
     }
     case "owenjump": {
-      actor.vx += 95;
-      actor.vy -= 470;
+      actor.vx += 125;
+      actor.vy -= 520;
       actor.abilityCooldown = 1.1;
       tone(420, 0.06, "triangle", 0.07);
       tone(300, 0.05, "triangle", 0.06);
