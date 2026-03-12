@@ -75,6 +75,22 @@ const headToHeadState = {
   opponentJumpTimer: 0,
   opponentStoppedTimer: 0,
   opponentFinished: false,
+  liveNetwork: false,
+};
+
+const networkState = {
+  enabled: false,
+  client: null,
+  queueChannel: null,
+  roomChannel: null,
+  playerId: `p-${Math.random().toString(36).slice(2, 10)}`,
+  peerId: null,
+  roomId: null,
+  searching: false,
+  searchElapsed: 0,
+  heartbeatTimer: 0,
+  snapshotTimer: 0,
+  opponentSnapshot: null,
 };
 
 const world = {
@@ -137,6 +153,10 @@ const SAM_JUMP_REGEN_SECONDS = 7;
 const EVAN_BASKETBALL_COOLDOWN = 5;
 const OWEN_MILKS_PER_LIFE = 5;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
+const NETWORK_QUEUE_CHANNEL = "faith-h2h-queue-v1";
+const NETWORK_HEARTBEAT_SECONDS = 0.9;
+const NETWORK_SEARCH_TIMEOUT_SECONDS = 12;
+const NETWORK_SNAPSHOT_SECONDS = 0.09;
 
 const maps = [
   { id: "campus", name: "Campus" },
@@ -1657,7 +1677,7 @@ function resetActor() {
   if (heightValue) {
     heightValue.textContent = "0";
   }
-  if (headToHeadState.active) {
+  if (headToHeadState.active && !headToHeadState.liveNetwork) {
     initHeadToHeadOpponent();
   }
   updateAbilityHint();
@@ -1943,6 +1963,18 @@ function startNextRunSameCharacter() {
 
 
 function finishRun(message = "Run ended: no movement left. Press Restart Run.") {
+  if (headToHeadState.active && headToHeadState.liveNetwork && networkState.roomChannel) {
+    networkState.roomChannel.send({
+      type: "broadcast",
+      event: "finish",
+      payload: {
+        playerId: networkState.playerId,
+        message: `${getNetworkPlayerName()} finished.`,
+        distance: Math.max(0, (actor.maxX - world.launchX) / 10),
+      },
+    });
+  }
+
   if (headToHeadState.active) {
     const playerM = Math.max(0, (actor.maxX - world.launchX) / 10);
     const oppM = headToHeadState.opponentActor
@@ -1950,6 +1982,9 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
       : 0;
     const result = playerM >= oppM ? "You win the head-to-head!" : `${headToHeadState.rivalName} wins the head-to-head.`;
     message = `${message} ${result}`;
+    if (headToHeadState.liveNetwork) {
+      stopLiveNetworkSession();
+    }
     headToHeadState.active = false;
     headToHeadState.mode = "idle";
   }
@@ -3272,21 +3307,216 @@ function hideAllOverlays() {
   matchmakingScreen?.classList.remove("active");
 }
 
+function getNetworkPlayerName() {
+  const email = authSession?.user?.email;
+  if (email && email.includes("@")) return email.split("@")[0].slice(0, 16);
+  return `Player-${networkState.playerId.slice(-4)}`;
+}
+
+function ensureNetworkClient() {
+  if (networkState.client) return true;
+  const supabaseLib = window.supabase;
+  if (!supabaseLib?.createClient) return false;
+  try {
+    networkState.client = supabaseLib.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    networkState.enabled = true;
+    return true;
+  } catch {
+    networkState.enabled = false;
+    return false;
+  }
+}
+
+function cleanupNetworkQueue() {
+  networkState.searching = false;
+  networkState.searchElapsed = 0;
+  networkState.heartbeatTimer = 0;
+  if (networkState.queueChannel) {
+    networkState.client?.removeChannel(networkState.queueChannel);
+    networkState.queueChannel = null;
+  }
+}
+
+function cleanupNetworkRoom() {
+  networkState.snapshotTimer = 0;
+  networkState.opponentSnapshot = null;
+  if (networkState.roomChannel) {
+    networkState.client?.removeChannel(networkState.roomChannel);
+    networkState.roomChannel = null;
+  }
+  networkState.roomId = null;
+}
+
+function sendQueueHeartbeat() {
+  if (!networkState.queueChannel || !networkState.searching) return;
+  networkState.queueChannel.send({
+    type: "broadcast",
+    event: "queue",
+    payload: {
+      type: "searching",
+      playerId: networkState.playerId,
+      name: getNetworkPlayerName(),
+      ts: Date.now(),
+    },
+  });
+}
+
+function startLiveNetworkSearch() {
+  if (!ensureNetworkClient()) return false;
+
+  cleanupNetworkQueue();
+  cleanupNetworkRoom();
+  networkState.peerId = null;
+
+  const queueChannel = networkState.client.channel(NETWORK_QUEUE_CHANNEL);
+  networkState.queueChannel = queueChannel;
+  networkState.searching = true;
+  networkState.searchElapsed = 0;
+  networkState.heartbeatTimer = 0;
+
+  queueChannel.on("broadcast", { event: "queue" }, ({ payload }) => {
+    if (!payload || !networkState.searching) return;
+    if (payload.type === "searching") {
+      if (!payload.playerId || payload.playerId === networkState.playerId) return;
+      if (networkState.peerId) return;
+
+      const myId = networkState.playerId;
+      const otherId = payload.playerId;
+      if (myId < otherId) {
+        networkState.peerId = otherId;
+        const roomId = `room-${myId.slice(-4)}-${otherId.slice(-4)}-${Date.now().toString(36)}`;
+        const pickedCharacter = characters[Math.floor(Math.random() * characters.length)];
+        const pickedMapIndex = Math.floor(Math.random() * maps.length);
+
+        queueChannel.send({
+          type: "broadcast",
+          event: "queue",
+          payload: {
+            type: "match-found",
+            roomId,
+            leaderId: myId,
+            peerId: otherId,
+            characterId: pickedCharacter.id,
+            mapIndex: pickedMapIndex,
+            leaderName: getNetworkPlayerName(),
+            peerName: payload.name || "Opponent",
+            ts: Date.now(),
+          },
+        });
+
+        networkState.searching = false;
+        if (matchmakingStatus) matchmakingStatus.textContent = `Live opponent found: ${payload.name || "Opponent"}. Joining room...`;
+        joinLiveNetworkRoom(roomId, pickedCharacter.id, pickedMapIndex, payload.name || "Opponent");
+      }
+    }
+
+    if (payload.type === "match-found") {
+      const isForMe = payload.peerId === networkState.playerId || payload.leaderId === networkState.playerId;
+      if (!isForMe) return;
+      if (!payload.roomId || !payload.characterId || !Number.isInteger(payload.mapIndex)) return;
+
+      networkState.peerId = payload.leaderId === networkState.playerId ? payload.peerId : payload.leaderId;
+      networkState.searching = false;
+      const rivalName = payload.leaderId === networkState.playerId ? (payload.peerName || "Opponent") : (payload.leaderName || "Opponent");
+      if (matchmakingStatus) matchmakingStatus.textContent = `Live match ready vs ${rivalName}. Joining room...`;
+      joinLiveNetworkRoom(payload.roomId, payload.characterId, payload.mapIndex, rivalName);
+    }
+  });
+
+  queueChannel.subscribe((status) => {
+    if (status === "SUBSCRIBED") {
+      sendQueueHeartbeat();
+    }
+  });
+
+  return true;
+}
+
+function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
+  cleanupNetworkQueue();
+  cleanupNetworkRoom();
+
+  const roomChannel = networkState.client.channel(`faith-h2h-${roomId}`);
+  networkState.roomChannel = roomChannel;
+  networkState.roomId = roomId;
+  networkState.opponentSnapshot = null;
+
+  roomChannel.on("broadcast", { event: "state" }, ({ payload }) => {
+    if (!payload || payload.playerId === networkState.playerId) return;
+    networkState.opponentSnapshot = payload;
+  });
+
+  roomChannel.on("broadcast", { event: "finish" }, ({ payload }) => {
+    if (!payload || payload.playerId === networkState.playerId) return;
+    if (headToHeadState.active) {
+      finishRun(`${payload.message || "Opponent finished."}`);
+    }
+  });
+
+  roomChannel.subscribe((status) => {
+    if (status === "SUBSCRIBED") {
+      headToHeadState.liveNetwork = true;
+      headToHeadState.rivalName = rivalName || "Opponent";
+      headToHeadState.randomCharacter = characters.find((c) => c.id === characterId) || characters[0];
+      headToHeadState.randomMapIndex = Math.max(0, Math.min(maps.length - 1, mapIndex));
+      startHeadToHeadMatch();
+    }
+  });
+}
+
+function sendLiveNetworkSnapshot() {
+  if (!headToHeadState.active || !headToHeadState.liveNetwork || !networkState.roomChannel) return;
+  networkState.roomChannel.send({
+    type: "broadcast",
+    event: "state",
+    payload: {
+      playerId: networkState.playerId,
+      x: actor.x,
+      y: actor.y,
+      vx: actor.vx,
+      vy: actor.vy,
+      radius: actor.radius,
+      drag: actor.drag,
+      bounce: actor.bounce,
+      gravityMult: actor.gravityMult,
+      maxX: actor.maxX,
+      state: actor.state,
+      cameraX,
+      ts: Date.now(),
+    },
+  });
+}
+
+function stopLiveNetworkSession() {
+  cleanupNetworkQueue();
+  cleanupNetworkRoom();
+  networkState.peerId = null;
+  headToHeadState.liveNetwork = false;
+}
+
 function beginHeadToHeadSearch() {
+  stopLiveNetworkSession();
   headToHeadState.mode = "searching";
   headToHeadState.active = false;
   headToHeadState.searchTimer = 1.6 + Math.random() * 2.2;
   headToHeadState.rouletteTimer = 0;
   headToHeadState.rouletteTickTimer = 0;
   headToHeadState.randomCharacter = null;
+  headToHeadState.liveNetwork = false;
   headToHeadState.rivalName = headToHeadRivals[Math.floor(Math.random() * headToHeadRivals.length)];
   hideAllOverlays();
   matchmakingScreen?.classList.add("active");
   controlsPanel.classList.add("hidden");
-  if (matchmakingStatus) matchmakingStatus.textContent = "Searching for game...";
+  const liveStarted = startLiveNetworkSearch();
+  if (matchmakingStatus) {
+    matchmakingStatus.textContent = liveStarted
+      ? "Searching live network for opponent..."
+      : "Searching for game...";
+  }
 }
 
 function cancelHeadToHeadSearch() {
+  stopLiveNetworkSession();
   headToHeadState.mode = "idle";
   headToHeadState.active = false;
   headToHeadState.opponentActor = null;
@@ -3325,13 +3555,33 @@ function startHeadToHeadMatch() {
   updateMapUI();
   if (mapSelectDropdown) mapSelectDropdown.value = String(currentMapIndex);
 
-  initHeadToHeadOpponent();
+  if (!headToHeadState.liveNetwork) {
+    initHeadToHeadOpponent();
+  } else {
+    headToHeadState.opponentActor = cloneActorState(actor);
+  }
   runStateLabel.textContent = `Head-to-Head vs ${headToHeadState.rivalName} — ${selectedCharacter.name} on ${getCurrentMap().name}`;
   updateAbilityHint();
 }
 
 function updateHeadToHeadMatchmaking(dt) {
   if (headToHeadState.mode === "searching") {
+    if (networkState.searching) {
+      networkState.searchElapsed += dt;
+      networkState.heartbeatTimer -= dt;
+      if (networkState.heartbeatTimer <= 0) {
+        networkState.heartbeatTimer = NETWORK_HEARTBEAT_SECONDS;
+        sendQueueHeartbeat();
+      }
+
+      if (networkState.searchElapsed >= NETWORK_SEARCH_TIMEOUT_SECONDS) {
+        cleanupNetworkQueue();
+        if (matchmakingStatus) matchmakingStatus.textContent = "No live opponent found. Switching to bot matchmaking...";
+      } else {
+        return;
+      }
+    }
+
     headToHeadState.searchTimer -= dt;
     if (headToHeadState.searchTimer <= 0) {
       headToHeadState.mode = "roulette";
@@ -3364,6 +3614,28 @@ function updateHeadToHeadMatchmaking(dt) {
 
 function updateHeadToHeadOpponent(dt) {
   if (!headToHeadState.active || !headToHeadState.opponentActor || headToHeadState.opponentFinished) return;
+
+  if (headToHeadState.liveNetwork) {
+    if (networkState.opponentSnapshot) {
+      const snap = networkState.opponentSnapshot;
+      headToHeadState.opponentActor = {
+        ...headToHeadState.opponentActor,
+        x: snap.x,
+        y: snap.y,
+        vx: snap.vx,
+        vy: snap.vy,
+        radius: snap.radius,
+        drag: snap.drag,
+        bounce: snap.bounce,
+        gravityMult: snap.gravityMult,
+        maxX: snap.maxX,
+        state: snap.state,
+      };
+      headToHeadState.opponentCameraX = snap.cameraX || 0;
+      headToHeadState.opponentFinished = snap.state === "ended";
+    }
+    return;
+  }
 
   const opp = headToHeadState.opponentActor;
   opp.vy += world.gravity * opp.gravityMult * dt;
@@ -5270,6 +5542,13 @@ function frame(now) {
   const dt = Math.min(0.033, (now - last) / 1000);
   last = now;
   updateHeadToHeadMatchmaking(dt);
+  if (headToHeadState.active && headToHeadState.liveNetwork) {
+    networkState.snapshotTimer -= dt;
+    if (networkState.snapshotTimer <= 0) {
+      networkState.snapshotTimer = NETWORK_SNAPSHOT_SECONDS;
+      sendLiveNetworkSnapshot();
+    }
+  }
   update(dt);
   draw();
   requestAnimationFrame(frame);
@@ -5327,6 +5606,11 @@ function renderCharacterCards() {
 }
 
 function showMenu() {
+  if (headToHeadState.mode === "searching" || headToHeadState.liveNetwork) {
+    stopLiveNetworkSession();
+    headToHeadState.mode = "idle";
+    headToHeadState.active = false;
+  }
   menuScreen.classList.add("active");
   characterScreen.classList.remove("active");
   matchmakingScreen?.classList.remove("active");
@@ -5636,8 +5920,10 @@ signOutBtn?.addEventListener("click", () => {
 });
 
 playBtn.addEventListener("click", () => {
+  stopLiveNetworkSession();
   headToHeadState.mode = "idle";
   headToHeadState.active = false;
+  headToHeadState.liveNetwork = false;
   headToHeadState.opponentActor = null;
   matchmakingScreen?.classList.remove("active");
   if (!isUnlocked(selectedCharacter)) {
