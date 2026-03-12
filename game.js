@@ -622,6 +622,7 @@ const actor = {
   samSwimTimer: 0,
   samJumpCharges: 1,
   samJumpRegenTimer: 0,
+  nathanHasTruck: true,
   nathanSpeed: NATHAN_JUMP_RESET_SPEED,
   nathanSlowdownPending: false,
   nathanGas: 0,
@@ -630,6 +631,7 @@ const actor = {
   nathanNextBombTimer: 0,
   nathanBombsDropped: 0,
   nathanJetX: 0,
+  nathanJetY: 0,
   nathanFlagTimer: 0,
 };
 
@@ -1212,14 +1214,12 @@ function triggerNathanAirstrike() {
 
   actor.nathanGas = Math.max(0, actor.nathanGas - NATHAN_GAS_TARGET);
   actor.nathanAirstrikeReady = false;
-  actor.nathanAirstrikeTimer = 2.7;
-  actor.nathanNextBombTimer = 0.1;
+  actor.nathanAirstrikeTimer = 4.1;
+  actor.nathanNextBombTimer = 0.08;
   actor.nathanBombsDropped = 0;
-  actor.nathanJetX = actor.x - 920;
+  actor.nathanJetX = actor.x - Math.max(canvas.width * 1.05, 1320);
+  actor.nathanJetY = terrainY(actor.x) - 390;
   actor.nathanFlagTimer = Math.max(actor.nathanFlagTimer, 2.2);
-
-  const strikeTargets = getFatalObstaclesInRange(actor.x - 4500, actor.x + 60000);
-  strikeTargets.forEach((hugh) => destroyedJanets.add(hugh.index));
 
   spawnParticles(actor.x, actor.y, 40, "#ffffff");
   spawnParticles(actor.x, actor.y, 18, "#ff4d00");
@@ -1232,17 +1232,21 @@ function triggerNathanAirstrike() {
 function updateNathanAirstrike(dt) {
   if (actor.nathanAirstrikeTimer > 0) {
     actor.nathanAirstrikeTimer = Math.max(0, actor.nathanAirstrikeTimer - dt);
-    actor.nathanJetX += 980 * dt;
+    actor.nathanJetX += 1220 * dt;
+    actor.nathanJetY += Math.sin((actor.nathanBombsDropped + actor.nathanAirstrikeTimer) * 2.3) * 16 * dt;
     actor.nathanNextBombTimer -= dt;
 
-    if (actor.nathanNextBombTimer <= 0 && actor.nathanBombsDropped < 16) {
-      actor.nathanNextBombTimer = 0.13;
+    if (actor.nathanNextBombTimer <= 0 && actor.nathanBombsDropped < 24) {
+      actor.nathanNextBombTimer = 0.16;
       actor.nathanBombsDropped += 1;
+
+      const dropX = actor.nathanJetX - 16 + (Math.random() - 0.5) * 26;
+      const dropY = actor.nathanJetY + 20;
       nathanAirstrikeBombs.push({
-        x: actor.nathanJetX - 100 - Math.random() * 40,
-        y: terrainY(actor.x) - 360 - Math.random() * 120,
+        x: dropX,
+        y: dropY,
         vx: -40 + Math.random() * 80,
-        vy: 210 + Math.random() * 40,
+        vy: 180 + Math.random() * 60,
         radius: 16,
         life: 3.2,
       });
@@ -1880,6 +1884,7 @@ function resetActor() {
   actor.samSwimTimer = 0;
   actor.samJumpCharges = 1;
   actor.samJumpRegenTimer = 0;
+  actor.nathanHasTruck = true;
   actor.nathanSpeed = NATHAN_JUMP_RESET_SPEED;
   actor.nathanSlowdownPending = false;
   actor.nathanGas = 0;
@@ -1888,6 +1893,7 @@ function resetActor() {
   actor.nathanNextBombTimer = 0;
   actor.nathanBombsDropped = 0;
   actor.nathanJetX = world.launchX - 920;
+  actor.nathanJetY = terrainY(world.launchX) - 390;
   actor.nathanFlagTimer = 0;
   samBenchPickup = null;
   cameraX = 0;
@@ -2530,7 +2536,7 @@ function useAbility() {
 
       actor.vy -= 430;
       actor.vx += 120;
-      actor.nathanSlowdownPending = true;
+      actor.nathanSlowdownPending = actor.nathanHasTruck;
 
       tone(520, 0.06, "square", 0.08);
       tone(700, 0.05, "triangle", 0.06);
@@ -2962,6 +2968,24 @@ function collideRect(rect) {
         startScreenShake(8, 0.18);
         return;
       }
+      if (selectedCharacter.id === "nate" && actor.nathanHasTruck) {
+        actor.nathanHasTruck = false;
+        actor.nathanSlowdownPending = false;
+        actor.radius = CALEB_ON_FOOT_RADIUS;
+        actor.drag = CALEB_ON_FOOT_DRAG;
+        actor.bounce = CALEB_ON_FOOT_BOUNCE;
+        actor.gravityMult = CALEB_ON_FOOT_GRAVITY;
+        actor.vx = Math.max(actor.vx * 0.78, 250);
+        actor.vy = Math.min(actor.vy - 130, -130);
+        destroyedJanets.add(rect.index);
+        spawnParticles(actor.x, actor.y, 34, "#a8d9ff");
+        spawnParticles(actor.x, actor.y, 14, "#ffffff");
+        tone(170, 0.08, "square", 0.09);
+        tone(110, 0.08, "triangle", 0.08);
+        startScreenShake(13, 0.24);
+        runStateLabel.textContent = "Nathan lost the Tacoma but keeps running!";
+        return;
+      }
       if (selectedCharacter.id === "calebparker" && actor.calebHasDino) {
         actor.calebHasDino = false;
         actor.radius = CALEB_ON_FOOT_RADIUS;
@@ -3142,14 +3166,15 @@ function update(dt) {
       actor.kadeSpeed = Math.min(KADE_MAX_SPEED, actor.kadeSpeed + KADE_ACCEL * dt);
     }
 
-    if (selectedCharacter.id === "nate" && actor.state === "flying") {
+    if (selectedCharacter.id === "nate" && actor.state === "flying" && actor.nathanHasTruck) {
       actor.nathanSpeed = Math.min(NATHAN_MAX_SPEED, actor.nathanSpeed + NATHAN_ACCEL * dt);
-      if (actor.nathanFlagTimer > 0) {
-        actor.nathanFlagTimer = Math.max(0, actor.nathanFlagTimer - dt);
-      }
-      if (actor.nathanAirstrikeReady && actor.nathanGas >= NATHAN_GAS_TARGET && actor.nathanFlagTimer <= 0) {
-        triggerNathanAirstrike();
-      }
+    }
+
+    if (selectedCharacter.id === "nate" && actor.nathanFlagTimer > 0) {
+      actor.nathanFlagTimer = Math.max(0, actor.nathanFlagTimer - dt);
+    }
+    if (selectedCharacter.id === "nate" && actor.nathanAirstrikeReady && actor.nathanGas >= NATHAN_GAS_TARGET && actor.nathanFlagTimer <= 0) {
+      triggerNathanAirstrike();
     }
 
     if (selectedCharacter.id === "calebparker" && actor.state === "flying" && actor.calebHasDino) {
@@ -3231,7 +3256,7 @@ function update(dt) {
       // BMW engine never lets vx drop below current accumulated speed
       actor.vx = Math.max(actor.vx, actor.kadeSpeed);
     }
-    if (selectedCharacter.id === "nate" && actor.state === "flying") {
+    if (selectedCharacter.id === "nate" && actor.state === "flying" && actor.nathanHasTruck) {
       // Tacoma momentum keeps climbing unless reset by jump landing
       actor.vx = Math.max(actor.vx, actor.nathanSpeed);
     }
@@ -3625,7 +3650,7 @@ function update(dt) {
         spawnParticles(actor.x, actor.y, 12, "#9bc1ff");
       }
 
-      if (selectedCharacter.id === "nate" && actor.nathanSlowdownPending) {
+      if (selectedCharacter.id === "nate" && actor.nathanSlowdownPending && actor.nathanHasTruck) {
         actor.nathanSlowdownPending = false;
         actor.nathanSpeed = actor.nathanSpeed * 0.75;
         actor.vx = actor.vx * 0.75;
@@ -4382,11 +4407,12 @@ function updateAbilityHint() {
     const strikeText = actor.nathanAirstrikeReady
       ? `Flag up: airstrike in ${Math.max(0, actor.nathanFlagTimer).toFixed(1)}s`
       : `Airstrike at ${NATHAN_GAS_TARGET} gal`;
+    const modeText = actor.nathanHasTruck ? `Tacoma speed: ~${mphApprox} mph` : "On foot (Tacoma lost)";
     if (actor.abilityCooldown > 0) {
-      abilityHint.textContent = `${gasText}  |  Tacoma speed: ~${mphApprox} mph  |  Reload: ${actor.abilityCooldown.toFixed(1)}s  |  ${strikeText}`;
+      abilityHint.textContent = `${gasText}  |  ${modeText}  |  Reload: ${actor.abilityCooldown.toFixed(1)}s  |  ${strikeText}`;
       return;
     }
-    abilityHint.textContent = `${gasText}  |  Tacoma speed: ~${mphApprox} mph  |  Space: jump + aimable Trump shot  |  ${strikeText}`;
+    abilityHint.textContent = `${gasText}  |  ${modeText}  |  Space: jump + aimable Trump shot  |  ${strikeText}`;
     return;
   }
 
@@ -5709,7 +5735,7 @@ function drawKadeBMW() {
 }
 
 function drawNathanTacoma() {
-  if (selectedCharacter.id !== "nate" || actor.state === "ready") return;
+  if (selectedCharacter.id !== "nate" || actor.state === "ready" || !actor.nathanHasTruck) return;
   const sx = actor.x - cameraX;
   const sy = actor.y;
   const r = actor.radius;
@@ -5859,7 +5885,7 @@ function drawNathanTrumps() {
 function drawNathanAirstrike() {
   if (actor.nathanAirstrikeTimer > 0) {
     const sx = actor.nathanJetX - cameraX;
-    const sy = terrainY(actor.x) - 330;
+    const sy = actor.nathanJetY;
     if (sx > -240 && sx < canvas.width + 240) {
       const w = 170;
       const h = 90;
