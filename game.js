@@ -107,6 +107,8 @@ const LUKE_ITEM_JUMP_MAX    = 960; // cap
 const LUKE_SUPERSPEED_THRESHOLD = 20;
 const LUKE_SUPERSPEED_VX        = 4200; // px/s during superspeed
 const LUKE_SUPERSPEED_DURATION  = 8;    // seconds
+const OWEN_MILKS_PER_LIFE = 5;
+const OWEN_FALL_DAMAGE_VY = 980;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
 
 const maps = [
@@ -386,6 +388,22 @@ const characters = [
     unlockAt: 0,
     ability: "lukejump",
   },
+  {
+    id: "owen",
+    name: "Owen",
+    trait: "Bone-strength collector",
+    bio: "Average speed, jump, and launch. Collect milk: every 5 milks grants +1 life. Very hard falls cost a life.",
+    imageBase: "Owen",
+    initials: "O",
+    mass: 1.0,
+    radius: 26,
+    drag: 0.09,
+    bounce: 0.58,
+    gravityMult: 0.98,
+    launchBoost: 1.16,
+    unlockAt: 0,
+    ability: "owenjump",
+  },
 ];
 
 let selectedCharacter = characters[0];
@@ -474,6 +492,8 @@ const actor = {
   lincolnImmunityTimer: 0,
   lukeItemCount: 0,
   lukeSuperspeedTimer: 0,
+  owenMilks: 0,
+  owenLives: 0,
 };
 
 const obstacles = [];
@@ -495,6 +515,7 @@ const collectedBurgers = new Set();
 const collectedFootballs = new Set();
 const collectedPots = new Set();
 const collectedNeedles = new Set();
+const collectedOwenMilk = new Set();
 
 const JANET_BASE = {
   w: 56,
@@ -551,6 +572,7 @@ let calebTrexImg = null;
 let lincolnAdhdImg = null;
 let lukeRedBullImg = null;
 let lukeCoffeeImg = null;
+let owenMilkImg = null;
 
 
 const spencerBombImageCandidates = [
@@ -653,6 +675,13 @@ const lukeCoffeeImageCandidates = [
   "characters props/Lukes Coffe.png",
   "characters props/Lukes Coffee.png",
   "Lukes Coffe.png",
+];
+
+const owenMilkImageCandidates = [
+  "characters props/Owens Milk .png",
+  "characters props/Owens Milk.png",
+  "Owens Milk .png",
+  "Owens Milk.png",
 ];
 
 
@@ -1258,6 +1287,37 @@ function getLukeCoffeeInRange(startX, endX) {
   return items;
 }
 
+// ── Owen: Milk glasses ──────────────────────────────────────────────────────
+const owenMilkCache = new Map();
+
+function createOwenMilk(index) {
+  const spacing = 430;
+  const startX = 980;
+  const baseX = startX + index * spacing;
+  const offset = Math.floor(seededNoise(index + 1401) * 220) - 90;
+  const yOffset = 106 + Math.floor(seededNoise(index + 1402) * 28);
+  return { index, x: baseX + offset, yOffset, r: 14 };
+}
+
+function getOwenMilk(index) {
+  if (!owenMilkCache.has(index)) owenMilkCache.set(index, createOwenMilk(index));
+  return owenMilkCache.get(index);
+}
+
+function getOwenMilkInRange(startX, endX) {
+  const spacing = 430;
+  const startXBase = 980;
+  const first = Math.max(0, Math.floor((startX - startXBase) / spacing) - 1);
+  const last = Math.max(first, Math.floor((endX - startXBase) / spacing) + 2);
+  const items = [];
+  for (let i = first; i <= last; i += 1) {
+    const milk = getOwenMilk(i);
+    if (collectedOwenMilk.has(milk.index)) continue;
+    if (milk.x + milk.r >= startX && milk.x - milk.r <= endX) items.push(milk);
+  }
+  return items;
+}
+
 
 let audioCtx = null;
 
@@ -1355,6 +1415,8 @@ function resetActor() {
   actor.lincolnImmunityTimer = 0;
   actor.lukeItemCount = 0;
   actor.lukeSuperspeedTimer = 0;
+  actor.owenMilks = 0;
+  actor.owenLives = 0;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
@@ -1377,6 +1439,7 @@ function resetActor() {
   collectedLincolnAdhd.clear();
   collectedLukeRedBull.clear();
   collectedLukeCoffee.clear();
+  collectedOwenMilk.clear();
   if (pendingSpencerJumpTimeout) {
     clearTimeout(pendingSpencerJumpTimeout);
     pendingSpencerJumpTimeout = null;
@@ -1688,6 +1751,18 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
   }, 800);
 }
 
+function trySpendOwenLife(statusMessage) {
+  if (selectedCharacter.id !== "owen" || actor.owenLives <= 0) return false;
+  actor.owenLives -= 1;
+  spawnParticles(actor.x, actor.y, 26, "#e7eef8");
+  spawnParticles(actor.x, actor.y, 12, "#ffffff");
+  tone(250, 0.07, "triangle", 0.08);
+  tone(170, 0.06, "triangle", 0.06);
+  startScreenShake(9, 0.2);
+  runStateLabel.textContent = `${statusMessage} Lives left: ${actor.owenLives}`;
+  return true;
+}
+
 function useAbility() {
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
@@ -1721,6 +1796,8 @@ function useAbility() {
     actor.abilityCooldown = 2;
   } else if (selectedCharacter.id === "lukepueppke") {
     actor.abilityCooldown = 2;
+  } else if (selectedCharacter.id === "owen") {
+    actor.abilityCooldown = 1.1;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -1923,6 +2000,15 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 20, "#4fc3f7");
       spawnParticles(actor.x, actor.y, 10, "#ffffff");
       startScreenShake(7 + Math.min(8, actor.lukeItemCount / 4), 0.16);
+      break;
+    }
+    case "owenjump": {
+      actor.vx += 95;
+      actor.vy -= 470;
+      actor.abilityCooldown = 1.1;
+      tone(420, 0.06, "triangle", 0.07);
+      tone(300, 0.05, "triangle", 0.06);
+      spawnParticles(actor.x, actor.y, 16, "#e7eef8");
       break;
     }
   }
@@ -2147,6 +2233,12 @@ function collideRect(rect) {
         tone(280, 0.08, "square", 0.1);
         tone(180, 0.06, "square", 0.08);
         startScreenShake(18, 0.35);
+        return;
+      }
+      if (selectedCharacter.id === "owen" && trySpendOwenLife("Bone hit! Owen lost a life.")) {
+        actor.y = y - actor.radius;
+        actor.vx = Math.max(130, actor.vx * 0.85);
+        actor.vy = -Math.max(180, Math.abs(actor.vy) * 0.42);
         return;
       }
       actor.y = y - actor.radius;
@@ -2378,6 +2470,9 @@ function update(dt) {
     const nearbyLukeCoffee = selectedCharacter.id === "lukepueppke"
       ? getLukeCoffeeInRange(actor.x - 260, actor.x + 560)
       : [];
+    const nearbyOwenMilk = selectedCharacter.id === "owen"
+      ? getOwenMilkInRange(actor.x - 260, actor.x + 560)
+      : [];
 
     updateStricWoodsHazards(dt, nearbyJanets);
     if (updateEnemyLasers(dt)) {
@@ -2563,6 +2658,28 @@ function update(dt) {
       }
     }
 
+    for (const milk of nearbyOwenMilk) {
+      const my = terrainY(milk.x) - milk.yOffset;
+      const dx = actor.x - milk.x;
+      const dy = actor.y - my;
+      const hitR = actor.radius + milk.r * 0.82;
+      if (dx * dx + dy * dy <= hitR * hitR) {
+        collectedOwenMilk.add(milk.index);
+        actor.owenMilks += 1;
+        spawnParticles(milk.x, my, 16, "#e7eef8");
+        tone(430 + Math.min(260, actor.owenMilks * 6), 0.05, "triangle", 0.06);
+
+        if (actor.owenMilks % OWEN_MILKS_PER_LIFE === 0) {
+          actor.owenLives += 1;
+          startScreenShake(8, 0.18);
+          spawnParticles(actor.x, actor.y, 24, "#ffffff");
+          tone(700, 0.07, "triangle", 0.08);
+          tone(920, 0.05, "triangle", 0.07);
+          runStateLabel.textContent = `Bones stronger! Owen gained a life (${actor.owenLives}).`;
+        }
+      }
+    }
+
     if (selectedCharacter.id === "jackson" && actor.jacksonSkyModeTimer > 0) {
       nearbyJanets.forEach((hugh) => {
         if (destroyedJanets.has(hugh.index)) return;
@@ -2593,8 +2710,21 @@ function update(dt) {
         finishRun("Run ended: Hunter rocketed into the ground.");
         return;
       }
-      if (Math.abs(actor.vy) > 80) {
-        const impactVy = Math.abs(actor.vy);
+      const impactVy = Math.abs(actor.vy);
+      let owenFallHandled = false;
+
+      if (selectedCharacter.id === "owen" && impactVy >= OWEN_FALL_DAMAGE_VY) {
+        if (trySpendOwenLife("Hard fall! Owen lost a life.")) {
+          actor.vy = -Math.max(220, impactVy * 0.28);
+          actor.vx = Math.max(120, actor.vx * 0.9);
+          owenFallHandled = true;
+        } else {
+          finishRun("Run ended: Owen fell from too high without any extra lives.");
+          return;
+        }
+      }
+
+      if (!owenFallHandled && impactVy > 80) {
         let bounceFactor = Math.max(0.62, actor.bounce * 1.22);
         if (selectedCharacter.id === "anthony") {
           const impactIntensity = Math.min(2.4, impactVy / 420);
@@ -2715,6 +2845,8 @@ function getAbilityLabel(character) {
       return "BMW jump";
     case "trexjump":
       return "T-Rex jump";
+    case "owenjump":
+      return "steady jump";
     default:
       return "ability";
   }
@@ -2891,6 +3023,17 @@ function updateAbilityHint() {
       : `Superspeed at ${LUKE_SUPERSPEED_THRESHOLD} items`;
     const boost = Math.min(LUKE_ITEM_JUMP_MAX, LUKE_ITEM_JUMP_BASE + actor.lukeItemCount * LUKE_ITEM_JUMP_BONUS);
     abilityHint.textContent = `${itemText}  |  ${speedText}  |  Space: jump (boost +${Math.round(boost)})`;
+    return;
+  }
+
+  if (selectedCharacter.id === "owen") {
+    const milkText = `Milks: ${actor.owenMilks}`;
+    const lifeText = `Extra lives: ${actor.owenLives}`;
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${milkText}  |  ${lifeText}  |  Jump in ${actor.abilityCooldown.toFixed(1)}s`;
+      return;
+    }
+    abilityHint.textContent = `${milkText}  |  ${lifeText}  |  Space: jump  |  +1 life every ${OWEN_MILKS_PER_LIFE} milks`;
     return;
   }
 
@@ -3295,6 +3438,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "lukepueppke") {
     return ["characters/Luke Pueppke.png", "Luke Pueppke.png"];
   }
+  if (character.id === "owen") {
+    return ["characters/Owen .png", "Owen .png"];
+  }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
 
@@ -3525,6 +3671,9 @@ function drawMapDecor() {
     : [];
   const visibleLukeCoffee = selectedCharacter.id === "lukepueppke"
     ? getLukeCoffeeInRange(cameraX - 120, cameraX + canvas.width + 120)
+    : [];
+  const visibleOwenMilk = selectedCharacter.id === "owen"
+    ? getOwenMilkInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
 
   visibleCandies.forEach((candy) => {
@@ -3758,6 +3907,31 @@ function drawMapDecor() {
       ctx.font = `bold ${Math.round(cof.r * 0.8)}px Trebuchet MS`;
       ctx.textAlign = "center";
       ctx.fillText("☕", sx, cy2 + cof.r * 0.35);
+      ctx.textAlign = "start";
+    }
+  });
+
+  // Owen milk glasses
+  visibleOwenMilk.forEach((milk) => {
+    const my = terrainY(milk.x) - milk.yOffset;
+    const sx = milk.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+    const size = milk.r * 2.8;
+    if (owenMilkImg && owenMilkImg.complete && owenMilkImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, my);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + milk.index) * 0.1);
+      ctx.drawImage(owenMilkImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#e6edf7";
+      ctx.beginPath();
+      ctx.roundRect(sx - milk.r * 0.55, my - milk.r, milk.r * 1.1, milk.r * 2, milk.r * 0.25);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `bold ${Math.round(milk.r * 0.8)}px Trebuchet MS`;
+      ctx.textAlign = "center";
+      ctx.fillText("🥛", sx, my + milk.r * 0.35);
       ctx.textAlign = "start";
     }
   });
@@ -4478,6 +4652,14 @@ function preloadCharacterImages() {
     if (lukeCoffeeIdx < lukeCoffeeImageCandidates.length) lukeCoffeeImg.src = lukeCoffeeImageCandidates[lukeCoffeeIdx];
   };
   lukeCoffeeImg.src = lukeCoffeeImageCandidates[0];
+
+  owenMilkImg = new Image();
+  let owenMilkIdx = 0;
+  owenMilkImg.onerror = () => {
+    owenMilkIdx += 1;
+    if (owenMilkIdx < owenMilkImageCandidates.length) owenMilkImg.src = owenMilkImageCandidates[owenMilkIdx];
+  };
+  owenMilkImg.src = owenMilkImageCandidates[0];
 
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
