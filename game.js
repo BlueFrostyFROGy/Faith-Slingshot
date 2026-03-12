@@ -401,7 +401,7 @@ const characters = [
     radius: 26,
     drag: 0.09,
     bounce: 0.58,
-    gravityMult: 0.98,
+    gravityMult: 1.05,
     launchBoost: 1.16,
     unlockAt: 0,
     ability: "owenjump",
@@ -2164,7 +2164,7 @@ function useAbility() {
     }
     case "owenjump": {
       actor.vx += 125;
-      actor.vy -= 520;
+      actor.vy -= 460;
       actor.abilityCooldown = 1.1;
       tone(420, 0.06, "triangle", 0.07);
       tone(300, 0.05, "triangle", 0.06);
