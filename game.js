@@ -91,6 +91,8 @@ const networkState = {
   heartbeatTimer: 0,
   snapshotTimer: 0,
   opponentSnapshot: null,
+  opponentFinished: false,
+  opponentFinalDistance: 0,
 };
 
 const world = {
@@ -1977,10 +1979,20 @@ function finishRun(message = "Run ended: no movement left. Press Restart Run.") 
 
   if (headToHeadState.active) {
     const playerM = Math.max(0, (actor.maxX - world.launchX) / 10);
-    const oppM = headToHeadState.opponentActor
-      ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
-      : 0;
-    const result = playerM >= oppM ? "You win the head-to-head!" : `${headToHeadState.rivalName} wins the head-to-head.`;
+    const oppM = headToHeadState.liveNetwork
+      ? (networkState.opponentFinished
+        ? networkState.opponentFinalDistance
+        : (headToHeadState.opponentActor
+          ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
+          : 0))
+      : (headToHeadState.opponentActor
+        ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
+        : 0);
+
+    const result = headToHeadState.liveNetwork && !networkState.opponentFinished
+      ? `You finished at ${playerM.toFixed(1)}m. Waiting on ${headToHeadState.rivalName}'s result.`
+      : (playerM >= oppM ? "You win the head-to-head!" : `${headToHeadState.rivalName} wins the head-to-head.`);
+
     message = `${message} ${result}`;
     if (headToHeadState.liveNetwork) {
       stopLiveNetworkSession();
@@ -3340,6 +3352,8 @@ function cleanupNetworkQueue() {
 function cleanupNetworkRoom() {
   networkState.snapshotTimer = 0;
   networkState.opponentSnapshot = null;
+  networkState.opponentFinished = false;
+  networkState.opponentFinalDistance = 0;
   if (networkState.roomChannel) {
     networkState.client?.removeChannel(networkState.roomChannel);
     networkState.roomChannel = null;
@@ -3440,6 +3454,8 @@ function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
   networkState.roomChannel = roomChannel;
   networkState.roomId = roomId;
   networkState.opponentSnapshot = null;
+  networkState.opponentFinished = false;
+  networkState.opponentFinalDistance = 0;
 
   roomChannel.on("broadcast", { event: "state" }, ({ payload }) => {
     if (!payload || payload.playerId === networkState.playerId) return;
@@ -3448,8 +3464,18 @@ function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
 
   roomChannel.on("broadcast", { event: "finish" }, ({ payload }) => {
     if (!payload || payload.playerId === networkState.playerId) return;
-    if (headToHeadState.active) {
-      finishRun(`${payload.message || "Opponent finished."}`);
+    networkState.opponentFinished = true;
+    networkState.opponentFinalDistance = Number(payload.distance) || 0;
+    if (headToHeadState.opponentActor) {
+      headToHeadState.opponentActor.state = "ended";
+      headToHeadState.opponentActor.vx = 0;
+      headToHeadState.opponentActor.vy = 0;
+      const maxX = world.launchX + networkState.opponentFinalDistance * 10;
+      headToHeadState.opponentActor.maxX = Math.max(headToHeadState.opponentActor.maxX || world.launchX, maxX);
+      headToHeadState.opponentFinished = true;
+    }
+    if (headToHeadState.active && runStateLabel) {
+      runStateLabel.textContent = payload.message || `${headToHeadState.rivalName} finished. Keep going!`;
     }
   });
 
