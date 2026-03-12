@@ -123,10 +123,10 @@ const townSquareMapImageCandidates = [
   "assets/images/town-square.png",
 ];
 const stricWoodsMapImageCandidates = [
-  ["New Map Boss Level (strickerland)/Page 1.png", "Page 1.png"],
-  ["New Map Boss Level (strickerland)/2.png", "2.png"],
-  ["New Map Boss Level (strickerland)/3.png", "3.png"],
-  ["New Map Boss Level (strickerland)/4.png", "4.png"],
+  ["New Map Boss Level (strickerland)/Page 1.png"],
+  ["New Map Boss Level (strickerland)/2.png"],
+  ["New Map Boss Level (strickerland)/3.png"],
+  ["New Map Boss Level (strickerland)/4.png"],
 ];
 
 const characters = [
@@ -525,12 +525,10 @@ const fatalObstacleImageCandidates = [
 
 const mikeObstacleImageCandidates = [
   "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
-  "New Boss (the Stricker.webp",
 ];
 
 const strickerBossImageCandidates = [
   "New Map Boss Level (strickerland)/New Boss (the Stricker.webp",
-  "New Boss (the Stricker.webp",
 ];
 
 let fatalObstacleImg = null;
