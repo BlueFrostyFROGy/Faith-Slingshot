@@ -81,6 +81,7 @@ const CALEB_ON_FOOT_BOUNCE = 0.5;
 const CALEB_ON_FOOT_GRAVITY = 0.96;
 const BRAYDEN_BASE_JUMP_COOLDOWN = 0.9;
 const BRAYDEN_RAGE_JUMP_COOLDOWN = 1.5;
+const SPENCER_MAX_HEIGHT_M = 200;
 
 // Sal (anthony) shrink-on-distance constants
 const SAL_SHRINK_INTERVAL = 100;   // metres between each shrink
@@ -2130,6 +2131,16 @@ function update(dt) {
     }
     actor.x += actor.vx * dt;
     actor.y += actor.vy * dt;
+
+    if (selectedCharacter.id === "spencer") {
+      const maxHeightPx = SPENCER_MAX_HEIGHT_M * 10;
+      const minAllowedY = terrainY(actor.x) - actor.radius - maxHeightPx;
+      if (actor.y < minAllowedY) {
+        actor.y = minAllowedY;
+        if (actor.vy < 0) actor.vy = 0;
+      }
+    }
+
     const nearbyBouncePads = getBouncePadsInRange(actor.x - 260, actor.x + 520);
     const nearbyJanets = getJanetsInRange(actor.x - 220, actor.x + 560);
     const nearbyCandies = selectedCharacter.id === "candyjew"
