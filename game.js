@@ -38,6 +38,7 @@ const highScoreValue = document.getElementById("highScoreValue");
 const mapNameLabel = document.getElementById("mapNameLabel");
 const runStateLabel = document.getElementById("runStateLabel");
 const switchMapBtn = document.getElementById("switchMapBtn");
+const hudHeadToHeadBtn = document.getElementById("hudHeadToHeadBtn");
 const mapSelectDropdown = document.getElementById("mapSelectDropdown");
 
 const playerNameInput = document.getElementById("playerNameInput");
@@ -6027,6 +6028,16 @@ powerSlider.addEventListener("input", () => {
 
 toSelectBtn.addEventListener("click", showCharacterSelect);
 headToHeadBtn?.addEventListener("click", beginHeadToHeadSearch);
+hudHeadToHeadBtn?.addEventListener("click", () => {
+  const hasName = !!(headToHeadNameInput?.value || "").trim();
+  if (!hasName) {
+    const typed = window.prompt("Enter your name for Head to Head:", "") || "";
+    const clean = typed.trim().slice(0, 16);
+    if (!clean) return;
+    if (headToHeadNameInput) headToHeadNameInput.value = clean;
+  }
+  beginHeadToHeadSearch();
+});
 cancelMatchmakingBtn?.addEventListener("click", cancelHeadToHeadSearch);
 backToMenuBtn.addEventListener("click", showMenu);
 document.getElementById("changeCharBtn").addEventListener("click", () => {
