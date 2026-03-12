@@ -19,7 +19,9 @@ const characterGrid = document.getElementById("characterGrid");
 
 const toSelectBtn = document.getElementById("toSelectBtn");
 const headToHeadBtn = document.getElementById("headToHeadBtn");
+const privateHeadToHeadBtn = document.getElementById("privateHeadToHeadBtn");
 const headToHeadNameInput = document.getElementById("headToHeadNameInput");
+const privateMatchCodeInput = document.getElementById("privateMatchCodeInput");
 const matchmakingScreen = document.getElementById("matchmakingScreen");
 const matchmakingStatus = document.getElementById("matchmakingStatus");
 const cancelMatchmakingBtn = document.getElementById("cancelMatchmakingBtn");
@@ -103,6 +105,7 @@ const networkState = {
   localFinishSent: false,
   displayName: "",
   connectingRoom: false,
+  privateCode: "",
 };
 
 const world = {
@@ -3438,6 +3441,21 @@ function deterministicLiveMatchFromIds(aId, bId) {
   };
 }
 
+function normalizePrivateCode(code) {
+  return (code || "")
+    .toString()
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 10);
+}
+
+function isQueueCompatible(otherCode) {
+  const mine = normalizePrivateCode(networkState.privateCode);
+  const theirs = normalizePrivateCode(otherCode);
+  return mine === theirs;
+}
+
 function sendQueueHeartbeat() {
   if (!networkState.queueChannel || !networkState.searching) return;
   networkState.queueChannel.send({
@@ -3447,6 +3465,7 @@ function sendQueueHeartbeat() {
       type: "searching",
       playerId: networkState.playerId,
       name: getNetworkPlayerName(),
+      privateCode: normalizePrivateCode(networkState.privateCode),
       ts: Date.now(),
     },
   });
@@ -3469,12 +3488,13 @@ function startLiveNetworkSearch() {
     if (!payload || !networkState.searching) return;
     if (payload.type === "searching") {
       if (!payload.playerId || payload.playerId === networkState.playerId) return;
+      if (!isQueueCompatible(payload.privateCode)) return;
       if (networkState.peerId) return;
+      if (networkState.connectingRoom || networkState.roomId) return;
 
       const myId = networkState.playerId;
       const otherId = payload.playerId;
       networkState.peerId = otherId;
-      networkState.searching = false;
       networkState.connectingRoom = true;
       const match = deterministicLiveMatchFromIds(myId, otherId);
       if (matchmakingStatus) matchmakingStatus.textContent = `Live opponent found: ${payload.name || "Opponent"}. Joining room...`;
@@ -3482,15 +3502,8 @@ function startLiveNetworkSearch() {
     }
 
     if (payload.type === "match-found") {
-      const isForMe = payload.peerId === networkState.playerId || payload.leaderId === networkState.playerId;
-      if (!isForMe) return;
-      if (!payload.roomId || !payload.characterId || !Number.isInteger(payload.mapIndex)) return;
-
-      networkState.peerId = payload.leaderId === networkState.playerId ? payload.peerId : payload.leaderId;
-      networkState.searching = false;
-      const rivalName = payload.leaderId === networkState.playerId ? (payload.peerName || "Opponent") : (payload.leaderName || "Opponent");
-      if (matchmakingStatus) matchmakingStatus.textContent = `Live match ready vs ${rivalName}. Joining room...`;
-      joinLiveNetworkRoom(payload.roomId, payload.characterId, payload.mapIndex, rivalName);
+      // Legacy path: ignored to keep deterministic v2 pairing synced.
+      return;
     }
   });
 
@@ -3504,7 +3517,6 @@ function startLiveNetworkSearch() {
 }
 
 function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
-  cleanupNetworkQueue();
   cleanupNetworkRoom();
   networkState.connectingRoom = true;
 
@@ -3541,6 +3553,8 @@ function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
   roomChannel.subscribe((status) => {
     if (status === "SUBSCRIBED") {
       networkState.connectingRoom = false;
+      networkState.searching = false;
+      cleanupNetworkQueue();
       headToHeadState.liveNetwork = true;
       headToHeadState.rivalName = rivalName || "Opponent";
       headToHeadState.randomCharacter = characters.find((c) => c.id === characterId) || characters[0];
@@ -3553,8 +3567,9 @@ function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
       networkState.connectingRoom = false;
       cleanupNetworkRoom();
       if (headToHeadState.mode === "searching") {
-        if (matchmakingStatus) matchmakingStatus.textContent = "Live room failed, switching to bot matchmaking...";
-        headToHeadState.searchTimer = 0;
+        if (matchmakingStatus) matchmakingStatus.textContent = "Live room failed, still searching...";
+        networkState.searching = true;
+        networkState.searchElapsed = Math.max(0, networkState.searchElapsed - 1.2);
       }
     }
   });
@@ -3590,7 +3605,7 @@ function stopLiveNetworkSession() {
   headToHeadState.liveNetwork = false;
 }
 
-function beginHeadToHeadSearch() {
+function beginHeadToHeadSearch(options = {}) {
   const enteredName = (headToHeadNameInput?.value || "").trim();
   if (!enteredName) {
     alert("Type your name before searching for a head-to-head match.");
@@ -3599,6 +3614,16 @@ function beginHeadToHeadSearch() {
   }
   networkState.displayName = enteredName.slice(0, 16);
   localStorage.setItem("faith-h2h-name", networkState.displayName);
+
+  const privateCode = normalizePrivateCode(options.privateCode ?? privateMatchCodeInput?.value ?? "");
+  if (options.requirePrivate && !privateCode) {
+    alert("Enter a private match code first.");
+    privateMatchCodeInput?.focus();
+    return;
+  }
+  networkState.privateCode = privateCode;
+  if (privateMatchCodeInput) privateMatchCodeInput.value = privateCode;
+  localStorage.setItem("faith-h2h-private-code", privateCode);
 
   stopLiveNetworkSession();
   headToHeadState.mode = "searching";
@@ -3616,7 +3641,7 @@ function beginHeadToHeadSearch() {
   const liveStarted = startLiveNetworkSearch();
   if (matchmakingStatus) {
     matchmakingStatus.textContent = liveStarted
-      ? "Searching live network for opponent..."
+      ? (privateCode ? `Searching private code ${privateCode}...` : "Searching live network for opponent...")
       : "Searching for game...";
   }
 }
@@ -3684,6 +3709,11 @@ function updateHeadToHeadMatchmaking(dt) {
   if (headToHeadState.mode === "searching") {
     if (networkState.connectingRoom) {
       if (matchmakingStatus) matchmakingStatus.textContent = "Joining live room...";
+      networkState.heartbeatTimer -= dt;
+      if (networkState.heartbeatTimer <= 0) {
+        networkState.heartbeatTimer = NETWORK_HEARTBEAT_SECONDS;
+        sendQueueHeartbeat();
+      }
       return;
     }
 
@@ -6053,6 +6083,7 @@ powerSlider.addEventListener("input", () => {
 
 toSelectBtn.addEventListener("click", showCharacterSelect);
 headToHeadBtn?.addEventListener("click", beginHeadToHeadSearch);
+privateHeadToHeadBtn?.addEventListener("click", () => beginHeadToHeadSearch({ requirePrivate: true }));
 hudHeadToHeadBtn?.addEventListener("click", () => {
   const hasName = !!(headToHeadNameInput?.value || "").trim();
   if (!hasName) {
@@ -6318,6 +6349,10 @@ const storedH2HName = localStorage.getItem("faith-h2h-name");
 if (storedH2HName) {
   networkState.displayName = storedH2HName.slice(0, 16);
   if (headToHeadNameInput) headToHeadNameInput.value = networkState.displayName;
+}
+const storedPrivateCode = localStorage.getItem("faith-h2h-private-code");
+if (storedPrivateCode && privateMatchCodeInput) {
+  privateMatchCodeInput.value = normalizePrivateCode(storedPrivateCode);
 }
 updateHighScoreUI();
 updateHeightUI();
