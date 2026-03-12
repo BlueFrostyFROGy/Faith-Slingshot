@@ -284,8 +284,8 @@ const characters = [
   {
     id: "traviswilliams",
     name: "Travis Williams",
-    trait: "Craddle snatcher",
-    bio: "A lightweight chaos runner who snatches craddles off the track. Grab 10 craddles to rocket skyward and sling 300m forward.",
+    trait: "Cradle snatcher",
+    bio: "A lightweight chaos runner who snatches cradles off the track. Grab 10 cradles to rocket skyward and sling 300m forward.",
     imageBase: "Travis Williams",
     initials: "TW",
     mass: 0.58,
@@ -300,8 +300,8 @@ const characters = [
   {
     id: "matteo",
     name: "Matteo Schirripa",
-    trait: "Craddle truck slammer",
-    bio: "A powerhouse craddle snatcher with Anthony's road rage and Spencer's build. Space: slam, Double-Space: truck blast. Pocket 10 craddles to rocket 300m forward — don't leave yours unattended.",
+    trait: "Cradle truck slammer",
+    bio: "A powerhouse cradle snatcher with Anthony's road rage and Spencer's build. Space: slam, Double-Space: truck blast. Pocket 10 cradles to rocket 300m forward — don't leave yours unattended.",
     imageBase: "Matteo Schirripa",
     initials: "MS",
     mass: 1.68,
@@ -944,10 +944,10 @@ const nathanGasImageCandidates = [
 ];
 
 const travisCraddleImageCandidates = [
-  "characters props/Travis Craddle Snatch.png",
-  "Travis Craddle Snatch.png",
   "characters props/Travis Cradle Snatch.png",
   "Travis Cradle Snatch.png",
+  "characters props/Travis Craddle Snatch.png",
+  "Travis Craddle Snatch.png",
 ];
 
 const nathanTrumpImageCandidates = [
@@ -3716,7 +3716,7 @@ function update(dt) {
           tone(820, 0.08, "triangle", 0.1);
           tone(620, 0.06, "square", 0.08);
           const name = isMatteo ? "Matteo" : "Travis";
-          runStateLabel.textContent = `Craddle snatch! ${name} blasted ${TRAVIS_LAUNCH_FORWARD_METERS}m forward.`;
+          runStateLabel.textContent = `Cradle snatch! ${name} blasted ${TRAVIS_LAUNCH_FORWARD_METERS}m forward.`;
         }
       }
     }
@@ -4411,7 +4411,7 @@ function getAbilityLabel(character) {
     case "owenjump":
       return "steady jump";
     case "travisjump":
-      return "craddle hop";
+      return "cradle hop";
     case "samswim":
       return "swim through Hugh / double-jump";
     case "basketshot":
@@ -4589,23 +4589,23 @@ function updateAbilityHint() {
   }
 
   if (selectedCharacter.id === "traviswilliams") {
-    const craddleText = `Craddles: ${actor.travisCraddleCount}/${TRAVIS_CRADDLES_FOR_LAUNCH}`;
+    const craddleText = `Cradles: ${actor.travisCraddleCount}/${TRAVIS_CRADDLES_FOR_LAUNCH}`;
     if (actor.abilityCooldown > 0) {
-      abilityHint.textContent = `${craddleText}  |  Jump in ${actor.abilityCooldown.toFixed(1)}s  |  10 craddles = +${TRAVIS_LAUNCH_FORWARD_METERS}m launch`;
+      abilityHint.textContent = `${craddleText}  |  Jump in ${actor.abilityCooldown.toFixed(1)}s  |  10 cradles = +${TRAVIS_LAUNCH_FORWARD_METERS}m launch`;
       return;
     }
-    abilityHint.textContent = `${craddleText}  |  Space: basic jump  |  10 craddles = fly up +${TRAVIS_LAUNCH_FORWARD_METERS}m`;
+    abilityHint.textContent = `${craddleText}  |  Space: basic jump  |  10 cradles = fly up +${TRAVIS_LAUNCH_FORWARD_METERS}m`;
     return;
   }
 
   if (selectedCharacter.id === "matteo") {
-    const craddleText = `Craddles: ${actor.matteoCraddleCount}/${TRAVIS_CRADDLES_FOR_LAUNCH}`;
+    const craddleText = `Cradles: ${actor.matteoCraddleCount}/${TRAVIS_CRADDLES_FOR_LAUNCH}`;
     const slamReady = actor.abilityCooldown <= 0;
     const slamText = slamReady ? "Space: slam" : `Slam: ${actor.abilityCooldown.toFixed(1)}s`;
     const truckText = actor.truckCount > 0
       ? `Double-Space: truck (${actor.truckCount} left)`
       : "No trucks left";
-    abilityHint.textContent = `${craddleText}  |  ${slamText}  |  ${truckText}  |  10 craddles = fly up +${TRAVIS_LAUNCH_FORWARD_METERS}m`;
+    abilityHint.textContent = `${craddleText}  |  ${slamText}  |  ${truckText}  |  10 cradles = fly up +${TRAVIS_LAUNCH_FORWARD_METERS}m`;
     return;
   }
 
@@ -5361,7 +5361,7 @@ function drawMapDecor() {
   const visibleNathanGas = selectedCharacter.id === "nathan"
     ? getNathanGasInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
-  const visibleTravisCraddles = selectedCharacter.id === "traviswilliams"
+  const visibleTravisCraddles = (selectedCharacter.id === "traviswilliams" || selectedCharacter.id === "matteo")
     ? getTravisCraddlesInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
 
