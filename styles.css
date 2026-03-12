@@ -80,6 +80,14 @@ canvas {
   display: grid;
 }
 
+.matchmaking-status {
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin: 14px 0 18px;
+  color: #24325f;
+  letter-spacing: 0.2px;
+}
+
 .panel {
   background: var(--card);
   border: 3px solid #fff;

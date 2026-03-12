@@ -18,6 +18,10 @@ const leaderboardScreen = document.getElementById("leaderboardScreen");
 const characterGrid = document.getElementById("characterGrid");
 
 const toSelectBtn = document.getElementById("toSelectBtn");
+const headToHeadBtn = document.getElementById("headToHeadBtn");
+const matchmakingScreen = document.getElementById("matchmakingScreen");
+const matchmakingStatus = document.getElementById("matchmakingStatus");
+const cancelMatchmakingBtn = document.getElementById("cancelMatchmakingBtn");
 const backToMenuBtn = document.getElementById("backToMenuBtn");
 const playBtn = document.getElementById("playBtn");
 const launchBtn = document.getElementById("launchBtn");
@@ -54,6 +58,24 @@ let authSession = null;
 let leaderboardViewMode = "character";
 let leaderboardRunCharacterId = "";
 let leaderboardRunCharacterName = "";
+const headToHeadRivals = ["Riley", "Jordan", "Blake", "Avery", "Parker", "Casey", "Logan", "Sky", "Taylor"];
+
+const headToHeadState = {
+  mode: "idle", // idle | searching | roulette | active
+  active: false,
+  searchTimer: 0,
+  rouletteTimer: 0,
+  rouletteTickTimer: 0,
+  rouletteDuration: 2.8,
+  randomCharacter: null,
+  randomMapIndex: 0,
+  rivalName: "Rival",
+  opponentActor: null,
+  opponentCameraX: 0,
+  opponentJumpTimer: 0,
+  opponentStoppedTimer: 0,
+  opponentFinished: false,
+};
 
 const world = {
   width: 12000,
@@ -1631,9 +1653,12 @@ function resetActor() {
 
   runStateLabel.textContent = "Click and drag to aim";
   launchBtn.disabled = false;
-  if (switchMapBtn) switchMapBtn.disabled = false;
+  if (switchMapBtn) switchMapBtn.disabled = !!headToHeadState.active;
   if (heightValue) {
     heightValue.textContent = "0";
+  }
+  if (headToHeadState.active) {
+    initHeadToHeadOpponent();
   }
   updateAbilityHint();
 }
@@ -1918,6 +1943,17 @@ function startNextRunSameCharacter() {
 
 
 function finishRun(message = "Run ended: no movement left. Press Restart Run.") {
+  if (headToHeadState.active) {
+    const playerM = Math.max(0, (actor.maxX - world.launchX) / 10);
+    const oppM = headToHeadState.opponentActor
+      ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
+      : 0;
+    const result = playerM >= oppM ? "You win the head-to-head!" : `${headToHeadState.rivalName} wins the head-to-head.`;
+    message = `${message} ${result}`;
+    headToHeadState.active = false;
+    headToHeadState.mode = "idle";
+  }
+
   runStateLabel.textContent = message;
   launchBtn.disabled = true;
   actor.state = "ended";
@@ -3200,6 +3236,7 @@ function update(dt) {
   updateParticles(dt);
   updateImpactBursts(dt);
   updateScreenShake(dt);
+  updateHeadToHeadOpponent(dt);
 }
 
 function updateHighScoreUI() {
@@ -3217,12 +3254,160 @@ function updateMapUI() {
 }
 
 function toggleMap() {
+  if (headToHeadState.active || headToHeadState.mode === "searching" || headToHeadState.mode === "roulette") return;
   if (actor.state === "flying") return; // no map switch mid-run
   currentMapIndex = (currentMapIndex + 1) % maps.length;
   updateMapUI();
   if (mapSelectDropdown) mapSelectDropdown.value = String(currentMapIndex);
 }
 
+function cloneActorState(sourceActor) {
+  return JSON.parse(JSON.stringify(sourceActor));
+}
+
+function hideAllOverlays() {
+  menuScreen.classList.remove("active");
+  characterScreen.classList.remove("active");
+  leaderboardScreen.classList.remove("active");
+  matchmakingScreen?.classList.remove("active");
+}
+
+function beginHeadToHeadSearch() {
+  headToHeadState.mode = "searching";
+  headToHeadState.active = false;
+  headToHeadState.searchTimer = 1.6 + Math.random() * 2.2;
+  headToHeadState.rouletteTimer = 0;
+  headToHeadState.rouletteTickTimer = 0;
+  headToHeadState.randomCharacter = null;
+  headToHeadState.rivalName = headToHeadRivals[Math.floor(Math.random() * headToHeadRivals.length)];
+  hideAllOverlays();
+  matchmakingScreen?.classList.add("active");
+  controlsPanel.classList.add("hidden");
+  if (matchmakingStatus) matchmakingStatus.textContent = "Searching for game...";
+}
+
+function cancelHeadToHeadSearch() {
+  headToHeadState.mode = "idle";
+  headToHeadState.active = false;
+  headToHeadState.opponentActor = null;
+  matchmakingScreen?.classList.remove("active");
+  showMenu();
+}
+
+function initHeadToHeadOpponent() {
+  const forkY = terrainY(world.launchX) - 70;
+  headToHeadState.opponentActor = cloneActorState(actor);
+  headToHeadState.opponentActor.x = world.launchX;
+  headToHeadState.opponentActor.y = forkY;
+  headToHeadState.opponentActor.vx = (560 + Math.random() * 200) * selectedCharacter.launchBoost;
+  headToHeadState.opponentActor.vy = (-420 - Math.random() * 130) * selectedCharacter.launchBoost;
+  headToHeadState.opponentActor.state = "flying";
+  headToHeadState.opponentActor.maxX = world.launchX;
+  headToHeadState.opponentCameraX = 0;
+  headToHeadState.opponentJumpTimer = 1.0 + Math.random() * 1.8;
+  headToHeadState.opponentStoppedTimer = 0;
+  headToHeadState.opponentFinished = false;
+}
+
+function startHeadToHeadMatch() {
+  if (!headToHeadState.randomCharacter) {
+    headToHeadState.randomCharacter = characters[Math.floor(Math.random() * characters.length)];
+  }
+  selectedCharacter = headToHeadState.randomCharacter;
+  currentMapIndex = headToHeadState.randomMapIndex;
+  headToHeadState.mode = "active";
+  headToHeadState.active = true;
+
+  hideAllOverlays();
+  controlsPanel.classList.remove("hidden");
+  applyCharacterStats(selectedCharacter);
+  resetActor();
+  updateMapUI();
+  if (mapSelectDropdown) mapSelectDropdown.value = String(currentMapIndex);
+
+  initHeadToHeadOpponent();
+  runStateLabel.textContent = `Head-to-Head vs ${headToHeadState.rivalName} — ${selectedCharacter.name} on ${getCurrentMap().name}`;
+  updateAbilityHint();
+}
+
+function updateHeadToHeadMatchmaking(dt) {
+  if (headToHeadState.mode === "searching") {
+    headToHeadState.searchTimer -= dt;
+    if (headToHeadState.searchTimer <= 0) {
+      headToHeadState.mode = "roulette";
+      headToHeadState.rouletteTimer = headToHeadState.rouletteDuration;
+      headToHeadState.rouletteTickTimer = 0;
+      if (matchmakingStatus) matchmakingStatus.textContent = "Match found! Randomizing character + map...";
+    }
+    return;
+  }
+
+  if (headToHeadState.mode === "roulette") {
+    headToHeadState.rouletteTimer -= dt;
+    headToHeadState.rouletteTickTimer -= dt;
+    if (headToHeadState.rouletteTickTimer <= 0) {
+      headToHeadState.rouletteTickTimer = 0.08;
+      const tempCharacter = characters[Math.floor(Math.random() * characters.length)];
+      const tempMapIndex = Math.floor(Math.random() * maps.length);
+      if (matchmakingStatus) {
+        matchmakingStatus.textContent = `Match found vs ${headToHeadState.rivalName}! ${tempCharacter.name} • ${maps[tempMapIndex].name}`;
+      }
+    }
+
+    if (headToHeadState.rouletteTimer <= 0) {
+      headToHeadState.randomCharacter = characters[Math.floor(Math.random() * characters.length)];
+      headToHeadState.randomMapIndex = Math.floor(Math.random() * maps.length);
+      startHeadToHeadMatch();
+    }
+  }
+}
+
+function updateHeadToHeadOpponent(dt) {
+  if (!headToHeadState.active || !headToHeadState.opponentActor || headToHeadState.opponentFinished) return;
+
+  const opp = headToHeadState.opponentActor;
+  opp.vy += world.gravity * opp.gravityMult * dt;
+  opp.vx -= opp.vx * opp.drag * dt;
+
+  headToHeadState.opponentJumpTimer -= dt;
+  if (headToHeadState.opponentJumpTimer <= 0) {
+    opp.vy -= 360 + Math.random() * 170;
+    opp.vx += 70 + Math.random() * 90;
+    headToHeadState.opponentJumpTimer = 1.5 + Math.random() * 2.6;
+  }
+
+  opp.x += opp.vx * dt;
+  opp.y += opp.vy * dt;
+
+  const ground = terrainY(opp.x);
+  if (opp.y + opp.radius >= ground) {
+    opp.y = ground - opp.radius;
+    const impactVy = Math.abs(opp.vy);
+    if (impactVy > 80) {
+      opp.vy = -impactVy * Math.max(0.6, opp.bounce * 1.15);
+      opp.vx *= 0.97;
+    } else {
+      opp.vy = 0;
+      opp.vx *= 0.984;
+    }
+    if (Math.abs(opp.vx) < 52) {
+      opp.vx = 52;
+    }
+  }
+
+  opp.maxX = Math.max(opp.maxX, opp.x);
+  headToHeadState.opponentCameraX = Math.max(0, opp.x - canvas.width * 0.25);
+
+  if (Math.abs(opp.vx) < 60) headToHeadState.opponentStoppedTimer += dt;
+  else headToHeadState.opponentStoppedTimer = 0;
+
+  if (headToHeadState.opponentStoppedTimer > 2.5) {
+    headToHeadState.opponentFinished = true;
+    opp.state = "ended";
+    opp.vx = 0;
+    opp.vy = 0;
+  }
+}
 function getAbilityLabel(character) {
   switch (character.ability) {
     case "fishingrod":
@@ -4989,10 +5174,7 @@ function drawSlingshotBands() {
   ctx.stroke();
 }
 
-function draw() {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.translate(screenShakeX, screenShakeY);
+function drawSceneCore() {
   drawBackground();
   drawGround();
   drawMapDecor();
@@ -5010,6 +5192,75 @@ function draw() {
   drawEvanBasketballs();
   drawBombs();
   drawParticles();
+}
+
+function drawHeadToHeadViewport(viewActor, viewCameraX, yOffset, panelLabel, panelDistance) {
+  const panelHeight = canvas.height / 2;
+  const actorSnapshot = cloneActorState(actor);
+  const cameraSnapshot = cameraX;
+
+  Object.assign(actor, viewActor);
+  cameraX = viewCameraX;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, yOffset, canvas.width, panelHeight);
+  ctx.clip();
+  ctx.translate(0, yOffset);
+  ctx.scale(1, panelHeight / canvas.height);
+  drawSceneCore();
+  ctx.restore();
+
+  Object.assign(actor, actorSnapshot);
+  cameraX = cameraSnapshot;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
+  ctx.fillRect(12, yOffset + 10, 280, 44);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 18px Trebuchet MS";
+  ctx.fillText(panelLabel, 24, yOffset + 30);
+  ctx.font = "bold 14px Trebuchet MS";
+  ctx.fillText(`Distance: ${panelDistance.toFixed(1)}m`, 24, yOffset + 47);
+  ctx.restore();
+}
+
+function drawHeadToHeadSplit() {
+  const playerDistance = Math.max(0, (actor.maxX - world.launchX) / 10);
+  const opponentDistance = headToHeadState.opponentActor
+    ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
+    : 0;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawHeadToHeadViewport(actor, cameraX, 0, "YOU", playerDistance);
+
+  if (headToHeadState.opponentActor) {
+    drawHeadToHeadViewport(
+      headToHeadState.opponentActor,
+      headToHeadState.opponentCameraX,
+      canvas.height / 2,
+      `OPPONENT: ${headToHeadState.rivalName}`,
+      opponentDistance,
+    );
+  }
+
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.8)";
+  ctx.fillRect(0, canvas.height / 2 - 2, canvas.width, 4);
+  ctx.restore();
+}
+
+function draw() {
+  if (headToHeadState.active && headToHeadState.opponentActor) {
+    drawHeadToHeadSplit();
+    return;
+  }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(screenShakeX, screenShakeY);
+  drawSceneCore();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawConfetti();
 }
@@ -5018,6 +5269,7 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.033, (now - last) / 1000);
   last = now;
+  updateHeadToHeadMatchmaking(dt);
   update(dt);
   draw();
   requestAnimationFrame(frame);
@@ -5077,12 +5329,14 @@ function renderCharacterCards() {
 function showMenu() {
   menuScreen.classList.add("active");
   characterScreen.classList.remove("active");
+  matchmakingScreen?.classList.remove("active");
   controlsPanel.classList.add("hidden");
 }
 
 function showCharacterSelect() {
   menuScreen.classList.remove("active");
   characterScreen.classList.add("active");
+  matchmakingScreen?.classList.remove("active");
   controlsPanel.classList.add("hidden");
   if (mapSelectDropdown) mapSelectDropdown.value = String(currentMapIndex);
   renderCharacterCards();
@@ -5339,6 +5593,8 @@ powerSlider.addEventListener("input", () => {
 });
 
 toSelectBtn.addEventListener("click", showCharacterSelect);
+headToHeadBtn?.addEventListener("click", beginHeadToHeadSearch);
+cancelMatchmakingBtn?.addEventListener("click", cancelHeadToHeadSearch);
 backToMenuBtn.addEventListener("click", showMenu);
 document.getElementById("changeCharBtn").addEventListener("click", () => {
   showCharacterSelect();
@@ -5380,6 +5636,10 @@ signOutBtn?.addEventListener("click", () => {
 });
 
 playBtn.addEventListener("click", () => {
+  headToHeadState.mode = "idle";
+  headToHeadState.active = false;
+  headToHeadState.opponentActor = null;
+  matchmakingScreen?.classList.remove("active");
   if (!isUnlocked(selectedCharacter)) {
     selectedCharacter = characters.find((c) => isUnlocked(c)) || characters[0];
   }
