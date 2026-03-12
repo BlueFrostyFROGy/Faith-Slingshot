@@ -298,6 +298,22 @@ const characters = [
     ability: "travisjump",
   },
   {
+    id: "matteo",
+    name: "Matteo Schirripa",
+    trait: "Craddle truck slammer",
+    bio: "A powerhouse craddle snatcher with Anthony's road rage and Spencer's build. Space: slam, Double-Space: truck blast. Pocket 10 craddles to rocket 300m forward — don't leave yours unattended.",
+    imageBase: "Matteo Schirripa",
+    initials: "MS",
+    mass: 1.68,
+    radius: 38,
+    drag: 0.05,
+    bounce: 0.78,
+    gravityMult: 0.86,
+    launchBoost: 1.5,
+    unlockAt: 0,
+    ability: "slam",
+  },
+  {
     id: "spencer",
     name: "Spencer",
     trait: "Bomb sprinter",
@@ -659,6 +675,7 @@ const actor = {
   samJumpRegenTimer: 0,
   natePhaseCooldown: 0,
   travisCraddleCount: 0,
+  matteoCraddleCount: 0,
   nathanHasTruck: true,
   nathanSpeed: NATHAN_JUMP_RESET_SPEED,
   nathanSlowdownPending: false,
@@ -1962,6 +1979,7 @@ function resetActor() {
   actor.samJumpRegenTimer = 0;
   actor.natePhaseCooldown = 0;
   actor.travisCraddleCount = 0;
+  actor.matteoCraddleCount = 0;
   actor.nathanHasTruck = true;
   actor.nathanSpeed = NATHAN_JUMP_RESET_SPEED;
   actor.nathanSlowdownPending = false;
@@ -2833,7 +2851,7 @@ function useAbility() {
 }
 
 function useTruck() {
-  if (selectedCharacter.id !== "anthony" && selectedCharacter.id !== "jackson" && selectedCharacter.id !== "jjfootballboss") return;
+  if (selectedCharacter.id !== "anthony" && selectedCharacter.id !== "jackson" && selectedCharacter.id !== "jjfootballboss" && selectedCharacter.id !== "matteo") return;
   if (actor.state === "ready" || actor.state === "ended") return;
   if (actor.truckCount <= 0) {
     tone(120, 0.06, "sine", 0.05);
@@ -3420,7 +3438,7 @@ function update(dt) {
     const nearbyNathanGas = selectedCharacter.id === "nathan"
       ? getNathanGasInRange(actor.x - 260, actor.x + 560)
       : [];
-    const nearbyTravisCraddles = selectedCharacter.id === "traviswilliams"
+    const nearbyTravisCraddles = (selectedCharacter.id === "traviswilliams" || selectedCharacter.id === "matteo")
       ? getTravisCraddlesInRange(actor.x - 260, actor.x + 560)
       : [];
 
@@ -3679,13 +3697,15 @@ function update(dt) {
       const hitR = actor.radius + craddle.r * 0.84;
       if (dx * dx + dy * dy <= hitR * hitR) {
         collectedTravisCraddles.add(craddle.index);
-        actor.travisCraddleCount += 1;
+        const isMatteo = selectedCharacter.id === "matteo";
+        const craddleCountKey = isMatteo ? "matteoCraddleCount" : "travisCraddleCount";
+        actor[craddleCountKey] += 1;
         actor.vx += 14;
         spawnParticles(craddle.x, cy, 18, "#dcb892");
-        tone(380 + Math.min(280, actor.travisCraddleCount * 9), 0.05, "triangle", 0.06);
+        tone(380 + Math.min(280, actor[craddleCountKey] * 9), 0.05, "triangle", 0.06);
 
-        if (actor.travisCraddleCount >= TRAVIS_CRADDLES_FOR_LAUNCH) {
-          actor.travisCraddleCount -= TRAVIS_CRADDLES_FOR_LAUNCH;
+        if (actor[craddleCountKey] >= TRAVIS_CRADDLES_FOR_LAUNCH) {
+          actor[craddleCountKey] -= TRAVIS_CRADDLES_FOR_LAUNCH;
           actor.y -= 80;
           actor.vy = -1650;
           actor.x += TRAVIS_LAUNCH_FORWARD_METERS * 10;
@@ -3695,7 +3715,8 @@ function update(dt) {
           startScreenShake(16, 0.32);
           tone(820, 0.08, "triangle", 0.1);
           tone(620, 0.06, "square", 0.08);
-          runStateLabel.textContent = `Craddle launch! Travis blasted ${TRAVIS_LAUNCH_FORWARD_METERS}m forward.`;
+          const name = isMatteo ? "Matteo" : "Travis";
+          runStateLabel.textContent = `Craddle snatch! ${name} blasted ${TRAVIS_LAUNCH_FORWARD_METERS}m forward.`;
         }
       }
     }
@@ -4577,6 +4598,17 @@ function updateAbilityHint() {
     return;
   }
 
+  if (selectedCharacter.id === "matteo") {
+    const craddleText = `Craddles: ${actor.matteoCraddleCount}/${TRAVIS_CRADDLES_FOR_LAUNCH}`;
+    const slamReady = actor.abilityCooldown <= 0;
+    const slamText = slamReady ? "Space: slam" : `Slam: ${actor.abilityCooldown.toFixed(1)}s`;
+    const truckText = actor.truckCount > 0
+      ? `Double-Space: truck (${actor.truckCount} left)`
+      : "No trucks left";
+    abilityHint.textContent = `${craddleText}  |  ${slamText}  |  ${truckText}  |  10 craddles = fly up +${TRAVIS_LAUNCH_FORWARD_METERS}m`;
+    return;
+  }
+
   if (selectedCharacter.id === "calebparker") {
     const jumpReady = actor.abilityCooldown <= 0;
     const cooldownText = jumpReady ? "Jump ready" : `Jump in ${actor.abilityCooldown.toFixed(1)}s`;
@@ -5061,6 +5093,9 @@ function getCharacterImageCandidates(character) {
   }
   if (character.id === "traviswilliams") {
     return ["characters/Travis Williams.png", "Travis Williams.png"];
+  }
+  if (character.id === "matteo") {
+    return ["characters/Matteo Schirripa.png", "Matteo Schirripa.png"];
   }
   if (character.id === "kaderess") {
     return ["characters/Kade Ress.png", "Kade Ress.png"];
@@ -6969,7 +7004,7 @@ window.addEventListener("keydown", (ev) => {
       return;
     }
 
-    if (selectedCharacter.id === "anthony" && now - lastSpaceTime < 320) {
+    if ((selectedCharacter.id === "anthony" || selectedCharacter.id === "matteo") && now - lastSpaceTime < 320) {
       useTruck();
       lastSpaceTime = 0; // reset so triple-tap doesn't double-trigger
     } else if (selectedCharacter.id === "jjfootballboss" && now - lastSpaceTime < 320) {
