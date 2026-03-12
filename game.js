@@ -2336,9 +2336,7 @@ function update(dt) {
       }
     }
 
-    const nearbyBouncePads = getCurrentMap().id === "stric-woods"
-      ? []
-      : getBouncePadsInRange(actor.x - 260, actor.x + 520);
+    const nearbyBouncePads = getBouncePadsInRange(actor.x - 260, actor.x + 520);
     const nearbyJanets = getFatalObstaclesInRange(actor.x - 220, actor.x + 560);
     const nearbyCandies = selectedCharacter.id === "candyjew"
       ? getCandiesInRange(actor.x - 260, actor.x + 560)
@@ -3487,7 +3485,7 @@ function drawMapDecor() {
     }
   });
 
-  const visibleBouncePads = isStricWoods ? [] : getBouncePadsInRange(cameraX - 120, cameraX + canvas.width + 120);
+  const visibleBouncePads = getBouncePadsInRange(cameraX - 120, cameraX + canvas.width + 120);
   const visibleCandies = selectedCharacter.id === "candyjew"
     ? getCandiesInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
