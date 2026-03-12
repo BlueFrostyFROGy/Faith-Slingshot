@@ -1272,7 +1272,7 @@ function tone(freq, duration = 0.09, type = "sine", volume = 0.08) {
 
 function terrainY(x) {
   const base = 560;
-  if (getCurrentMap().id === "town-square") {
+  if (getCurrentMap().id === "town-square" || getCurrentMap().id === "stric-woods") {
     return base;
   }
   return (
@@ -2336,7 +2336,9 @@ function update(dt) {
       }
     }
 
-    const nearbyBouncePads = getBouncePadsInRange(actor.x - 260, actor.x + 520);
+    const nearbyBouncePads = getCurrentMap().id === "stric-woods"
+      ? []
+      : getBouncePadsInRange(actor.x - 260, actor.x + 520);
     const nearbyJanets = getFatalObstaclesInRange(actor.x - 220, actor.x + 560);
     const nearbyCandies = selectedCharacter.id === "candyjew"
       ? getCandiesInRange(actor.x - 260, actor.x + 560)
@@ -3406,36 +3408,38 @@ function drawGround() {
 }
 
 function drawMapDecor() {
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 20px Trebuchet MS";
   const mapId = getCurrentMap().id;
-  const mapTitle = mapId === "town-square"
-    ? "Town Square"
-    : mapId === "stric-woods"
-      ? "The Stric Woods"
+  const isStricWoods = mapId === "stric-woods";
+
+  if (!isStricWoods) {
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 20px Trebuchet MS";
+    const mapTitle = mapId === "town-square"
+      ? "Town Square"
       : "Faith Christian Campus (Fictional)";
-  ctx.fillText(mapTitle, 18, 35);
+    ctx.fillText(mapTitle, 18, 35);
 
-  const markerStep = world.markersEvery * 10;
-  const startMarkerX = Math.max(
-    world.launchX,
-    world.launchX + Math.floor((cameraX - world.launchX) / markerStep) * markerStep
-  );
-  const endMarkerX = cameraX + canvas.width + markerStep;
+    const markerStep = world.markersEvery * 10;
+    const startMarkerX = Math.max(
+      world.launchX,
+      world.launchX + Math.floor((cameraX - world.launchX) / markerStep) * markerStep
+    );
+    const endMarkerX = cameraX + canvas.width + markerStep;
 
-  for (let wx = startMarkerX; wx <= endMarkerX; wx += markerStep) {
-    const sx = wx - cameraX;
-    if (sx < -40 || sx > canvas.width + 40) continue;
-    const gy = terrainY(wx);
-    const markerMeters = Math.max(0, Math.round((wx - world.launchX) / 10));
-    ctx.strokeStyle = "#ffffff99";
-    ctx.beginPath();
-    ctx.moveTo(sx, gy - 35);
-    ctx.lineTo(sx, gy);
-    ctx.stroke();
-    ctx.fillStyle = "#ffffffcc";
-    ctx.font = "12px Trebuchet MS";
-    ctx.fillText(`${markerMeters}m`, sx - 18, gy - 40);
+    for (let wx = startMarkerX; wx <= endMarkerX; wx += markerStep) {
+      const sx = wx - cameraX;
+      if (sx < -40 || sx > canvas.width + 40) continue;
+      const gy = terrainY(wx);
+      const markerMeters = Math.max(0, Math.round((wx - world.launchX) / 10));
+      ctx.strokeStyle = "#ffffff99";
+      ctx.beginPath();
+      ctx.moveTo(sx, gy - 35);
+      ctx.lineTo(sx, gy);
+      ctx.stroke();
+      ctx.fillStyle = "#ffffffcc";
+      ctx.font = "12px Trebuchet MS";
+      ctx.fillText(`${markerMeters}m`, sx - 18, gy - 40);
+    }
   }
 
   obstacles.forEach((o) => {
@@ -3457,11 +3461,13 @@ function drawMapDecor() {
     const obstacleImg = getCurrentMap().id === "stric-woods" ? mikeObstacleImg : fatalObstacleImg;
     if (obstacleImg && obstacleImg.complete && obstacleImg.naturalWidth > 10) {
       ctx.save();
-      ctx.fillStyle = "#ffffffd9";
-      ctx.fillRect(janetSX - 6, janetY - 6, fatalRect.w + 12, fatalRect.h + 12);
+      if (!isStricWoods) {
+        ctx.fillStyle = "#ffffffd9";
+        ctx.fillRect(janetSX - 6, janetY - 6, fatalRect.w + 12, fatalRect.h + 12);
+      }
       ctx.drawImage(obstacleImg, janetSX, janetY, fatalRect.w, fatalRect.h);
       ctx.restore();
-    } else {
+    } else if (!isStricWoods) {
       ctx.fillStyle = fatalRect.color;
       ctx.fillRect(janetSX, janetY, fatalRect.w, fatalRect.h);
       ctx.fillStyle = "#8f4f64";
@@ -3474,12 +3480,14 @@ function drawMapDecor() {
       ctx.fillText("!", janetSX + fatalRect.w / 2, janetY + 54);
       ctx.textAlign = "start";
     }
-    ctx.fillStyle = "#8f3f5b";
-    ctx.font = "bold 13px Trebuchet MS";
-    ctx.fillText(fatalRect.label, janetSX + 4, janetY - 8);
+    if (!isStricWoods) {
+      ctx.fillStyle = "#8f3f5b";
+      ctx.font = "bold 13px Trebuchet MS";
+      ctx.fillText(fatalRect.label, janetSX + 4, janetY - 8);
+    }
   });
 
-  const visibleBouncePads = getBouncePadsInRange(cameraX - 120, cameraX + canvas.width + 120);
+  const visibleBouncePads = isStricWoods ? [] : getBouncePadsInRange(cameraX - 120, cameraX + canvas.width + 120);
   const visibleCandies = selectedCharacter.id === "candyjew"
     ? getCandiesInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
