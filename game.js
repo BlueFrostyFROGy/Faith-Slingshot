@@ -2135,7 +2135,7 @@ function useAbility() {
       actor.backflipActive = true;
       actor.backflipRotation = 0;
       actor.eliFlipsUsed += 1;
-      actor.abilityCooldown = 0.35; // short delay between the two flips
+      actor.abilityCooldown = actor.eliFlipsUsed >= 2 ? 3 : 0.35; // 3s cooldown after 2nd flip, short delay between flips
       tone(600, 0.08, "triangle", 0.1);
       tone(420, 0.06, "square", 0.08);
       spawnParticles(actor.x, actor.y, 32, "#ff66ff");
