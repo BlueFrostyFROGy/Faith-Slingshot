@@ -871,12 +871,15 @@ const nathanTacomaImageCandidates = [
 ];
 
 const nathanGasImageCandidates = [
+  "Nathans Fuel.png",
   "characters props/Nathans Gas.png",
+  "characters props/Nathans Fuel.png",
   "characters props/Nathan Gas.png",
   "characters props/Nate Gas.png",
   "characters props/Nathans Gas Can.png",
   "characters props/Nathan Gas Can.png",
   "Nathans Gas.png",
+  "Nathan Fuel.png",
   "Nathan Gas.png",
 ];
 
