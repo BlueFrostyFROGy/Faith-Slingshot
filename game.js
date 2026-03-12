@@ -160,11 +160,11 @@ const LINCOLN_IMMUNITY_DURATION = 20; // seconds
 
 // Luke Pueppke — Red Bull + Coffee collector
 const LUKE_ITEM_JUMP_BASE   = 420; // base jump vx boost
-const LUKE_ITEM_JUMP_BONUS  = 14;  // extra vx per item
-const LUKE_ITEM_JUMP_MAX    = 960; // cap
+const LUKE_ITEM_JUMP_BONUS  = 11;  // extra vx per item
+const LUKE_ITEM_JUMP_MAX    = 860; // cap
 const LUKE_SUPERSPEED_THRESHOLD = 10;
-const LUKE_SUPERSPEED_VX        = 4200; // px/s during superspeed
-const LUKE_SUPERSPEED_DURATION  = 8;    // seconds
+const LUKE_SUPERSPEED_VX        = 3600; // px/s during superspeed
+const LUKE_SUPERSPEED_DURATION  = 7;    // seconds
 const SAM_DUMBBELLS_PER_BENCH = 5;
 const SAM_BENCH_VISIBLE_SECONDS = 8;
 const SAM_SWIM_ACTIVE_SECONDS = 3.2;
@@ -271,10 +271,10 @@ const characters = [
     initials: "S",
     mass: 1.68,
     radius: 38,
-    drag: 0.053,
+    drag: 0.05,
     bounce: 0.78,
     gravityMult: 0.86,
-    launchBoost: 1.44,
+    launchBoost: 1.5,
     unlockAt: 0,
     ability: "jumpbomb",
   },
@@ -448,9 +448,9 @@ const characters = [
     mass: 0.95,
     radius: 25,
     drag: 0.072,
-    bounce: 0.62,
+    bounce: 0.58,
     gravityMult: 0.92,
-    launchBoost: 1.26,
+    launchBoost: 1.22,
     unlockAt: 0,
     ability: "lukejump",
   },
@@ -463,9 +463,9 @@ const characters = [
     initials: "O",
     mass: 1.0,
     radius: 26,
-    drag: 0.09,
-    bounce: 0.58,
-    gravityMult: 1.05,
+    drag: 0.105,
+    bounce: 0.5,
+    gravityMult: 1.0,
     launchBoost: 1.16,
     unlockAt: 0,
     ability: "owenjump",
@@ -2675,8 +2675,8 @@ function useAbility() {
       break;
     }
     case "owenjump": {
-      actor.vx += 125;
-      actor.vy -= 460;
+      actor.vx += 140;
+      actor.vy -= 390;
       actor.abilityCooldown = 1.1;
       tone(420, 0.06, "triangle", 0.07);
       tone(300, 0.05, "triangle", 0.06);
@@ -2770,11 +2770,11 @@ function useSpencerJump() {
   if (selectedCharacter.id !== "spencer") return;
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
-  const jumpPower = Math.max(340, 620 - actor.spencerBombsUsed * 55);
+  const jumpPower = Math.max(390, 700 - actor.spencerBombsUsed * 50);
   actor.vy -= jumpPower;
-  actor.vx += 130;
+  actor.vx += 150;
   actor.usedAbility = true;
-  actor.abilityCooldown = 0.45;
+  actor.abilityCooldown = 0.35;
   tone(520, 0.07, "triangle", 0.08);
   spawnParticles(actor.x, actor.y, 16, "#99ddff");
   updateAbilityHint();
@@ -2860,11 +2860,11 @@ function useSpencerBomb() {
   });
 
   actor.spencerBombsUsed += 1;
-  actor.vx *= 0.93;
-  actor.vx += 35;
-  actor.vy = Math.max(actor.vy, -210);
+  actor.vx *= 0.97;
+  actor.vx += 60;
+  actor.vy = Math.max(actor.vy, -240);
   actor.usedAbility = true;
-  actor.abilityCooldown = 0.7;
+  actor.abilityCooldown = 0.55;
 
   spawnParticles(actor.x, actor.y, 22, "#ffbf66");
   tone(250, 0.06, "square", 0.09);
@@ -4304,7 +4304,7 @@ function updateAbilityHint() {
       abilityHint.textContent = "Space: jump  |  Double-Space: bomb (kills Hugh Henderson, slows you)";
       return;
     }
-    const jumpPower = Math.max(340, 620 - actor.spencerBombsUsed * 55);
+    const jumpPower = Math.max(390, 700 - actor.spencerBombsUsed * 50);
     if (actor.abilityCooldown > 0) {
       abilityHint.textContent = `Recharging: ${actor.abilityCooldown.toFixed(1)}s | Jump power: ${Math.round(jumpPower)}`;
       return;
