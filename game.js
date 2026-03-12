@@ -101,6 +101,7 @@ const networkState = {
   opponentFinalDistance: 0,
   localFinishSent: false,
   displayName: "",
+  connectingRoom: false,
 };
 
 const world = {
@@ -3404,11 +3405,28 @@ function cleanupNetworkRoom() {
   networkState.opponentFinished = false;
   networkState.opponentFinalDistance = 0;
   networkState.localFinishSent = false;
+  networkState.connectingRoom = false;
   if (networkState.roomChannel) {
     networkState.client?.removeChannel(networkState.roomChannel);
     networkState.roomChannel = null;
   }
   networkState.roomId = null;
+}
+
+function deterministicLiveMatchFromIds(aId, bId) {
+  const [low, high] = [aId, bId].sort();
+  const key = `${low}:${high}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = ((hash * 31) + key.charCodeAt(i)) >>> 0;
+  }
+  const characterIndex = hash % characters.length;
+  const mapIndex = ((hash >>> 8) || hash) % maps.length;
+  return {
+    roomId: `room-${hash.toString(36)}`,
+    characterId: characters[characterIndex].id,
+    mapIndex,
+  };
 }
 
 function sendQueueHeartbeat() {
@@ -3446,32 +3464,12 @@ function startLiveNetworkSearch() {
 
       const myId = networkState.playerId;
       const otherId = payload.playerId;
-      if (myId < otherId) {
-        networkState.peerId = otherId;
-        const roomId = `room-${myId.slice(-4)}-${otherId.slice(-4)}-${Date.now().toString(36)}`;
-        const pickedCharacter = characters[Math.floor(Math.random() * characters.length)];
-        const pickedMapIndex = Math.floor(Math.random() * maps.length);
-
-        queueChannel.send({
-          type: "broadcast",
-          event: "queue",
-          payload: {
-            type: "match-found",
-            roomId,
-            leaderId: myId,
-            peerId: otherId,
-            characterId: pickedCharacter.id,
-            mapIndex: pickedMapIndex,
-            leaderName: getNetworkPlayerName(),
-            peerName: payload.name || "Opponent",
-            ts: Date.now(),
-          },
-        });
-
-        networkState.searching = false;
-        if (matchmakingStatus) matchmakingStatus.textContent = `Live opponent found: ${payload.name || "Opponent"}. Joining room...`;
-        joinLiveNetworkRoom(roomId, pickedCharacter.id, pickedMapIndex, payload.name || "Opponent");
-      }
+      networkState.peerId = otherId;
+      networkState.searching = false;
+      networkState.connectingRoom = true;
+      const match = deterministicLiveMatchFromIds(myId, otherId);
+      if (matchmakingStatus) matchmakingStatus.textContent = `Live opponent found: ${payload.name || "Opponent"}. Joining room...`;
+      joinLiveNetworkRoom(match.roomId, match.characterId, match.mapIndex, payload.name || "Opponent");
     }
 
     if (payload.type === "match-found") {
@@ -3499,6 +3497,7 @@ function startLiveNetworkSearch() {
 function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
   cleanupNetworkQueue();
   cleanupNetworkRoom();
+  networkState.connectingRoom = true;
 
   const roomChannel = networkState.client.channel(`faith-h2h-${roomId}`);
   networkState.roomChannel = roomChannel;
@@ -3532,11 +3531,22 @@ function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
 
   roomChannel.subscribe((status) => {
     if (status === "SUBSCRIBED") {
+      networkState.connectingRoom = false;
       headToHeadState.liveNetwork = true;
       headToHeadState.rivalName = rivalName || "Opponent";
       headToHeadState.randomCharacter = characters.find((c) => c.id === characterId) || characters[0];
       headToHeadState.randomMapIndex = Math.max(0, Math.min(maps.length - 1, mapIndex));
       startHeadToHeadMatch();
+      return;
+    }
+
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      networkState.connectingRoom = false;
+      cleanupNetworkRoom();
+      if (headToHeadState.mode === "searching") {
+        if (matchmakingStatus) matchmakingStatus.textContent = "Live room failed, switching to bot matchmaking...";
+        headToHeadState.searchTimer = 0;
+      }
     }
   });
 }
@@ -3659,6 +3669,11 @@ function startHeadToHeadMatch() {
 
 function updateHeadToHeadMatchmaking(dt) {
   if (headToHeadState.mode === "searching") {
+    if (networkState.connectingRoom) {
+      if (matchmakingStatus) matchmakingStatus.textContent = "Joining live room...";
+      return;
+    }
+
     if (networkState.searching) {
       networkState.searchElapsed += dt;
       networkState.heartbeatTimer -= dt;
