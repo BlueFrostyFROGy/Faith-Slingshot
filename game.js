@@ -163,8 +163,8 @@ const LUKE_ITEM_JUMP_BASE   = 420; // base jump vx boost
 const LUKE_ITEM_JUMP_BONUS  = 9;   // extra vx per item
 const LUKE_ITEM_JUMP_MAX    = 760; // cap
 const LUKE_SUPERSPEED_THRESHOLD = 10;
-const LUKE_SUPERSPEED_VX        = 3200; // px/s during superspeed
-const LUKE_SUPERSPEED_DURATION  = 6;    // seconds
+const LUKE_SUPERSPEED_VX        = 3000; // px/s during superspeed
+const LUKE_SUPERSPEED_DURATION  = 3;    // seconds
 const NATE_PHASE_COOLDOWN       = 10;
 const SAM_DUMBBELLS_PER_BENCH = 5;
 const SAM_BENCH_VISIBLE_SECONDS = 8;
@@ -459,7 +459,7 @@ const characters = [
     id: "lukepueppke",
     name: "Luke Pueppke",
     trait: "Caffeine rocket",
-    bio: "Collect Red Bull & Coffee to jump further and faster. 10 items = SUPERSPEED for 6 seconds!",
+    bio: "Collect Red Bull & Coffee to jump further and faster. 10 items = SUPERSPEED for 3 seconds!",
     imageBase: "Luke Pueppke",
     initials: "LP",
     mass: 0.95,
