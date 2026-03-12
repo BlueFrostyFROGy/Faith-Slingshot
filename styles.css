@@ -180,6 +180,35 @@ canvas {
   gap: 10px;
 }
 
+.map-select-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 0 6px;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.map-select-dropdown {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 2px solid #dce4ff;
+  background: #f4f8ff;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.map-select-dropdown:focus {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px rgba(95,123,255,0.15);
+}
+
 .controls {
   display: none !important;
 }

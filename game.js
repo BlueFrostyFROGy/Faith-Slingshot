@@ -33,6 +33,7 @@ const highScoreValue = document.getElementById("highScoreValue");
 const mapNameLabel = document.getElementById("mapNameLabel");
 const runStateLabel = document.getElementById("runStateLabel");
 const switchMapBtn = document.getElementById("switchMapBtn");
+const mapSelectDropdown = document.getElementById("mapSelectDropdown");
 
 const playerNameInput = document.getElementById("playerNameInput");
 const submitScoreBtn = document.getElementById("submitScoreBtn");
@@ -943,7 +944,7 @@ function getFatalObstaclesInRange(startX, endX) {
   return getJanetsInRange(startX, endX);
 }
 
-function spawnEnemyLaser(x, y, angle, speed = 920, life = 3.2, color = "#ff3b3b") {
+function spawnEnemyLaser(x, y, angle, speed = 920, life = 3.2, color = "#ff3b3b", isFire = false) {
   enemyLasers.push({
     x,
     y,
@@ -952,6 +953,7 @@ function spawnEnemyLaser(x, y, angle, speed = 920, life = 3.2, color = "#ff3b3b"
     life,
     radius: 7,
     color,
+    isFire,
   });
 }
 
@@ -1029,7 +1031,7 @@ function updateStricWoodsHazards(dt, nearbyFatals) {
     const next = current - dt;
     if (next <= 0) {
       const my = terrainY(mike.x) - mike.yOffset + mike.h * 0.45;
-      spawnEnemyLaser(mike.x + 4, my, Math.PI, 900, 3.2, "#ff3b3b");
+      spawnEnemyLaser(mike.x + 4, my, Math.PI, 900, 3.2, "#ff8c00", true);
       mikeLaserCooldowns.set(mike.index, 1.2 + seededNoise(mike.index + 71) * 1.0);
     } else {
       mikeLaserCooldowns.set(mike.index, next);
@@ -1629,6 +1631,7 @@ function resetActor() {
 
   runStateLabel.textContent = "Click and drag to aim";
   launchBtn.disabled = false;
+  if (switchMapBtn) switchMapBtn.disabled = false;
   if (heightValue) {
     heightValue.textContent = "0";
   }
@@ -1898,6 +1901,7 @@ function launch() {
   // Clear trajectory and launch vector
   trajectoryDots.length = 0;
   launchVector = null;
+  if (switchMapBtn) switchMapBtn.disabled = true;
 }
 
 function startNextRunSameCharacter() {
@@ -3213,8 +3217,10 @@ function updateMapUI() {
 }
 
 function toggleMap() {
+  if (actor.state === "flying") return; // no map switch mid-run
   currentMapIndex = (currentMapIndex + 1) % maps.length;
   updateMapUI();
+  if (mapSelectDropdown) mapSelectDropdown.value = String(currentMapIndex);
 }
 
 function getAbilityLabel(character) {
@@ -4874,17 +4880,54 @@ function drawEnemyLasersAndBoss() {
   enemyLasers.forEach((laser) => {
     const sx = laser.x - cameraX;
     if (sx < -220 || sx > canvas.width + 220) return;
-    ctx.strokeStyle = laser.color;
-    ctx.lineWidth = 3.2;
-    ctx.beginPath();
-    ctx.moveTo(sx, laser.y);
-    ctx.lineTo(sx - laser.vx * 0.018, laser.y - laser.vy * 0.018);
-    ctx.stroke();
-
-    ctx.fillStyle = "#ffd6d6";
-    ctx.beginPath();
-    ctx.arc(sx, laser.y, laser.radius * 0.7, 0, Math.PI * 2);
-    ctx.fill();
+    if (laser.isFire) {
+      const cx = sx;
+      const cy = laser.y;
+      const r = laser.radius * 2.4;
+      ctx.save();
+      // Flame tail trailing to the right (projectile moves left)
+      const tailLen = r * 5.5;
+      const tailGrad = ctx.createLinearGradient(cx + tailLen, cy, cx, cy);
+      tailGrad.addColorStop(0, "rgba(255,60,0,0)");
+      tailGrad.addColorStop(0.35, "rgba(255,110,0,0.18)");
+      tailGrad.addColorStop(0.72, "rgba(255,170,0,0.4)");
+      tailGrad.addColorStop(1, "rgba(255,220,40,0.6)");
+      ctx.fillStyle = tailGrad;
+      ctx.beginPath();
+      ctx.ellipse(cx + tailLen * 0.42, cy, tailLen * 0.58, r * 0.44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Outer glow
+      const outerGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 2.5);
+      outerGrad.addColorStop(0, "rgba(255,210,60,0.6)");
+      outerGrad.addColorStop(0.45, "rgba(255,90,0,0.32)");
+      outerGrad.addColorStop(1, "rgba(180,10,0,0)");
+      ctx.fillStyle = outerGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Core fireball
+      const coreGrad = ctx.createRadialGradient(cx - r * 0.18, cy - r * 0.2, 0, cx, cy, r);
+      coreGrad.addColorStop(0, "#fff5d0");
+      coreGrad.addColorStop(0.22, "#ffe566");
+      coreGrad.addColorStop(0.55, "#ff7800");
+      coreGrad.addColorStop(1, "#cc1500");
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = laser.color;
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.moveTo(sx, laser.y);
+      ctx.lineTo(sx - laser.vx * 0.018, laser.y - laser.vy * 0.018);
+      ctx.stroke();
+      ctx.fillStyle = "#ffd6d6";
+      ctx.beginPath();
+      ctx.arc(sx, laser.y, laser.radius * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 
   owenGoKarts.forEach((kart) => {
@@ -5041,6 +5084,7 @@ function showCharacterSelect() {
   menuScreen.classList.remove("active");
   characterScreen.classList.add("active");
   controlsPanel.classList.add("hidden");
+  if (mapSelectDropdown) mapSelectDropdown.value = String(currentMapIndex);
   renderCharacterCards();
 }
 
@@ -5338,6 +5382,10 @@ signOutBtn?.addEventListener("click", () => {
 playBtn.addEventListener("click", () => {
   if (!isUnlocked(selectedCharacter)) {
     selectedCharacter = characters.find((c) => isUnlocked(c)) || characters[0];
+  }
+  if (mapSelectDropdown) {
+    currentMapIndex = parseInt(mapSelectDropdown.value, 10) || 0;
+    updateMapUI();
   }
   startGame();
   resetActor();
