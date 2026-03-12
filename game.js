@@ -111,7 +111,6 @@ const SAM_DUMBBELLS_PER_BENCH = 5;
 const SAM_BENCH_VISIBLE_SECONDS = 8;
 const SAM_SWIM_ACTIVE_SECONDS = 3.2;
 const OWEN_MILKS_PER_LIFE = 5;
-const OWEN_FALL_DAMAGE_VY = 980;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
 
 const maps = [
@@ -440,6 +439,8 @@ let lastMouseY = canvas.height / 2;
 let bombs = [];
 let tennisBalls = [];
 let enemyLasers = [];
+let owenGoKarts = [];
+let owenGoKartSpawnTimer = 4 + Math.random() * 6;
 const destroyedJanets = new Set();
 const mikeLaserCooldowns = new Map();
 const stricBossState = {
@@ -515,7 +516,7 @@ const actor = {
   owenLives: 3,
   samDumbbellCount: 0,
   samBenchSets: 0,
-  samSwimCharges: 0,
+  samSwimCharges: 1,
   samSwimPerTurn: 1,
   samSwimActive: false,
   samSwimPassesLeft: 0,
@@ -602,6 +603,7 @@ let lincolnAdhdImg = null;
 let lukeRedBullImg = null;
 let lukeCoffeeImg = null;
 let owenMilkImg = null;
+let owenGoKartImg = null;
 let samDumbbellImg = null;
 let samBenchPressImg = null;
 
@@ -713,6 +715,11 @@ const owenMilkImageCandidates = [
   "characters props/Owens Milk.png",
   "Owens Milk .png",
   "Owens Milk.png",
+];
+
+const owenGoKartImageCandidates = [
+  "characters props/Owens extra obstacal go kart.webp",
+  "Owens extra obstacal go kart.webp",
 ];
 
 const samDumbbellImageCandidates = [
@@ -1491,7 +1498,7 @@ function resetActor() {
   actor.owenLives = 3;
   actor.samDumbbellCount = 0;
   actor.samBenchSets = 0;
-  actor.samSwimCharges = 0;
+  actor.samSwimCharges = 1;
   actor.samSwimPerTurn = 1;
   actor.samSwimActive = false;
   actor.samSwimPassesLeft = 0;
@@ -1503,6 +1510,8 @@ function resetActor() {
   bombs.length = 0;
   tennisBalls.length = 0;
   enemyLasers.length = 0;
+  owenGoKarts.length = 0;
+  resetOwenGoKartTimer();
   destroyedJanets.clear();
   mikeLaserCooldowns.clear();
   stricBossState.active = false;
@@ -1852,6 +1861,64 @@ function spawnSamBenchPress() {
     h: 94,
     life: SAM_BENCH_VISIBLE_SECONDS,
   };
+}
+
+function resetOwenGoKartTimer() {
+  owenGoKartSpawnTimer = 4 + Math.random() * 6;
+}
+
+function spawnOwenGoKart() {
+  const spawnX = actor.x + canvas.width + 260 + Math.random() * 260;
+  const ground = terrainY(spawnX);
+  owenGoKarts.push({
+    x: spawnX,
+    y: ground - 42,
+    vx: -(720 + Math.random() * 280),
+    w: 150,
+    h: 84,
+    life: 6,
+    rotation: -0.04 + Math.random() * 0.08,
+  });
+}
+
+function updateOwenGoKarts(dt) {
+  if (selectedCharacter.id !== "owen" || actor.state === "ready" || actor.state === "ended") {
+    owenGoKarts = [];
+    resetOwenGoKartTimer();
+    return false;
+  }
+
+  owenGoKartSpawnTimer -= dt;
+  if (owenGoKartSpawnTimer <= 0) {
+    spawnOwenGoKart();
+    resetOwenGoKartTimer();
+  }
+
+  for (const kart of owenGoKarts) {
+    kart.life -= dt;
+    kart.x += kart.vx * dt;
+    kart.y = terrainY(kart.x) - 42;
+
+    const nearestX = Math.max(kart.x, Math.min(actor.x, kart.x + kart.w));
+    const nearestY = Math.max(kart.y, Math.min(actor.y, kart.y + kart.h));
+    const dx = actor.x - nearestX;
+    const dy = actor.y - nearestY;
+    if (dx * dx + dy * dy <= actor.radius * actor.radius) {
+      if (trySpendOwenLife("Go-kart hit! Owen lost a life.")) {
+        actor.vx = Math.max(100, actor.vx * 0.72);
+        actor.vy = -Math.max(180, Math.abs(actor.vy) * 0.45 + 120);
+        spawnParticles(actor.x, actor.y, 30, "#3a3a3a");
+        startScreenShake(14, 0.28);
+        kart.life = -1;
+        continue;
+      }
+      finishRun("Run ended: Owen got smoked by a go-kart.");
+      return true;
+    }
+  }
+
+  owenGoKarts = owenGoKarts.filter((kart) => kart.life > 0 && kart.x + kart.w > actor.x - 900);
+  return false;
 }
 
 function useAbility() {
@@ -2416,6 +2483,9 @@ function update(dt) {
   updateBombs(dt);
   updateTennisBalls(dt);
   updateConfetti(dt);
+  if (updateOwenGoKarts(dt)) {
+    return;
+  }
 
   if (actor.state !== "ready" && actor.state !== "ended") {
     actor.abilityCooldown = Math.max(0, actor.abilityCooldown - dt);
@@ -2896,20 +2966,7 @@ function update(dt) {
         return;
       }
       const impactVy = Math.abs(actor.vy);
-      let owenFallHandled = false;
-
-      if (selectedCharacter.id === "owen" && impactVy >= OWEN_FALL_DAMAGE_VY) {
-        if (trySpendOwenLife("Hard fall! Owen lost a life.")) {
-          actor.vy = -Math.max(220, impactVy * 0.28);
-          actor.vx = Math.max(120, actor.vx * 0.9);
-          owenFallHandled = true;
-        } else {
-          finishRun("Run ended: Owen fell from too high without any extra lives.");
-          return;
-        }
-      }
-
-      if (!owenFallHandled && impactVy > 80) {
+      if (impactVy > 80) {
         let bounceFactor = Math.max(0.62, actor.bounce * 1.22);
         if (selectedCharacter.id === "anthony") {
           const impactIntensity = Math.min(2.4, impactVy / 420);
@@ -4618,6 +4675,29 @@ function drawEnemyLasersAndBoss() {
     ctx.arc(sx, laser.y, laser.radius * 0.7, 0, Math.PI * 2);
     ctx.fill();
   });
+
+  owenGoKarts.forEach((kart) => {
+    const sx = kart.x - cameraX;
+    if (sx < -kart.w - 160 || sx > canvas.width + 160) return;
+
+    if (owenGoKartImg && owenGoKartImg.complete && owenGoKartImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx + kart.w * 0.5, kart.y + kart.h * 0.5);
+      ctx.rotate(kart.rotation);
+      ctx.drawImage(owenGoKartImg, -kart.w * 0.5, -kart.h * 0.5, kart.w, kart.h);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#141414";
+      ctx.fillRect(sx + 18, kart.y + 22, kart.w - 32, kart.h - 26);
+      ctx.fillStyle = "#d92a2a";
+      ctx.fillRect(sx + 26, kart.y + 34, kart.w - 56, 18);
+      ctx.fillStyle = "#1a1a1a";
+      ctx.beginPath();
+      ctx.arc(sx + 28, kart.y + kart.h - 8, 14, 0, Math.PI * 2);
+      ctx.arc(sx + kart.w - 28, kart.y + kart.h - 8, 14, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
 }
 
 function drawTrajectory() {
@@ -4920,6 +5000,14 @@ function preloadCharacterImages() {
     if (owenMilkIdx < owenMilkImageCandidates.length) owenMilkImg.src = owenMilkImageCandidates[owenMilkIdx];
   };
   owenMilkImg.src = owenMilkImageCandidates[0];
+
+  owenGoKartImg = new Image();
+  let owenGoKartIdx = 0;
+  owenGoKartImg.onerror = () => {
+    owenGoKartIdx += 1;
+    if (owenGoKartIdx < owenGoKartImageCandidates.length) owenGoKartImg.src = owenGoKartImageCandidates[owenGoKartIdx];
+  };
+  owenGoKartImg.src = owenGoKartImageCandidates[0];
 
   samDumbbellImg = new Image();
   let samDumbbellIdx = 0;
