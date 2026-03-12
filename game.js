@@ -247,7 +247,7 @@ const characters = [
     ability: "slam",
   },
   {
-    id: "nate",
+    id: "nathan",
     name: "Nathan",
     trait: "Tacoma airstrike",
     bio: "Cruises in his Tacoma. Collect gas cans. Space: jump + aimable Trump shot. At 10 gallons, a translucent flag appears and next Space calls a jet airstrike.",
@@ -261,6 +261,22 @@ const characters = [
     launchBoost: 1.16,
     unlockAt: 0,
     ability: "trumpjump",
+  },
+  {
+    id: "nate",
+    name: "Nate",
+    trait: "Chaos mode",
+    bio: "Tiny and light. Goes the farthest of anyone. Pure chaos.",
+    imageBase: "assets/images/nate",
+    initials: "N",
+    mass: 0.58,
+    radius: 20,
+    drag: 0.062,
+    bounce: 0.72,
+    gravityMult: 0.88,
+    launchBoost: 1.30,
+    unlockAt: 0,
+    ability: "warp",
   },
   {
     id: "spencer",
@@ -1207,7 +1223,7 @@ function updateNathanTrumps(dt) {
 }
 
 function triggerNathanAirstrike() {
-  if (selectedCharacter.id !== "nate" || !actor.nathanAirstrikeReady || actor.nathanGas < NATHAN_GAS_TARGET) {
+  if (selectedCharacter.id !== "nathan" || !actor.nathanAirstrikeReady || actor.nathanGas < NATHAN_GAS_TARGET) {
     tone(130, 0.05, "sine", 0.05);
     return;
   }
@@ -2435,7 +2451,7 @@ function useAbility() {
     actor.abilityCooldown = 1.1;
   } else if (selectedCharacter.id === "samhallet") {
     actor.abilityCooldown = 0.25;
-  } else if (selectedCharacter.id === "nate") {
+  } else if (selectedCharacter.id === "nathan") {
     actor.abilityCooldown = 0.7;
   } else if (selectedCharacter.id === "evan" || selectedCharacter.id === "cael") {
     actor.abilityCooldown = EVAN_BASKETBALL_COOLDOWN;
@@ -2968,7 +2984,7 @@ function collideRect(rect) {
         startScreenShake(8, 0.18);
         return;
       }
-      if (selectedCharacter.id === "nate" && actor.nathanHasTruck) {
+      if (selectedCharacter.id === "nathan" && actor.nathanHasTruck) {
         actor.nathanHasTruck = false;
         actor.nathanSlowdownPending = false;
         actor.radius = CALEB_ON_FOOT_RADIUS;
@@ -3166,14 +3182,14 @@ function update(dt) {
       actor.kadeSpeed = Math.min(KADE_MAX_SPEED, actor.kadeSpeed + KADE_ACCEL * dt);
     }
 
-    if (selectedCharacter.id === "nate" && actor.state === "flying" && actor.nathanHasTruck) {
+    if (selectedCharacter.id === "nathan" && actor.state === "flying" && actor.nathanHasTruck) {
       actor.nathanSpeed = Math.min(NATHAN_MAX_SPEED, actor.nathanSpeed + NATHAN_ACCEL * dt);
     }
 
-    if (selectedCharacter.id === "nate" && actor.nathanFlagTimer > 0) {
+    if (selectedCharacter.id === "nathan" && actor.nathanFlagTimer > 0) {
       actor.nathanFlagTimer = Math.max(0, actor.nathanFlagTimer - dt);
     }
-    if (selectedCharacter.id === "nate" && actor.nathanAirstrikeReady && actor.nathanGas >= NATHAN_GAS_TARGET && actor.nathanFlagTimer <= 0) {
+    if (selectedCharacter.id === "nathan" && actor.nathanAirstrikeReady && actor.nathanGas >= NATHAN_GAS_TARGET && actor.nathanFlagTimer <= 0) {
       triggerNathanAirstrike();
     }
 
@@ -3256,7 +3272,7 @@ function update(dt) {
       // BMW engine never lets vx drop below current accumulated speed
       actor.vx = Math.max(actor.vx, actor.kadeSpeed);
     }
-    if (selectedCharacter.id === "nate" && actor.state === "flying" && actor.nathanHasTruck) {
+    if (selectedCharacter.id === "nathan" && actor.state === "flying" && actor.nathanHasTruck) {
       // Tacoma momentum keeps climbing unless reset by jump landing
       actor.vx = Math.max(actor.vx, actor.nathanSpeed);
     }
@@ -3311,7 +3327,7 @@ function update(dt) {
     const nearbySamDumbbells = selectedCharacter.id === "samhallet"
       ? getSamDumbbellsInRange(actor.x - 260, actor.x + 560)
       : [];
-    const nearbyNathanGas = selectedCharacter.id === "nate"
+    const nearbyNathanGas = selectedCharacter.id === "nathan"
       ? getNathanGasInRange(actor.x - 260, actor.x + 560)
       : [];
 
@@ -3650,7 +3666,7 @@ function update(dt) {
         spawnParticles(actor.x, actor.y, 12, "#9bc1ff");
       }
 
-      if (selectedCharacter.id === "nate" && actor.nathanSlowdownPending && actor.nathanHasTruck) {
+      if (selectedCharacter.id === "nathan" && actor.nathanSlowdownPending && actor.nathanHasTruck) {
         actor.nathanSlowdownPending = false;
         actor.nathanSpeed = actor.nathanSpeed * 0.75;
         actor.vx = actor.vx * 0.75;
@@ -4401,7 +4417,7 @@ function updateAbilityHint() {
     return;
   }
 
-  if (selectedCharacter.id === "nate") {
+  if (selectedCharacter.id === "nathan") {
     const mphApprox = (actor.nathanSpeed / 22.4).toFixed(0);
     const gasText = `Gas: ${actor.nathanGas}/${NATHAN_GAS_TARGET} gal`;
     const strikeText = actor.nathanAirstrikeReady
@@ -4895,7 +4911,7 @@ function getCharacterImageCandidates(character) {
   if (character.id === "jjfootballboss") {
     return ["characters/JJFOOTBALLBOSS.png", "characters/JJFOOTBALLBOSS.jpg"];
   }
-  if (character.id === "nate") {
+  if (character.id === "nathan") {
     return ["Nathan.png", "characters/Nate.png"];
   }
   if (character.id === "kaderess") {
@@ -5159,7 +5175,7 @@ function drawMapDecor() {
   const visibleSamDumbbells = selectedCharacter.id === "samhallet"
     ? getSamDumbbellsInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
-  const visibleNathanGas = selectedCharacter.id === "nate"
+  const visibleNathanGas = selectedCharacter.id === "nathan"
     ? getNathanGasInRange(cameraX - 120, cameraX + canvas.width + 120)
     : [];
 
@@ -5735,7 +5751,7 @@ function drawKadeBMW() {
 }
 
 function drawNathanTacoma() {
-  if (selectedCharacter.id !== "nate" || actor.state === "ready" || !actor.nathanHasTruck) return;
+  if (selectedCharacter.id !== "nathan" || actor.state === "ready" || !actor.nathanHasTruck) return;
   const sx = actor.x - cameraX;
   const sy = actor.y;
   const r = actor.radius;
