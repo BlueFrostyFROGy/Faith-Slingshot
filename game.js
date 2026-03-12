@@ -104,12 +104,14 @@ const LINCOLN_IMMUNITY_DURATION = 20; // seconds
 const LUKE_ITEM_JUMP_BASE   = 420; // base jump vx boost
 const LUKE_ITEM_JUMP_BONUS  = 14;  // extra vx per item
 const LUKE_ITEM_JUMP_MAX    = 960; // cap
-const LUKE_SUPERSPEED_THRESHOLD = 20;
+const LUKE_SUPERSPEED_THRESHOLD = 10;
 const LUKE_SUPERSPEED_VX        = 4200; // px/s during superspeed
 const LUKE_SUPERSPEED_DURATION  = 8;    // seconds
 const SAM_DUMBBELLS_PER_BENCH = 5;
 const SAM_BENCH_VISIBLE_SECONDS = 8;
 const SAM_SWIM_ACTIVE_SECONDS = 3.2;
+const SAM_JUMP_REGEN_SECONDS = 7;
+const EVAN_BASKETBALL_COOLDOWN = 5;
 const OWEN_MILKS_PER_LIFE = 5;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
 
@@ -378,7 +380,7 @@ const characters = [
     id: "lukepueppke",
     name: "Luke Pueppke",
     trait: "Caffeine rocket",
-    bio: "Collect Red Bull & Coffee to jump further and faster. 20 items = SUPERSPEED for 8 seconds!",
+    bio: "Collect Red Bull & Coffee to jump further and faster. 10 items = SUPERSPEED for 8 seconds!",
     imageBase: "Luke Pueppke",
     initials: "LP",
     mass: 0.95,
@@ -410,7 +412,7 @@ const characters = [
     id: "samhallet",
     name: "Sam Hallet",
     trait: "Bench press swimmer",
-    bio: "Slower mover with high bounce. Collect dumbbells. Every 5 dumbbells spawns a temporary bench press. Hit bench for +1 swim charge and +1 Hugh pass per swim.",
+    bio: "Slower mover with high bounce. Collect dumbbells. Every 5 dumbbells spawns a temporary bench press. Hit bench for +1 swim charge and +1 Hugh pass per swim. Double-Space jump regenerates every 7s.",
     imageBase: "Sam Hallet",
     initials: "SH",
     mass: 1.32,
@@ -421,6 +423,22 @@ const characters = [
     launchBoost: 0.97,
     unlockAt: 0,
     ability: "samswim",
+  },
+  {
+    id: "evan",
+    name: "Evan",
+    trait: "Hooper launch",
+    bio: "Shoots a basketball forward every 5 seconds and gets a Manning-style jump boost when he uses it.",
+    imageBase: "Evan",
+    initials: "EV",
+    mass: 0.96,
+    radius: 25,
+    drag: 0.074,
+    bounce: 0.61,
+    gravityMult: 0.93,
+    launchBoost: 1.22,
+    unlockAt: 0,
+    ability: "basketshot",
   },
 ];
 
@@ -438,6 +456,7 @@ let lastMouseX = canvas.width / 2;
 let lastMouseY = canvas.height / 2;
 let bombs = [];
 let tennisBalls = [];
+let evanBasketballs = [];
 let enemyLasers = [];
 let owenGoKarts = [];
 let owenGoKartSpawnTimer = 4 + Math.random() * 6;
@@ -521,6 +540,8 @@ const actor = {
   samSwimActive: false,
   samSwimPassesLeft: 0,
   samSwimTimer: 0,
+  samJumpCharges: 1,
+  samJumpRegenTimer: 0,
 };
 
 const obstacles = [];
@@ -606,6 +627,7 @@ let owenMilkImg = null;
 let owenGoKartImg = null;
 let samDumbbellImg = null;
 let samBenchPressImg = null;
+let evanBasketballImg = null;
 
 
 const spencerBombImageCandidates = [
@@ -732,6 +754,11 @@ const samDumbbellImageCandidates = [
 const samBenchPressImageCandidates = [
   "characters props/Sams Bench Press.png",
   "Sams Bench Press.png",
+];
+
+const evanBasketballImageCandidates = [
+  "characters props/Evans Basketball.png",
+  "Evans Basketball.png",
 ];
 
 
@@ -933,6 +960,40 @@ function updateEnemyLasers(dt) {
 
   enemyLasers = enemyLasers.filter((laser) => laser.life > 0 && laser.x > actor.x - 3000 && laser.x < actor.x + 4500 && laser.y > -500 && laser.y < canvas.height + 500);
   return false;
+}
+
+function updateEvanBasketballs(dt) {
+  evanBasketballs.forEach((ball) => {
+    ball.life -= dt;
+    ball.vy += world.gravity * 0.4 * dt;
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    ball.rotation += (ball.vx * 0.0035) * dt * 60;
+
+    const nearbyJanets = getFatalObstaclesInRange(ball.x - 110, ball.x + 110);
+    for (const janet of nearbyJanets) {
+      const janetY = terrainY(janet.x) - janet.yOffset;
+      const nearestX = Math.max(janet.x, Math.min(ball.x, janet.x + janet.w));
+      const nearestY = Math.max(janetY, Math.min(ball.y, janetY + janet.h));
+      const dx = ball.x - nearestX;
+      const dy = ball.y - nearestY;
+      if (dx * dx + dy * dy <= ball.radius * ball.radius) {
+        destroyedJanets.add(janet.index);
+        ball.life = -1;
+        spawnParticles(ball.x, ball.y, 18, "#f59f36");
+        tone(320, 0.05, "square", 0.06);
+        break;
+      }
+    }
+
+    const ground = terrainY(ball.x);
+    if (ball.y + ball.radius >= ground) {
+      ball.y = ground - ball.radius;
+      ball.life = -1;
+    }
+  });
+
+  evanBasketballs = evanBasketballs.filter((ball) => ball.life > 0);
 }
 
 function updateStricWoodsHazards(dt, nearbyFatals) {
@@ -1503,12 +1564,15 @@ function resetActor() {
   actor.samSwimActive = false;
   actor.samSwimPassesLeft = 0;
   actor.samSwimTimer = 0;
+  actor.samJumpCharges = 1;
+  actor.samJumpRegenTimer = 0;
   samBenchPickup = null;
   cameraX = 0;
   particles.length = 0;
   impactBursts.length = 0;
   bombs.length = 0;
   tennisBalls.length = 0;
+  evanBasketballs.length = 0;
   enemyLasers.length = 0;
   owenGoKarts.length = 0;
   resetOwenGoKartTimer();
@@ -1958,6 +2022,8 @@ function useAbility() {
     actor.abilityCooldown = 1.1;
   } else if (selectedCharacter.id === "samhallet") {
     actor.abilityCooldown = 0.25;
+  } else if (selectedCharacter.id === "evan") {
+    actor.abilityCooldown = EVAN_BASKETBALL_COOLDOWN;
   } else {
     actor.abilityCooldown = ABILITY_COOLDOWN_SECONDS;
   }
@@ -2190,6 +2256,38 @@ function useAbility() {
       startScreenShake(9, 0.2);
       break;
     }
+    case "basketshot": {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseWorldX = lastMouseX * scaleX + cameraX;
+      const mouseWorldY = lastMouseY * scaleY;
+      const dx = mouseWorldX - actor.x;
+      const dy = mouseWorldY - actor.y;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const dirX = dx / dist;
+      const dirY = dy / dist;
+
+      actor.vx += dirX * 780;
+      actor.vy += dirY * 880;
+
+      evanBasketballs.push({
+        x: actor.x + actor.radius * 0.7,
+        y: actor.y - actor.radius * 0.15,
+        vx: Math.max(760, actor.vx + 920),
+        vy: Math.min(-60, actor.vy * 0.18 - 60),
+        life: 2.7,
+        radius: 16,
+        rotation: 0,
+      });
+
+      actor.abilityCooldown = EVAN_BASKETBALL_COOLDOWN;
+      tone(460, 0.07, "triangle", 0.09);
+      tone(290, 0.06, "square", 0.07);
+      spawnParticles(actor.x, actor.y, 24, "#f59f36");
+      startScreenShake(8, 0.18);
+      break;
+    }
   }
 
   updateAbilityHint();
@@ -2247,6 +2345,24 @@ function useJJDoubleJump() {
   actor.vx += 15;
   spawnParticles(actor.x, actor.y, 18, "#9be9ff");
   tone(620, 0.06, "triangle", 0.07);
+  tone(760, 0.05, "triangle", 0.06);
+  updateAbilityHint();
+}
+
+function useSamJump() {
+  if (selectedCharacter.id !== "samhallet") return;
+  if (actor.state === "ready" || actor.state === "ended") return;
+  if (actor.samJumpCharges <= 0) {
+    tone(130, 0.05, "sine", 0.05);
+    return;
+  }
+
+  actor.samJumpCharges -= 1;
+  actor.samJumpRegenTimer = SAM_JUMP_REGEN_SECONDS;
+  actor.vy -= 620;
+  actor.vx += 90;
+  spawnParticles(actor.x, actor.y, 18, "#d6f0ff");
+  tone(560, 0.06, "triangle", 0.07);
   tone(760, 0.05, "triangle", 0.06);
   updateAbilityHint();
 }
@@ -2482,6 +2598,7 @@ function update(dt) {
 
   updateBombs(dt);
   updateTennisBalls(dt);
+  updateEvanBasketballs(dt);
   updateConfetti(dt);
   if (updateOwenGoKarts(dt)) {
     return;
@@ -2591,6 +2708,16 @@ function update(dt) {
     }
 
     if (selectedCharacter.id === "samhallet") {
+      if (actor.samJumpCharges < 1) {
+        actor.samJumpRegenTimer = Math.max(0, actor.samJumpRegenTimer - dt);
+        if (actor.samJumpRegenTimer <= 0) {
+          actor.samJumpCharges = 1;
+          actor.samJumpRegenTimer = 0;
+          spawnParticles(actor.x, actor.y, 10, "#d6f0ff");
+          tone(680, 0.05, "triangle", 0.06);
+        }
+      }
+
       if (actor.samSwimActive) {
         actor.samSwimTimer = Math.max(0, actor.samSwimTimer - dt);
         actor.vx += 34 * dt;
@@ -3090,7 +3217,9 @@ function getAbilityLabel(character) {
     case "owenjump":
       return "steady jump";
     case "samswim":
-      return "swim through Hugh";
+      return "swim through Hugh / double-jump";
+    case "basketshot":
+      return "basketball shot + boost";
     default:
       return "ability";
   }
@@ -3288,16 +3417,28 @@ function updateAbilityHint() {
       : `Bench every ${SAM_DUMBBELLS_PER_BENCH} dumbbells`;
     const chargeText = `Swim charges: ${actor.samSwimCharges}`;
     const powerText = `Passes/swim: ${actor.samSwimPerTurn}`;
+    const jumpText = actor.samJumpCharges > 0
+      ? `Jump ready`
+      : `Jump in ${actor.samJumpRegenTimer.toFixed(1)}s`;
 
     if (actor.samSwimActive) {
-      abilityHint.textContent = `${dumbbellText}  |  ${chargeText}  |  SWIM ${actor.samSwimTimer.toFixed(1)}s (${actor.samSwimPassesLeft} passes left)`;
+      abilityHint.textContent = `${dumbbellText}  |  ${chargeText}  |  ${jumpText}  |  SWIM ${actor.samSwimTimer.toFixed(1)}s (${actor.samSwimPassesLeft} passes left)`;
       return;
     }
     if (actor.abilityCooldown > 0) {
-      abilityHint.textContent = `${dumbbellText}  |  ${benchText}  |  ${chargeText}  |  ${powerText}  |  Ability in ${actor.abilityCooldown.toFixed(1)}s`;
+      abilityHint.textContent = `${dumbbellText}  |  ${benchText}  |  ${chargeText}  |  ${powerText}  |  ${jumpText}  |  Ability in ${actor.abilityCooldown.toFixed(1)}s`;
       return;
     }
-    abilityHint.textContent = `${dumbbellText}  |  ${benchText}  |  ${chargeText}  |  ${powerText}  |  Space: swim through Hugh`;
+    abilityHint.textContent = `${dumbbellText}  |  ${benchText}  |  ${chargeText}  |  ${powerText}  |  ${jumpText}  |  Space: swim through Hugh, Double-Space: jump`;
+    return;
+  }
+
+  if (selectedCharacter.id === "evan") {
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `Basketball reload: ${actor.abilityCooldown.toFixed(1)}s  |  Space: shoot ball + jump boost`;
+      return;
+    }
+    abilityHint.textContent = "Space: shoot basketball forward + Manning-style jump boost";
     return;
   }
 
@@ -3707,6 +3848,9 @@ function getCharacterImageCandidates(character) {
   }
   if (character.id === "samhallet") {
     return ["characters/Sam Hallet.png", "Sam Hallet.png"];
+  }
+  if (character.id === "evan") {
+    return ["characters/Evan.png", "Evan.png"];
   }
   return [`${character.imageBase}.png`, `${character.imageBase}.jpg`];
 }
@@ -4554,6 +4698,26 @@ function drawTennisBalls() {
   });
 }
 
+function drawEvanBasketballs() {
+  evanBasketballs.forEach((ball) => {
+    const sx = ball.x - cameraX;
+    if (sx < -80 || sx > canvas.width + 80) return;
+    const size = ball.radius * 2;
+    if (evanBasketballImg && evanBasketballImg.complete && evanBasketballImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, ball.y);
+      ctx.rotate(ball.rotation || 0);
+      ctx.drawImage(evanBasketballImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#d9811d";
+      ctx.beginPath();
+      ctx.arc(sx, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
 function drawCandyBeam() {
   if (selectedCharacter.id !== "candyjew" || actor.rainbowBeamTimer <= 0) return;
 
@@ -4753,6 +4917,7 @@ function draw() {
   drawBraydenRacket();
   drawCandyBeam();
   drawTennisBalls();
+  drawEvanBasketballs();
   drawBombs();
   drawParticles();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -5025,6 +5190,14 @@ function preloadCharacterImages() {
   };
   samBenchPressImg.src = samBenchPressImageCandidates[0];
 
+  evanBasketballImg = new Image();
+  let evanBasketballIdx = 0;
+  evanBasketballImg.onerror = () => {
+    evanBasketballIdx += 1;
+    if (evanBasketballIdx < evanBasketballImageCandidates.length) evanBasketballImg.src = evanBasketballImageCandidates[evanBasketballIdx];
+  };
+  evanBasketballImg.src = evanBasketballImageCandidates[0];
+
   jacksonFootballImg = new Image();
   let jacksonFootballIndex = 0;
   jacksonFootballImg.onerror = () => {
@@ -5155,6 +5328,9 @@ window.addEventListener("keydown", (ev) => {
       lastSpaceTime = 0; // reset so triple-tap doesn't double-trigger
     } else if (selectedCharacter.id === "jjfootballboss" && now - lastSpaceTime < 320) {
       useJJDoubleJump();
+      lastSpaceTime = 0;
+    } else if (selectedCharacter.id === "samhallet" && now - lastSpaceTime < 320) {
+      useSamJump();
       lastSpaceTime = 0;
     } else {
       useAbility();
