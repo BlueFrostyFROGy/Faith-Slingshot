@@ -160,11 +160,12 @@ const LINCOLN_IMMUNITY_DURATION = 20; // seconds
 
 // Luke Pueppke — Red Bull + Coffee collector
 const LUKE_ITEM_JUMP_BASE   = 420; // base jump vx boost
-const LUKE_ITEM_JUMP_BONUS  = 11;  // extra vx per item
-const LUKE_ITEM_JUMP_MAX    = 860; // cap
+const LUKE_ITEM_JUMP_BONUS  = 9;   // extra vx per item
+const LUKE_ITEM_JUMP_MAX    = 760; // cap
 const LUKE_SUPERSPEED_THRESHOLD = 10;
-const LUKE_SUPERSPEED_VX        = 3600; // px/s during superspeed
-const LUKE_SUPERSPEED_DURATION  = 7;    // seconds
+const LUKE_SUPERSPEED_VX        = 3200; // px/s during superspeed
+const LUKE_SUPERSPEED_DURATION  = 6;    // seconds
+const NATE_PHASE_COOLDOWN       = 10;
 const SAM_DUMBBELLS_PER_BENCH = 5;
 const SAM_BENCH_VISIBLE_SECONDS = 8;
 const SAM_SWIM_ACTIVE_SECONDS = 3.2;
@@ -250,7 +251,7 @@ const characters = [
     id: "nathan",
     name: "Nathan",
     trait: "Tacoma airstrike",
-    bio: "Cruises in his Tacoma. Collect gas cans. Space: jump + aimable Trump shot. At 10 gallons, a translucent flag appears and next Space calls a jet airstrike.",
+    bio: "Cruises in his Tacoma. Collect gas cans. Space: jump + aimable Trump shot. At 5 gallons, a translucent flag appears and next Space calls a jet airstrike.",
     imageBase: "Nate",
     initials: "NA",
     mass: 1.48,
@@ -394,7 +395,7 @@ const characters = [
     id: "jjfootballboss",
     name: "JJFootballBoss",
     trait: "Rolling growth machine",
-    bio: "Roll over needles to get bigger and faster. Space uses truck boost. Double-Space for a jump.",
+    bio: "Roll over creatine tubs to get bigger and faster. Space uses truck boost. Double-Space for a jump.",
     imageBase: "JJFOOTBALLBOSS",
     initials: "JJ",
     mass: 1.22,
@@ -458,7 +459,7 @@ const characters = [
     id: "lukepueppke",
     name: "Luke Pueppke",
     trait: "Caffeine rocket",
-    bio: "Collect Red Bull & Coffee to jump further and faster. 10 items = SUPERSPEED for 8 seconds!",
+    bio: "Collect Red Bull & Coffee to jump further and faster. 10 items = SUPERSPEED for 6 seconds!",
     imageBase: "Luke Pueppke",
     initials: "LP",
     mass: 0.95,
@@ -638,6 +639,7 @@ const actor = {
   samSwimTimer: 0,
   samJumpCharges: 1,
   samJumpRegenTimer: 0,
+  natePhaseCooldown: 0,
   nathanHasTruck: true,
   nathanSpeed: NATHAN_JUMP_RESET_SPEED,
   nathanSlowdownPending: false,
@@ -826,6 +828,7 @@ const myerPotGoldImageCandidates = [
 ];
 
 const jjNeedleImageCandidates = [
+  "JJs Creatine.webp",
   "characters props/JJFOOTBALLBOSSNEEDLE.png",
   "JJFOOTBALLBOSSNEEDLE.png",
   "assets/images/jjfootballbossneedle.png",
@@ -1233,7 +1236,7 @@ function triggerNathanAirstrike() {
   actor.nathanAirstrikeTimer = 4.1;
   actor.nathanNextBombTimer = 0.08;
   actor.nathanBombsDropped = 0;
-  actor.nathanJetX = actor.x - Math.max(canvas.width * 1.05, 1320);
+  actor.nathanJetX = actor.x - Math.max(canvas.width * 0.65, 860);
   actor.nathanJetY = terrainY(actor.x) - 390;
   actor.nathanFlagTimer = Math.max(actor.nathanFlagTimer, 2.2);
 
@@ -1248,7 +1251,7 @@ function triggerNathanAirstrike() {
 function updateNathanAirstrike(dt) {
   if (actor.nathanAirstrikeTimer > 0) {
     actor.nathanAirstrikeTimer = Math.max(0, actor.nathanAirstrikeTimer - dt);
-    actor.nathanJetX += 1220 * dt;
+    actor.nathanJetX += 1850 * dt;
     actor.nathanJetY += Math.sin((actor.nathanBombsDropped + actor.nathanAirstrikeTimer) * 2.3) * 16 * dt;
     actor.nathanNextBombTimer -= dt;
 
@@ -1900,6 +1903,7 @@ function resetActor() {
   actor.samSwimTimer = 0;
   actor.samJumpCharges = 1;
   actor.samJumpRegenTimer = 0;
+  actor.natePhaseCooldown = 0;
   actor.nathanHasTruck = true;
   actor.nathanSpeed = NATHAN_JUMP_RESET_SPEED;
   actor.nathanSlowdownPending = false;
@@ -2984,6 +2988,18 @@ function collideRect(rect) {
         startScreenShake(8, 0.18);
         return;
       }
+      if (selectedCharacter.id === "nate" && actor.natePhaseCooldown <= 0) {
+        actor.natePhaseCooldown = NATE_PHASE_COOLDOWN;
+        actor.x = Math.max(actor.x, rect.x + rect.w + actor.radius + 8);
+        actor.vx = Math.max(actor.vx, 420);
+        actor.vy = Math.min(actor.vy - 50, -50);
+        spawnParticles(actor.x, actor.y, 34, "#b986ff");
+        spawnParticles(actor.x, actor.y, 14, "#ffffff");
+        tone(760, 0.06, "triangle", 0.08);
+        tone(980, 0.04, "square", 0.06);
+        runStateLabel.textContent = "Nate phased through Hugh!";
+        return;
+      }
       if (selectedCharacter.id === "nathan" && actor.nathanHasTruck) {
         actor.nathanHasTruck = false;
         actor.nathanSlowdownPending = false;
@@ -3191,6 +3207,10 @@ function update(dt) {
     }
     if (selectedCharacter.id === "nathan" && actor.nathanAirstrikeReady && actor.nathanGas >= NATHAN_GAS_TARGET && actor.nathanFlagTimer <= 0) {
       triggerNathanAirstrike();
+    }
+
+    if (selectedCharacter.id === "nate" && actor.natePhaseCooldown > 0) {
+      actor.natePhaseCooldown = Math.max(0, actor.natePhaseCooldown - dt);
     }
 
     if (selectedCharacter.id === "calebparker" && actor.state === "flying" && actor.calebHasDino) {
@@ -3574,7 +3594,7 @@ function update(dt) {
           startScreenShake(10, 0.2);
           spawnParticles(actor.x, actor.y, 28, "#ffffff");
           tone(740, 0.07, "triangle", 0.08);
-          runStateLabel.textContent = "10 gallons! Flag up — airstrike incoming.";
+          runStateLabel.textContent = `${NATHAN_GAS_TARGET} gallons! Flag up — airstrike incoming.`;
         }
       }
     }
@@ -4245,7 +4265,7 @@ function getAbilityLabel(character) {
     case "slam":
       return "power slam";
     case "warp":
-      return "blink warp";
+      return "blink warp + auto phase";
     case "trumpjump":
       return "jump + Trump shot";
     case "jumpbomb":
@@ -4398,7 +4418,7 @@ function updateAbilityHint() {
   }
 
   if (selectedCharacter.id === "jjfootballboss") {
-    const needleText = `Needles: ${actor.jjNeedleCount}`;
+    const needleText = `Creatine: ${actor.jjNeedleCount}`;
     const truckText = actor.truckCount > 0
       ? `Space: truck (${actor.truckCount} left)`
       : "No trucks left";
@@ -4429,6 +4449,18 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${gasText}  |  ${modeText}  |  Space: jump + aimable Trump shot  |  ${strikeText}`;
+    return;
+  }
+
+  if (selectedCharacter.id === "nate") {
+    const phaseText = actor.natePhaseCooldown <= 0
+      ? "Phase ready"
+      : `Phase in ${actor.natePhaseCooldown.toFixed(1)}s`;
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${phaseText}  |  Warp in ${actor.abilityCooldown.toFixed(1)}s`;
+      return;
+    }
+    abilityHint.textContent = `${phaseText}  |  Space: blink warp  |  Auto-phase through Hugh every ${NATE_PHASE_COOLDOWN}s`;
     return;
   }
 
@@ -5314,17 +5346,22 @@ function drawMapDecor() {
     if (jjNeedleImg && jjNeedleImg.complete && jjNeedleImg.naturalWidth > 8) {
       ctx.save();
       ctx.translate(sx, ny);
-      ctx.rotate(-0.58 + Math.sin((performance.now() * 0.003) + needle.index) * 0.04);
+      ctx.rotate(Math.sin((performance.now() * 0.003) + needle.index) * 0.08);
       ctx.drawImage(jjNeedleImg, -size / 2, -size / 2, size, size);
       ctx.restore();
     } else {
       ctx.save();
-      ctx.strokeStyle = "#9be9ff";
-      ctx.lineWidth = 3;
+      ctx.fillStyle = "#111";
       ctx.beginPath();
-      ctx.moveTo(sx - needle.r * 1.2, ny + needle.r * 0.35);
-      ctx.lineTo(sx + needle.r * 1.35, ny - needle.r * 0.5);
-      ctx.stroke();
+      ctx.roundRect(sx - needle.r * 0.95, ny - needle.r * 1.1, needle.r * 1.9, needle.r * 2.2, needle.r * 0.28);
+      ctx.fill();
+      ctx.fillStyle = "#58c46b";
+      ctx.fillRect(sx - needle.r * 0.95, ny + needle.r * 0.15, needle.r * 1.9, needle.r * 0.95);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `bold ${Math.round(needle.r * 0.72)}px Trebuchet MS`;
+      ctx.textAlign = "center";
+      ctx.fillText("C", sx, ny + needle.r * 0.88);
+      ctx.textAlign = "start";
       ctx.restore();
     }
   });
@@ -5792,28 +5829,6 @@ function drawNathanTacoma() {
     ctx.fill();
   }
 
-  if (actor.nathanFlagTimer > 0) {
-    const fx = sx - r * 0.25;
-    const fy = sy - r * 2.55;
-    const fw = r * 2.6;
-    const fh = r * 1.45;
-    ctx.save();
-    ctx.globalAlpha = Math.min(0.5, 0.22 + actor.nathanFlagTimer * 0.11);
-    if (nathanFlagImg && nathanFlagImg.complete && nathanFlagImg.naturalWidth > 8) {
-      ctx.drawImage(nathanFlagImg, fx, fy, fw, fh);
-    } else {
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(fx, fy, fw, fh);
-      ctx.fillStyle = "#b22234";
-      for (let i = 0; i < 7; i += 1) {
-        ctx.fillRect(fx, fy + i * (fh / 7), fw, fh / 14);
-      }
-      ctx.fillStyle = "#3c3b6e";
-      ctx.fillRect(fx, fy, fw * 0.4, fh * 0.52);
-    }
-    ctx.restore();
-  }
-
   ctx.restore();
 }
 
@@ -5899,15 +5914,41 @@ function drawNathanTrumps() {
 }
 
 function drawNathanAirstrike() {
+  if (selectedCharacter.id === "nathan" && actor.nathanFlagTimer > 0) {
+    const fw = Math.min(canvas.width * 0.72, 900);
+    const fh = fw * 0.56;
+    const fy = canvas.height * 0.08;
+    const pulse = 0.92 + Math.sin(performance.now() * 0.009) * 0.08;
+    const drawW = fw * pulse;
+    const drawH = fh * pulse;
+    const drawX = canvas.width * 0.5 - drawW * 0.5;
+    const drawY = fy;
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.92, 0.42 + actor.nathanFlagTimer * 0.22);
+    if (nathanFlagImg && nathanFlagImg.complete && nathanFlagImg.naturalWidth > 8) {
+      ctx.drawImage(nathanFlagImg, drawX, drawY, drawW, drawH);
+    } else {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(drawX, drawY, drawW, drawH);
+      ctx.fillStyle = "#b22234";
+      for (let i = 0; i < 7; i += 1) {
+        ctx.fillRect(drawX, drawY + i * (drawH / 7), drawW, drawH / 14);
+      }
+      ctx.fillStyle = "#3c3b6e";
+      ctx.fillRect(drawX, drawY, drawW * 0.4, drawH * 0.52);
+    }
+    ctx.restore();
+  }
+
   if (actor.nathanAirstrikeTimer > 0) {
     const sx = actor.nathanJetX - cameraX;
     const sy = actor.nathanJetY;
     if (sx > -240 && sx < canvas.width + 240) {
-      const w = 170;
-      const h = 90;
+      const w = 220;
+      const h = 118;
       if (nathanJetImg && nathanJetImg.complete && nathanJetImg.naturalWidth > 8) {
         ctx.save();
-        ctx.globalAlpha = 0.95;
+        ctx.globalAlpha = 0.98;
         ctx.drawImage(nathanJetImg, sx - w * 0.5, sy - h * 0.5, w, h);
         ctx.restore();
       } else {
