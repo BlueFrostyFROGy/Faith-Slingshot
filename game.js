@@ -1087,6 +1087,9 @@ function tone(freq, duration = 0.09, type = "sine", volume = 0.08) {
 
 function terrainY(x) {
   const base = 560;
+  if (getCurrentMap().id === "town-square") {
+    return base;
+  }
   return (
     base
     - Math.sin(x * 0.0022) * 90
