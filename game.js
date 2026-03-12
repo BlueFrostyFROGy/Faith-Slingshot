@@ -75,6 +75,9 @@ const headToHeadState = {
   opponentJumpTimer: 0,
   opponentStoppedTimer: 0,
   opponentFinished: false,
+  localFinished: false,
+  localFinalDistance: 0,
+  localFinishMessage: "",
   liveNetwork: false,
 };
 
@@ -93,6 +96,7 @@ const networkState = {
   opponentSnapshot: null,
   opponentFinished: false,
   opponentFinalDistance: 0,
+  localFinishSent: false,
 };
 
 const world = {
@@ -1682,6 +1686,9 @@ function resetActor() {
   if (headToHeadState.active && !headToHeadState.liveNetwork) {
     initHeadToHeadOpponent();
   }
+  headToHeadState.localFinished = false;
+  headToHeadState.localFinalDistance = 0;
+  headToHeadState.localFinishMessage = "";
   updateAbilityHint();
 }
 
@@ -1963,42 +1970,75 @@ function startNextRunSameCharacter() {
 }
 
 
+function finalizeHeadToHeadIfReady() {
+  if (!headToHeadState.active) return false;
+  if (!headToHeadState.localFinished || !headToHeadState.opponentFinished) return false;
+
+  const playerM = headToHeadState.localFinalDistance;
+  const oppM = headToHeadState.liveNetwork
+    ? networkState.opponentFinalDistance
+    : (headToHeadState.opponentActor
+      ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
+      : 0);
+
+  const result = playerM >= oppM
+    ? `You win the head-to-head! (${playerM.toFixed(1)}m vs ${oppM.toFixed(1)}m)`
+    : `${headToHeadState.rivalName} wins the head-to-head. (${oppM.toFixed(1)}m vs ${playerM.toFixed(1)}m)`;
+
+  const finalMessage = `${headToHeadState.localFinishMessage || "Run ended."} ${result}`;
+
+  if (headToHeadState.liveNetwork) {
+    stopLiveNetworkSession();
+  }
+  headToHeadState.active = false;
+  headToHeadState.mode = "idle";
+
+  runStateLabel.textContent = finalMessage;
+  launchBtn.disabled = true;
+  actor.state = "ended";
+  actor.vx = 0;
+  actor.vy = 0;
+  updateAbilityHint();
+
+  setTimeout(() => {
+    showLeaderboardScreen(actor.maxX - world.launchX);
+  }, 800);
+
+  return true;
+}
+
+
 
 function finishRun(message = "Run ended: no movement left. Press Restart Run.") {
-  if (headToHeadState.active && headToHeadState.liveNetwork && networkState.roomChannel) {
-    networkState.roomChannel.send({
-      type: "broadcast",
-      event: "finish",
-      payload: {
-        playerId: networkState.playerId,
-        message: `${getNetworkPlayerName()} finished.`,
-        distance: Math.max(0, (actor.maxX - world.launchX) / 10),
-      },
-    });
-  }
-
   if (headToHeadState.active) {
-    const playerM = Math.max(0, (actor.maxX - world.launchX) / 10);
-    const oppM = headToHeadState.liveNetwork
-      ? (networkState.opponentFinished
-        ? networkState.opponentFinalDistance
-        : (headToHeadState.opponentActor
-          ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
-          : 0))
-      : (headToHeadState.opponentActor
-        ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
-        : 0);
+    if (!headToHeadState.localFinished) {
+      headToHeadState.localFinished = true;
+      headToHeadState.localFinalDistance = Math.max(0, (actor.maxX - world.launchX) / 10);
+      headToHeadState.localFinishMessage = message;
 
-    const result = headToHeadState.liveNetwork && !networkState.opponentFinished
-      ? `You finished at ${playerM.toFixed(1)}m. Waiting on ${headToHeadState.rivalName}'s result.`
-      : (playerM >= oppM ? "You win the head-to-head!" : `${headToHeadState.rivalName} wins the head-to-head.`);
+      if (headToHeadState.liveNetwork && networkState.roomChannel && !networkState.localFinishSent) {
+        networkState.localFinishSent = true;
+        networkState.roomChannel.send({
+          type: "broadcast",
+          event: "finish",
+          payload: {
+            playerId: networkState.playerId,
+            message: `${getNetworkPlayerName()} finished.`,
+            distance: headToHeadState.localFinalDistance,
+          },
+        });
+      }
 
-    message = `${message} ${result}`;
-    if (headToHeadState.liveNetwork) {
-      stopLiveNetworkSession();
+      actor.state = "ended";
+      actor.vx = 0;
+      actor.vy = 0;
+      launchBtn.disabled = true;
+      runStateLabel.textContent = `${message} Waiting for ${headToHeadState.rivalName} to finish...`;
+      updateAbilityHint();
     }
-    headToHeadState.active = false;
-    headToHeadState.mode = "idle";
+
+    finalizeHeadToHeadIfReady();
+    return;
   }
 
   runStateLabel.textContent = message;
@@ -3354,6 +3394,7 @@ function cleanupNetworkRoom() {
   networkState.opponentSnapshot = null;
   networkState.opponentFinished = false;
   networkState.opponentFinalDistance = 0;
+  networkState.localFinishSent = false;
   if (networkState.roomChannel) {
     networkState.client?.removeChannel(networkState.roomChannel);
     networkState.roomChannel = null;
@@ -3477,6 +3518,7 @@ function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
     if (headToHeadState.active && runStateLabel) {
       runStateLabel.textContent = payload.message || `${headToHeadState.rivalName} finished. Keep going!`;
     }
+    finalizeHeadToHeadIfReady();
   });
 
   roomChannel.subscribe((status) => {
@@ -3573,6 +3615,11 @@ function startHeadToHeadMatch() {
   currentMapIndex = headToHeadState.randomMapIndex;
   headToHeadState.mode = "active";
   headToHeadState.active = true;
+  headToHeadState.localFinished = false;
+  headToHeadState.localFinalDistance = 0;
+  headToHeadState.localFinishMessage = "";
+  headToHeadState.opponentFinished = false;
+  networkState.localFinishSent = false;
 
   hideAllOverlays();
   controlsPanel.classList.remove("hidden");
@@ -3659,6 +3706,7 @@ function updateHeadToHeadOpponent(dt) {
       };
       headToHeadState.opponentCameraX = snap.cameraX || 0;
       headToHeadState.opponentFinished = snap.state === "ended";
+      finalizeHeadToHeadIfReady();
     }
     return;
   }
@@ -3689,6 +3737,7 @@ function updateHeadToHeadOpponent(dt) {
       opp.state = "ended";
       opp.vx = 0;
       opp.vy = 0;
+      finalizeHeadToHeadIfReady();
       return;
     }
   }
@@ -3734,6 +3783,7 @@ function updateHeadToHeadOpponent(dt) {
     opp.state = "ended";
     opp.vx = 0;
     opp.vy = 0;
+    finalizeHeadToHeadIfReady();
   }
 }
 function getAbilityLabel(character) {
