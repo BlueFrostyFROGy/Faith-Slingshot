@@ -1,6 +1,7 @@
 const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const AUTH_SESSION_KEY = "faith-flight-auth-session";
+const LOCAL_ACCOUNTS_KEY = "faith-flight-local-accounts";
 const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
@@ -4327,7 +4328,7 @@ function setAuthControlsDisabled(disabled) {
 function getAuthErrorMessage(error) {
   const raw = (error?.message || error?.error_description || error?.msg || "Authentication failed").toString();
   const lower = raw.toLowerCase();
-  if (lower.includes("email logins are disabled") || lower.includes("email provider is disabled") || String(error?.status || "") === "422") {
+  if (lower.includes("email logins are disabled") || lower.includes("email signups are disabled") || lower.includes("email provider is disabled")) {
     return "Supabase Email auth is disabled. In Supabase: Authentication → Providers → Email, turn Email provider ON, then disable Confirm email for instant username-style signup.";
   }
   if (lower.includes("rate limit") || lower.includes("email rate limit") || String(error?.status || "") === "429") {
@@ -4467,6 +4468,7 @@ function getHeadToHeadProfileSummary(playerName) {
 }
 
 async function fetchCloudHeadToHeadRankings(force = false) {
+  if (!hasCloudAuthSession()) return false;
   if (rankedCloudFetchInFlight) return false;
   const now = Date.now();
   if (!force && now - rankedCloudLastFetchAt < 10000) return false;
@@ -4526,6 +4528,7 @@ async function fetchCloudHeadToHeadRankings(force = false) {
 }
 
 async function pushCloudHeadToHeadProfile(profile) {
+  if (!hasCloudAuthSession()) return false;
   if (!profile) return false;
   try {
     const key = (profile.key || profile.name || "").toString().slice(0, 64);
@@ -5586,11 +5589,16 @@ function getAuthToken() {
   return authSession?.access_token || SUPABASE_ANON_KEY;
 }
 
+function hasCloudAuthSession() {
+  return !!authSession?.access_token;
+}
+
 function updateAccountUI() {
   if (!accountStatus) return;
   const accountName = getSessionAccountName();
   if (authSession?.user?.id && accountName) {
-    accountStatus.textContent = `Account: ${accountName} (signed in, required to play)`;
+    const modeText = hasCloudAuthSession() ? "cloud auth" : "local account mode";
+    accountStatus.textContent = `Account: ${accountName} (signed in, required to play • ${modeText})`;
     syncSignedInIdentityUI();
   } else {
     accountStatus.textContent = "Account: Guest (create or sign in to play)";
@@ -5613,9 +5621,92 @@ function saveAuthSession(session) {
   if (session) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
   else localStorage.removeItem(AUTH_SESSION_KEY);
   updateAccountUI();
-  if (session?.user?.id) {
+  if (session?.user?.id && hasCloudAuthSession()) {
     fetchCloudHeadToHeadRankings(true).then(() => renderRankedLeaderboard());
   }
+}
+
+function loadLocalAccounts() {
+  try {
+    const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLocalAccounts(accounts) {
+  localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(accounts || {}));
+}
+
+async function hashAccountPassword(password) {
+  const input = `${password}::faith-flight`;
+  if (window.crypto?.subtle && window.TextEncoder) {
+    const bytes = new TextEncoder().encode(input);
+    const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return btoa(input);
+}
+
+function buildLocalSession(accountName) {
+  const normalized = normalizeAccountName(accountName);
+  return {
+    provider: "local",
+    token_type: "local",
+    access_token: null,
+    expires_in: null,
+    user: {
+      id: `local-${normalized}`,
+      email: `${normalized}@local.account`,
+      user_metadata: { account_name: normalized },
+      app_metadata: { provider: "local" },
+      created_at: new Date().toISOString(),
+    },
+  };
+}
+
+async function signUpLocalAccount(accountName, password) {
+  const normalized = validateAccountName(accountName);
+  if ((password || "").length < 4) {
+    throw new Error("Password must be at least 4 characters.");
+  }
+  const accounts = loadLocalAccounts();
+  if (accounts[normalized]) {
+    throw new Error("That account name already exists. Use Sign In instead.");
+  }
+  accounts[normalized] = {
+    passwordHash: await hashAccountPassword(password),
+    createdAt: Date.now(),
+  };
+  saveLocalAccounts(accounts);
+  const session = buildLocalSession(normalized);
+  saveAuthSession(session);
+  return session;
+}
+
+async function signInLocalAccount(accountName, password) {
+  const normalized = validateAccountName(accountName);
+  const accounts = loadLocalAccounts();
+  const entry = accounts[normalized];
+  if (!entry) {
+    throw new Error("Invalid login credentials.");
+  }
+  const passwordHash = await hashAccountPassword(password);
+  if (entry.passwordHash !== passwordHash) {
+    throw new Error("Invalid login credentials.");
+  }
+  const session = buildLocalSession(normalized);
+  saveAuthSession(session);
+  return session;
+}
+
+function isEmailAuthDisabledMessage(message) {
+  const lower = (message || "").toString().toLowerCase();
+  return lower.includes("email signups are disabled")
+    || lower.includes("email logins are disabled")
+    || lower.includes("email provider is disabled");
 }
 
 async function signUpAccount(email, password) {
@@ -5630,7 +5721,11 @@ async function signUpAccount(email, password) {
   });
   const data = await res.json();
   if (!res.ok) {
-    const err = new Error(data?.msg || data?.error_description || "Sign up failed");
+    const message = data?.msg || data?.error_description || "Sign up failed";
+    if (isEmailAuthDisabledMessage(message)) {
+      return signUpLocalAccount(accountName, password);
+    }
+    const err = new Error(message);
     err.status = res.status;
     err.payload = data;
     throw err;
@@ -5657,7 +5752,11 @@ async function signInAccount(email, password) {
   });
   const data = await res.json();
   if (!res.ok) {
-    const err = new Error(data?.msg || data?.error_description || "Sign in failed");
+    const message = data?.msg || data?.error_description || "Sign in failed";
+    if (isEmailAuthDisabledMessage(message)) {
+      return signInLocalAccount(accountName, password);
+    }
+    const err = new Error(message);
     err.status = res.status;
     err.payload = data;
     throw err;
