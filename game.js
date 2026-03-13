@@ -42,6 +42,9 @@ const runStateLabel = document.getElementById("runStateLabel");
 const switchMapBtn = document.getElementById("switchMapBtn");
 const hudHeadToHeadBtn = document.getElementById("hudHeadToHeadBtn");
 const mapSelectDropdown = document.getElementById("mapSelectDropdown");
+const mobileControls = document.getElementById("mobileControls");
+const mobilePrimaryBtn = document.getElementById("mobilePrimaryBtn");
+const mobileSecondaryBtn = document.getElementById("mobileSecondaryBtn");
 
 const playerNameInput = document.getElementById("playerNameInput");
 const submitScoreBtn = document.getElementById("submitScoreBtn");
@@ -2034,7 +2037,7 @@ function resetActor() {
   launchVector = null;
   trajectoryDots.length = 0;
 
-  runStateLabel.textContent = "Click and drag to aim";
+  runStateLabel.textContent = "Drag or touch to aim";
   launchBtn.disabled = false;
   if (switchMapBtn) switchMapBtn.disabled = !!headToHeadState.active;
   if (heightValue) {
@@ -6521,8 +6524,98 @@ function frame(now) {
     }
   }
   update(dt);
+  updateMobileControls();
   draw();
   requestAnimationFrame(frame);
+}
+
+function isLikelyMobile() {
+  return window.matchMedia("(hover: none), (pointer: coarse)").matches || window.innerWidth <= 900;
+}
+
+function getSecondaryActionLabel() {
+  switch (selectedCharacter.id) {
+    case "spencer":
+      return "B: Bomb";
+    case "anthony":
+    case "matteo":
+      return "B: Truck";
+    case "jjfootballboss":
+      return "B: Jump";
+    case "samhallet":
+      return "B: Jump";
+    default:
+      return "B: Alt";
+  }
+}
+
+function updateMobileControls() {
+  if (!mobileControls || !mobilePrimaryBtn || !mobileSecondaryBtn) return;
+
+  const overlayActive = menuScreen.classList.contains("active")
+    || characterScreen.classList.contains("active")
+    || leaderboardScreen.classList.contains("active")
+    || !!matchmakingScreen?.classList.contains("active");
+
+  const show = isLikelyMobile() && !overlayActive;
+  mobileControls.classList.toggle("active", show);
+  if (!show) return;
+
+  const canUseActions = actor.state !== "ready" && actor.state !== "ended";
+  mobilePrimaryBtn.disabled = !canUseActions;
+
+  const hasSecondaryAction = selectedCharacter.id === "spencer"
+    || selectedCharacter.id === "anthony"
+    || selectedCharacter.id === "matteo"
+    || selectedCharacter.id === "jjfootballboss"
+    || selectedCharacter.id === "samhallet";
+  mobileSecondaryBtn.disabled = !canUseActions || !hasSecondaryAction;
+
+  mobilePrimaryBtn.textContent = selectedCharacter.id === "spencer" ? "A: Jump" : "A: Ability";
+  mobileSecondaryBtn.textContent = getSecondaryActionLabel();
+}
+
+function triggerPrimaryAction() {
+  ensureAudio();
+  if (selectedCharacter.id === "spencer") {
+    useSpencerJump();
+    return;
+  }
+  useAbility();
+}
+
+function triggerSecondaryAction() {
+  ensureAudio();
+  if (selectedCharacter.id === "spencer") {
+    useSpencerBomb();
+    return true;
+  }
+  if (selectedCharacter.id === "anthony" || selectedCharacter.id === "matteo") {
+    useTruck();
+    return true;
+  }
+  if (selectedCharacter.id === "jjfootballboss") {
+    useJJDoubleJump();
+    return true;
+  }
+  if (selectedCharacter.id === "samhallet") {
+    useSamJump();
+    return true;
+  }
+  return false;
+}
+
+function bindMobileActionButton(button, action) {
+  if (!button) return;
+  button.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
+    button.classList.add("is-pressed");
+    action();
+  });
+  const release = () => button.classList.remove("is-pressed");
+  button.addEventListener("pointerup", release);
+  button.addEventListener("pointerleave", release);
+  button.addEventListener("pointercancel", release);
 }
 
 function isUnlocked(c) {
@@ -7004,17 +7097,11 @@ window.addEventListener("keydown", (ev) => {
       return;
     }
 
-    if ((selectedCharacter.id === "anthony" || selectedCharacter.id === "matteo") && now - lastSpaceTime < 320) {
-      useTruck();
-      lastSpaceTime = 0; // reset so triple-tap doesn't double-trigger
-    } else if (selectedCharacter.id === "jjfootballboss" && now - lastSpaceTime < 320) {
-      useJJDoubleJump();
-      lastSpaceTime = 0;
-    } else if (selectedCharacter.id === "samhallet" && now - lastSpaceTime < 320) {
-      useSamJump();
+    const didSecondary = now - lastSpaceTime < 320 && triggerSecondaryAction();
+    if (didSecondary) {
       lastSpaceTime = 0;
     } else {
-      useAbility();
+      triggerPrimaryAction();
       lastSpaceTime = now;
     }
   }
@@ -7054,10 +7141,10 @@ function canvasCoords(ev) {
   };
 }
 
-canvas.addEventListener("mousedown", (ev) => {
+function beginDragAtClientPos(clientX, clientY) {
   if (actor.state !== "ready") return;
 
-  const { wx, wy, inPlayerPane } = canvasCoords(ev);
+  const { wx, wy, inPlayerPane } = canvasCoords({ clientX, clientY });
   if (!inPlayerPane || wy == null) return;
   const dx = wx - actor.x;
   const dy = wy - actor.y;
@@ -7066,14 +7153,14 @@ canvas.addEventListener("mousedown", (ev) => {
     isDragging = true;
     ensureAudio();
   }
-});
+}
 
-canvas.addEventListener("mousemove", (ev) => {
+function updateAimAndDragAtClientPos(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
-  const rawX = ev.clientX - rect.left;
-  const rawY = ev.clientY - rect.top;
+  const rawX = clientX - rect.left;
+  const rawY = clientY - rect.top;
 
   if (headToHeadState.active) {
     const localX = rawX * scaleX;
@@ -7090,7 +7177,7 @@ canvas.addEventListener("mousemove", (ev) => {
 
   if (!isDragging || actor.state !== "ready") return;
 
-  const { wx, wy, inPlayerPane } = canvasCoords(ev);
+  const { wx, wy, inPlayerPane } = canvasCoords({ clientX, clientY });
   if (!inPlayerPane || wy == null) return;
   const anchorX = world.launchX;
   const anchorY = terrainY(world.launchX) - 70;
@@ -7139,9 +7226,9 @@ canvas.addEventListener("mousemove", (ev) => {
     trajectoryDots.push({ x: tx, y: ty });
     if (ty > terrainY(tx) || tx < 0) break;
   }
-});
+}
 
-canvas.addEventListener("mouseup", () => {
+function endDragLaunch() {
   if (!isDragging) return;
   isDragging = false;
 
@@ -7154,9 +7241,9 @@ canvas.addEventListener("mouseup", () => {
     trajectoryDots.length = 0;
   }
   dragStart = null;
-});
+}
 
-canvas.addEventListener("mouseleave", () => {
+function cancelDragLaunch() {
   if (!isDragging) return;
   isDragging = false;
   dragStart  = null;
@@ -7164,6 +7251,58 @@ canvas.addEventListener("mouseleave", () => {
   actor.y    = terrainY(world.launchX) - 70;
   launchVector = null;
   trajectoryDots.length = 0;
+}
+
+canvas.addEventListener("mousedown", (ev) => {
+  beginDragAtClientPos(ev.clientX, ev.clientY);
+});
+
+canvas.addEventListener("mousemove", (ev) => {
+  updateAimAndDragAtClientPos(ev.clientX, ev.clientY);
+});
+
+canvas.addEventListener("mouseup", () => {
+  endDragLaunch();
+});
+
+canvas.addEventListener("mouseleave", () => {
+  cancelDragLaunch();
+});
+
+canvas.addEventListener("touchstart", (ev) => {
+  if (!ev.touches.length) return;
+  ev.preventDefault();
+  const t = ev.touches[0];
+  beginDragAtClientPos(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (ev) => {
+  if (!ev.touches.length) return;
+  ev.preventDefault();
+  const t = ev.touches[0];
+  updateAimAndDragAtClientPos(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener("touchend", (ev) => {
+  ev.preventDefault();
+  if (ev.changedTouches && ev.changedTouches.length) {
+    const t = ev.changedTouches[0];
+    updateAimAndDragAtClientPos(t.clientX, t.clientY);
+  }
+  endDragLaunch();
+}, { passive: false });
+
+canvas.addEventListener("touchcancel", (ev) => {
+  ev.preventDefault();
+  cancelDragLaunch();
+}, { passive: false });
+
+bindMobileActionButton(mobilePrimaryBtn, () => {
+  triggerPrimaryAction();
+});
+
+bindMobileActionButton(mobileSecondaryBtn, () => {
+  triggerSecondaryAction();
 });
 
 preloadCharacterImages();

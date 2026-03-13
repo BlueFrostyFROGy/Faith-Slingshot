@@ -25,6 +25,11 @@
       <main>
         <canvas id="gameCanvas" width="1280" height="720"></canvas>
 
+        <section id="mobileControls" class="mobile-controls" aria-label="Mobile controls">
+          <button id="mobilePrimaryBtn" class="btn mobile-action-btn" type="button">A: Ability</button>
+          <button id="mobileSecondaryBtn" class="btn mobile-action-btn" type="button">B: Alt</button>
+        </section>
+
         <section id="menuScreen" class="overlay active">
           <div class="panel">
             <h2>Launch Day</h2>
@@ -113,6 +118,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="game.js?v=20260312-65"></script>
+    <script src="game.js?v=20260313-mobile1"></script>
   </body>
 </html>
