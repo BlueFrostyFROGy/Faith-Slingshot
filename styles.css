@@ -157,6 +157,8 @@ canvas {
 
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-secondary { background: var(--accent-2); color: #fff; }
+.lb-tab { opacity: 0.55; transition: opacity 0.15s, box-shadow 0.15s; }
+.lb-tab-active { opacity: 1 !important; box-shadow: 0 2px 10px rgba(95,123,255,0.4) !important; }
 
 .character-grid {
   display: grid;

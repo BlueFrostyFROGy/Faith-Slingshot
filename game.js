@@ -52,8 +52,9 @@ const playAgainBtn = document.getElementById("playAgainBtn");
 const finalScore = document.getElementById("finalScore");
 const leaderboardList = document.getElementById("leaderboardList");
 const leaderboardTitle = document.getElementById("leaderboardTitle");
-const leaderboardModeBtn = document.getElementById("leaderboardModeBtn");
-const leaderboardModeLabel = document.getElementById("leaderboardModeLabel");
+const leaderboardCharBtn = document.getElementById("leaderboardCharBtn");
+const leaderboardMapBtn = document.getElementById("leaderboardMapBtn");
+const leaderboardAllBtn = document.getElementById("leaderboardAllBtn");
 const accountEmailInput = document.getElementById("accountEmailInput");
 const accountPasswordInput = document.getElementById("accountPasswordInput");
 const signUpBtn = document.getElementById("signUpBtn");
@@ -66,6 +67,8 @@ let authSession = null;
 let leaderboardViewMode = "character";
 let leaderboardRunCharacterId = "";
 let leaderboardRunCharacterName = "";
+let leaderboardRunMapId = "";
+let leaderboardRunMapName = "";
 const headToHeadRivals = ["Riley", "Jordan", "Blake", "Avery", "Parker", "Casey", "Logan", "Sky", "Taylor"];
 
 const headToHeadState = {
@@ -4735,6 +4738,8 @@ function loadLeaderboard() {
     if (!Number.isFinite(distance)) return null;
     const characterId = typeof entry.characterId === "string" ? entry.characterId : "";
     const characterName = typeof entry.characterName === "string" ? entry.characterName : "";
+    const mapId = typeof entry.mapId === "string" ? entry.mapId : "";
+    const mapName = typeof entry.mapName === "string" ? entry.mapName : "";
     const date = entry.date || new Date().toLocaleDateString();
     return {
       name,
@@ -4742,6 +4747,8 @@ function loadLeaderboard() {
       date,
       characterId,
       characterName,
+      mapId,
+      mapName,
     };
   };
 
@@ -4769,6 +4776,8 @@ function saveLeaderboard(scores) {
       date: s.date || new Date().toLocaleDateString(),
       characterId: typeof s.characterId === "string" ? s.characterId : "",
       characterName: typeof s.characterName === "string" ? s.characterName : "",
+      mapId: typeof s.mapId === "string" ? s.mapId : "",
+      mapName: typeof s.mapName === "string" ? s.mapName : "",
     }));
   localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(normalized));
   window.sharedLeaderboardCache = normalized;
@@ -4849,6 +4858,8 @@ function addScoreToLeaderboard(playerName, distance) {
     date: new Date().toLocaleDateString(),
     characterId: selectedCharacter?.id || "",
     characterName: selectedCharacter?.name || "",
+    mapId: maps[currentMapIndex]?.id || "",
+    mapName: maps[currentMapIndex]?.name || "",
   });
   leaderboard.sort((a, b) => b.distance - a.distance);
   saveLeaderboard(leaderboard);
@@ -4865,11 +4876,14 @@ async function fetchCloudLeaderboard() {
       date: s.created_at ? new Date(s.created_at).toLocaleDateString() : new Date().toLocaleDateString(),
       characterId: typeof s.character_id === "string" ? s.character_id : "",
       characterName: typeof s.character_name === "string" ? s.character_name : "",
+      mapId: typeof s.map_id === "string" ? s.map_id : "",
+      mapName: typeof s.map_name === "string" ? s.map_name : "",
     }));
 
   try {
-    const extendedUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at,character_id,character_name&order=distance.desc&limit=${CLOUD_LEADERBOARD_FETCH_LIMIT}`;
-    const basicUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at&order=distance.desc&limit=${CLOUD_LEADERBOARD_FETCH_LIMIT}`;
+    const extendedUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at,character_id,character_name,map_id,map_name&order=distance.desc&limit=${CLOUD_LEADERBOARD_FETCH_LIMIT}`;
+    const basicUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at,character_id,character_name&order=distance.desc&limit=${CLOUD_LEADERBOARD_FETCH_LIMIT}`;
+    const minimalUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}?select=Name,distance,created_at&order=distance.desc&limit=${CLOUD_LEADERBOARD_FETCH_LIMIT}`;
 
     console.log("Fetching from Supabase:", extendedUrl);
     let res = await fetch(extendedUrl, {
@@ -4881,8 +4895,18 @@ async function fetchCloudLeaderboard() {
     });
 
     if (!res.ok) {
-      console.warn("Extended leaderboard fetch failed, trying basic columns");
+      console.warn("Extended leaderboard fetch failed, trying character-only columns");
       res = await fetch(basicUrl, {
+        cache: "no-store",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+      });
+    }
+    if (!res.ok) {
+      console.warn("Character-only fetch failed, trying minimal columns");
+      res = await fetch(minimalUrl, {
         cache: "no-store",
         headers: {
           apikey: SUPABASE_ANON_KEY,
@@ -4904,7 +4928,29 @@ async function fetchCloudLeaderboard() {
       return false;
     }
     const normalized = normalizeRows(data);
-    saveLeaderboard(normalized);
+    // Merge with local data to preserve characterId/mapId metadata that cloud may lack
+    let existingLocal = [];
+    try {
+      existingLocal = JSON.parse(localStorage.getItem(LEADERBOARD_KEY) || "[]");
+    } catch { existingLocal = []; }
+    const enriched = normalized.map(cs => {
+      if (!cs.characterId || !cs.mapId) {
+        const match = existingLocal.find(ls =>
+          ls.name === cs.name && Math.abs(Number(ls.distance) - cs.distance) < 0.15
+        );
+        if (match) {
+          return {
+            ...cs,
+            characterId: cs.characterId || (typeof match.characterId === "string" ? match.characterId : ""),
+            characterName: cs.characterName || (typeof match.characterName === "string" ? match.characterName : ""),
+            mapId: cs.mapId || (typeof match.mapId === "string" ? match.mapId : ""),
+            mapName: cs.mapName || (typeof match.mapName === "string" ? match.mapName : ""),
+          };
+        }
+      }
+      return cs;
+    });
+    saveLeaderboard(enriched);
     return true;
   } catch (e) {
     console.error("fetchCloudLeaderboard error:", e);
@@ -4915,7 +4961,15 @@ async function fetchCloudLeaderboard() {
 async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
   try {
     const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LEADERBOARD_TABLE}`;
-    const extendedBody = JSON.stringify({
+    const fullBody = JSON.stringify({
+      Name: playerName.slice(0, 20),
+      distance: Number(travelledMeters.toFixed(1)),
+      character_id: selectedCharacter?.id || "",
+      character_name: selectedCharacter?.name || "",
+      map_id: maps[currentMapIndex]?.id || "",
+      map_name: maps[currentMapIndex]?.name || "",
+    });
+    const charBody = JSON.stringify({
       Name: playerName.slice(0, 20),
       distance: Number(travelledMeters.toFixed(1)),
       character_id: selectedCharacter?.id || "",
@@ -4925,7 +4979,7 @@ async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
       Name: playerName.slice(0, 20),
       distance: Number(travelledMeters.toFixed(1)),
     });
-    console.log("Pushing to Supabase:", url, extendedBody);
+    console.log("Pushing to Supabase:", url, fullBody);
     let insertRes = await fetch(url, {
       method: "POST",
       headers: {
@@ -4934,10 +4988,23 @@ async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body: extendedBody,
+      body: fullBody,
     });
     if (!insertRes.ok) {
-      console.warn("Extended leaderboard insert failed, trying basic payload");
+      console.warn("Full leaderboard insert failed, trying character-only payload");
+      insertRes = await fetch(url, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${getAuthToken()}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: charBody,
+      });
+    }
+    if (!insertRes.ok) {
+      console.warn("Character insert failed, trying basic payload");
       insertRes = await fetch(url, {
         method: "POST",
         headers: {
@@ -4981,26 +5048,32 @@ function getLeaderboardScoresForView() {
       .filter((s) => s.characterId === leaderboardRunCharacterId)
       .slice(0, MAX_LEADERBOARD_ENTRIES);
   }
+  if (leaderboardViewMode === "map" && leaderboardRunMapId) {
+    return allScores
+      .filter((s) => s.mapId === leaderboardRunMapId)
+      .slice(0, MAX_LEADERBOARD_ENTRIES);
+  }
   return allScores.slice(0, MAX_LEADERBOARD_ENTRIES);
 }
 
 function updateLeaderboardModeUI() {
   const charLabel = leaderboardRunCharacterName || selectedCharacter?.name || "Character";
+  const mapLabel = leaderboardRunMapName || maps[currentMapIndex]?.name || "Map";
   if (leaderboardTitle) {
-    leaderboardTitle.textContent = leaderboardViewMode === "character"
-      ? `${charLabel} Leaderboard`
-      : "All-Time Leaderboard";
+    if (leaderboardViewMode === "character") {
+      leaderboardTitle.textContent = `${charLabel} Leaderboard`;
+    } else if (leaderboardViewMode === "map") {
+      leaderboardTitle.textContent = `${mapLabel} Leaderboard`;
+    } else {
+      leaderboardTitle.textContent = "All-Time Leaderboard";
+    }
   }
-  if (leaderboardModeBtn) {
-    leaderboardModeBtn.textContent = leaderboardViewMode === "character"
-      ? "Show: All-Time"
-      : "Show: Current Character";
-  }
-  if (leaderboardModeLabel) {
-    leaderboardModeLabel.textContent = leaderboardViewMode === "character"
-      ? `Viewing: ${charLabel}`
-      : "Viewing: All Characters";
-  }
+  [leaderboardCharBtn, leaderboardMapBtn, leaderboardAllBtn].forEach(btn => {
+    if (btn) btn.classList.remove("lb-tab-active");
+  });
+  if (leaderboardViewMode === "character" && leaderboardCharBtn) leaderboardCharBtn.classList.add("lb-tab-active");
+  if (leaderboardViewMode === "map" && leaderboardMapBtn) leaderboardMapBtn.classList.add("lb-tab-active");
+  if (leaderboardViewMode === "all" && leaderboardAllBtn) leaderboardAllBtn.classList.add("lb-tab-active");
 }
 
 function displayLeaderboard() {
@@ -5010,6 +5083,8 @@ function displayLeaderboard() {
   if (scores.length === 0) {
     leaderboardList.innerHTML = leaderboardViewMode === "character"
       ? "<p>No scores yet for this character.</p>"
+      : leaderboardViewMode === "map"
+      ? "<p>No scores yet for this map.</p>"
       : "<p>No scores yet. Be the first!</p>";
     return;
   }
@@ -5024,15 +5099,28 @@ function displayLeaderboard() {
     entry.style.fontWeight = idx < 3 ? "600" : "400";
     
     const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
+    const nameCol = document.createElement("div");
+    nameCol.style.display = "flex";
+    nameCol.style.flexDirection = "column";
     const nameSpan = document.createElement("span");
     nameSpan.textContent = `${medal} ${idx + 1}. ${score.name}`;
+    nameCol.appendChild(nameSpan);
+    if ((leaderboardViewMode === "all" || leaderboardViewMode === "map") && score.characterName) {
+      const subLabel = document.createElement("span");
+      subLabel.textContent = score.characterName;
+      subLabel.style.fontSize = "0.75rem";
+      subLabel.style.color = "#888";
+      subLabel.style.fontWeight = "400";
+      nameCol.appendChild(subLabel);
+    }
     
     const distSpan = document.createElement("span");
     distSpan.textContent = `${score.distance}m`;
     distSpan.style.color = idx < 3 ? "#5f7bff" : "#666";
     distSpan.style.fontWeight = "700";
+    distSpan.style.flexShrink = "0";
     
-    entry.appendChild(nameSpan);
+    entry.appendChild(nameCol);
     entry.appendChild(distSpan);
     leaderboardList.appendChild(entry);
   });
@@ -5049,6 +5137,8 @@ function showLeaderboardScreen(distance) {
   finalScore.textContent = `${winnerLine}Your Score: ${travelled}m`;
   leaderboardRunCharacterId = selectedCharacter?.id || "";
   leaderboardRunCharacterName = selectedCharacter?.name || "";
+  leaderboardRunMapId = maps[currentMapIndex]?.id || "";
+  leaderboardRunMapName = maps[currentMapIndex]?.name || "";
   leaderboardViewMode = "character";
   playerNameInput.value = "";
   playerNameInput.focus();
@@ -7370,10 +7460,9 @@ submitScoreBtn.addEventListener("click", async () => {
   }
   const distance = actor.maxX - world.launchX;
   const travelled = parseFloat((distance / 10).toFixed(1));
+  // Always save locally first with full character + map metadata
+  addScoreToLeaderboard(name, distance);
   const cloudOk = await pushCloudLeaderboardEntry(name, travelled);
-  if (!cloudOk) {
-    addScoreToLeaderboard(name, distance);
-  }
   await fetchCloudLeaderboard();
   displayLeaderboard();
   submitScoreBtn.disabled = true;
@@ -7381,9 +7470,21 @@ submitScoreBtn.addEventListener("click", async () => {
   playerNameInput.value = cloudOk ? "Score submitted!" : "Saved locally (cloud sync failed)";
 });
 
-if (leaderboardModeBtn) {
-  leaderboardModeBtn.addEventListener("click", () => {
-    leaderboardViewMode = leaderboardViewMode === "character" ? "all" : "character";
+if (leaderboardCharBtn) {
+  leaderboardCharBtn.addEventListener("click", () => {
+    leaderboardViewMode = "character";
+    displayLeaderboard();
+  });
+}
+if (leaderboardMapBtn) {
+  leaderboardMapBtn.addEventListener("click", () => {
+    leaderboardViewMode = "map";
+    displayLeaderboard();
+  });
+}
+if (leaderboardAllBtn) {
+  leaderboardAllBtn.addEventListener("click", () => {
+    leaderboardViewMode = "all";
     displayLeaderboard();
   });
 }

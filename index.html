@@ -91,9 +91,10 @@
             <div id="finalScore" style="font-size: 1.5em; margin: 20px 0;"></div>
             <div id="leaderboardContainer" style="margin: 20px 0;">
               <h3 id="leaderboardTitle">Leaderboard</h3>
-              <div style="display:flex;justify-content:center;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
-                <button id="leaderboardModeBtn" class="btn btn-secondary" style="padding:8px 12px;">Show: Current Character</button>
-                <span id="leaderboardModeLabel" style="font-size:0.9rem;color:#445;">Viewing: Current Character</span>
+              <div style="display:flex;justify-content:center;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                <button id="leaderboardCharBtn" class="btn btn-secondary lb-tab lb-tab-active" style="padding:8px 14px;">🧑 Character</button>
+                <button id="leaderboardMapBtn" class="btn btn-secondary lb-tab" style="padding:8px 14px;">🗺️ This Map</button>
+                <button id="leaderboardAllBtn" class="btn btn-secondary lb-tab" style="padding:8px 14px;">🌐 All-Time</button>
               </div>
               <div id="leaderboardList" style="max-height: 300px; overflow-y: auto;"></div>
             </div>
