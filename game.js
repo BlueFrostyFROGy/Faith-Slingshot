@@ -4259,6 +4259,34 @@ function sendQueueHeartbeat() {
   });
 }
 
+function broadcastMatchFoundInvite(targetPlayerId, match, rivalName) {
+  if (!networkState.queueChannel || !targetPlayerId || !match) return;
+  const payload = {
+    type: "match-found",
+    playerId: networkState.playerId,
+    targetId: targetPlayerId,
+    name: getNetworkPlayerName(),
+    privateCode: normalizePrivateCode(networkState.privateCode),
+    roomId: match.roomId,
+    characterId: match.characterId,
+    mapIndex: match.mapIndex,
+    ts: Date.now(),
+  };
+
+  // Send multiple times to reduce missed packets when the other player is joining.
+  networkState.queueChannel.send({ type: "broadcast", event: "queue", payload });
+  setTimeout(() => {
+    if (networkState.searching || networkState.connectingRoom) {
+      networkState.queueChannel?.send({ type: "broadcast", event: "queue", payload });
+    }
+  }, 220);
+  setTimeout(() => {
+    if (networkState.searching || networkState.connectingRoom) {
+      networkState.queueChannel?.send({ type: "broadcast", event: "queue", payload });
+    }
+  }, 520);
+}
+
 function startLiveNetworkSearch() {
   if (!ensureNetworkClient()) return false;
 
@@ -4285,12 +4313,26 @@ function startLiveNetworkSearch() {
       networkState.peerId = otherId;
       networkState.connectingRoom = true;
       const match = deterministicLiveMatchFromIds(myId, otherId);
+      broadcastMatchFoundInvite(otherId, match, payload.name || "Opponent");
       if (matchmakingStatus) matchmakingStatus.textContent = `Live opponent found: ${payload.name || "Opponent"}. Joining room...`;
       joinLiveNetworkRoom(match.roomId, match.characterId, match.mapIndex, payload.name || "Opponent");
     }
 
     if (payload.type === "match-found") {
-      // Legacy path: ignored to keep deterministic v2 pairing synced.
+      if (!payload.playerId || payload.playerId === networkState.playerId) return;
+      if (payload.targetId !== networkState.playerId) return;
+      if (!isQueueCompatible(payload.privateCode)) return;
+      if (networkState.peerId || networkState.connectingRoom || networkState.roomId) return;
+
+      networkState.peerId = payload.playerId;
+      networkState.connectingRoom = true;
+      if (matchmakingStatus) matchmakingStatus.textContent = `Live opponent found: ${payload.name || "Opponent"}. Joining room...`;
+      joinLiveNetworkRoom(
+        payload.roomId || deterministicLiveMatchFromIds(networkState.playerId, payload.playerId).roomId,
+        payload.characterId || deterministicLiveMatchFromIds(networkState.playerId, payload.playerId).characterId,
+        Number.isFinite(Number(payload.mapIndex)) ? Number(payload.mapIndex) : deterministicLiveMatchFromIds(networkState.playerId, payload.playerId).mapIndex,
+        payload.name || "Opponent"
+      );
       return;
     }
   });
