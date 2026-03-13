@@ -71,6 +71,7 @@ const hudTop = document.querySelector(".hud-top");
 let authSession = null;
 let rankedCloudFetchInFlight = false;
 let rankedCloudLastFetchAt = 0;
+let authRequestInFlight = false;
 let leaderboardViewMode = "character";
 let leaderboardRunCharacterId = "";
 let leaderboardRunCharacterName = "";
@@ -4315,6 +4316,37 @@ function requireAuthenticatedAccount(actionLabel = "play") {
   return false;
 }
 
+function setAuthControlsDisabled(disabled) {
+  authRequestInFlight = !!disabled;
+  if (accountNameInput) accountNameInput.disabled = !!disabled;
+  if (accountPasswordInput) accountPasswordInput.disabled = !!disabled;
+  if (signUpBtn) signUpBtn.disabled = !!disabled;
+  if (signInBtn) signInBtn.disabled = !!disabled;
+}
+
+function getAuthErrorMessage(error) {
+  const raw = (error?.message || error?.error_description || error?.msg || "Authentication failed").toString();
+  const lower = raw.toLowerCase();
+  if (lower.includes("rate limit") || lower.includes("email rate limit") || String(error?.status || "") === "429") {
+    return "Too many account creation attempts right now. Wait 60-120 seconds, then try Create Account once.";
+  }
+  if (lower.includes("invalid login credentials")) {
+    return "Invalid login credentials. Either the account was never created, the password is wrong, or signup was blocked by rate limits.";
+  }
+  if (lower.includes("user already registered")) {
+    return "That account name already exists. Use Sign In instead.";
+  }
+  if (lower.includes("email not confirmed") || lower.includes("confirm") || lower.includes("confirmation")) {
+    return "Your Supabase project is still requiring email confirmation. Turn off Confirm email in Supabase Auth settings so account-name login works immediately.";
+  }
+  return raw;
+}
+
+function updateAccountStatusMessage(message) {
+  if (!accountStatus) return;
+  accountStatus.textContent = message;
+}
+
 function syncSignedInIdentityUI() {
   const accountName = getSessionAccountName();
   if (headToHeadNameInput) {
@@ -5594,14 +5626,20 @@ async function signUpAccount(email, password) {
     body: JSON.stringify({ email: buildAccountEmail(accountName), password, data: { account_name: accountName } }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Sign up failed");
+  if (!res.ok) {
+    const err = new Error(data?.msg || data?.error_description || "Sign up failed");
+    err.status = res.status;
+    err.payload = data;
+    throw err;
+  }
   if (data?.user && !data.user.user_metadata?.account_name) {
     data.user.user_metadata = { ...(data.user.user_metadata || {}), account_name: accountName };
   }
   if (data?.access_token) {
     saveAuthSession(data);
+    return data;
   }
-  return data;
+  throw new Error("Account created, but no session was returned. Disable email confirmation in Supabase Auth settings, then sign in again.");
 }
 
 async function signInAccount(email, password) {
@@ -5615,7 +5653,12 @@ async function signInAccount(email, password) {
     body: JSON.stringify({ email: buildAccountEmail(accountName), password }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data?.msg || data?.error_description || "Sign in failed");
+  if (!res.ok) {
+    const err = new Error(data?.msg || data?.error_description || "Sign in failed");
+    err.status = res.status;
+    err.payload = data;
+    throw err;
+  }
   if (data?.user && !data.user.user_metadata?.account_name) {
     data.user.user_metadata = { ...(data.user.user_metadata || {}), account_name: accountName };
   }
@@ -8069,6 +8112,7 @@ document.getElementById("changeCharBtn").addEventListener("click", () => {
 });
 switchMapBtn?.addEventListener("click", toggleMap);
 signUpBtn?.addEventListener("click", async () => {
+  if (authRequestInFlight) return;
   try {
     const email = accountNameInput?.value?.trim();
     const password = accountPasswordInput?.value || "";
@@ -8076,16 +8120,21 @@ signUpBtn?.addEventListener("click", async () => {
       alert("Enter an account name and password first.");
       return;
     }
-    const data = await signUpAccount(email, password);
-    if (!data?.access_token) {
-      alert("Account created. If auto-login is disabled on Supabase, sign in with the same account name and password.");
-    }
+    setAuthControlsDisabled(true);
+    updateAccountStatusMessage("Creating account...");
+    await signUpAccount(email, password);
+    updateAccountStatusMessage(`Account: ${validateAccountName(email)} (signed in, required to play)`);
   } catch (e) {
-    alert(e.message || "Sign-up failed");
+    const message = getAuthErrorMessage(e);
+    updateAccountStatusMessage(`Account issue: ${message}`);
+    alert(message || "Sign-up failed");
+  } finally {
+    setAuthControlsDisabled(false);
   }
 });
 
 signInBtn?.addEventListener("click", async () => {
+  if (authRequestInFlight) return;
   try {
     const email = accountNameInput?.value?.trim();
     const password = accountPasswordInput?.value || "";
@@ -8093,9 +8142,15 @@ signInBtn?.addEventListener("click", async () => {
       alert("Enter an account name and password first.");
       return;
     }
+    setAuthControlsDisabled(true);
+    updateAccountStatusMessage("Signing in...");
     await signInAccount(email, password);
   } catch (e) {
-    alert(e.message || "Sign-in failed");
+    const message = getAuthErrorMessage(e);
+    updateAccountStatusMessage(`Account issue: ${message}`);
+    alert(message || "Sign-in failed");
+  } finally {
+    setAuthControlsDisabled(false);
   }
 });
 
