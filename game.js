@@ -6,6 +6,9 @@ const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
 const AUTH_ACCOUNT_DOMAIN = "faithflightgame.com";
+const GAME_ACCOUNT_CREATE_RPC = "create_game_account";
+const GAME_ACCOUNT_VERIFY_RPC = "verify_game_account";
+const GAME_RANKED_UPSERT_RPC = "upsert_game_ranked_profile";
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
@@ -220,7 +223,6 @@ const NETWORK_SNAPSHOT_SECONDS = 0.09;
 const maps = [
   { id: "campus", name: "Campus" },
   { id: "town-square", name: "Town Square" },
-  { id: "stric-woods", name: "The Stric Woods" },
   { id: "long-john-silvers", name: "Long John Silvers" },
 ];
 let currentMapIndex = 0;
@@ -801,37 +803,15 @@ const JANET_BASE = {
   w: 56,
   h: 58,
   color: "#ffe0ea",
-  label: "Hugh Henderson",
+  label: "Hazard",
   fatal: true,
 };
 
-const fatalObstacleImageCandidates = [
-  "Obstacle Hugh Henderson.jpeg",
-  "Obstacle Hugh Henderson.png",
-  "Obstacle TB.png",
-  "assets/images/obstacle-hugh-henderson.png",
-  "assets/images/obstacle-hugh-henderson.jpg",
-  "assets/images/obstacle-tb.png",
-  "assets/images/obstacle-tb.jpg",
-  "assets/images/front-office.png",
-  "assets/images/front-office.jpg",
-  "assets/images/front-office-portrait.png",
-  "assets/images/front-office-portrait.jpg",
-  "assets/images/office-obstacle.png",
-  "assets/images/office-obstacle.jpg",
-  "front-office.png",
-  "front-office.jpg",
-  "office-obstacle.png",
-  "office-obstacle.jpg",
-];
+const fatalObstacleImageCandidates = [];
 
-const mikeObstacleImageCandidates = [
-  "assets/images/stricwoods/stricker.webp",
-];
+const mikeObstacleImageCandidates = [];
 
-const strickerBossImageCandidates = [
-  "assets/images/stricwoods/stricker.webp",
-];
+const strickerBossImageCandidates = [];
 
 let fatalObstacleImg = null;
 let mikeObstacleImg = null;
@@ -1290,9 +1270,6 @@ function getLjsObstaclesInRange(startX, endX) {
 }
 
 function getFatalObstaclesInRange(startX, endX) {
-  if (getCurrentMap().id === "stric-woods") {
-    return getMikesInRange(startX, endX);
-  }
   if (getCurrentMap().id === "long-john-silvers") {
     return getLjsObstaclesInRange(startX, endX);
   }
@@ -3319,7 +3296,7 @@ function collideRect(rect) {
         tone(700, 0.05, "sawtooth", 0.06);
         return;
       }
-      if (selectedCharacter.id === "samhallet" && actor.samSwimActive && actor.samSwimPassesLeft > 0 && rect.label === "Hugh Henderson") {
+      if (selectedCharacter.id === "samhallet" && actor.samSwimActive && actor.samSwimPassesLeft > 0) {
         destroyedJanets.add(rect.index);
         actor.samSwimPassesLeft -= 1;
         actor.vx = Math.max(actor.vx + 120, 260);
@@ -6234,31 +6211,6 @@ function drawBackground() {
     return;
   }
 
-  if (currentMap.id === "stric-woods") {
-    const distanceM = Math.max(0, (actor.maxX - world.launchX) / 10);
-    const pageIndex = Math.floor(distanceM / 2500) % 4;
-    const bg = stricWoodsMapImgs[pageIndex];
-
-    if (bg && bg.complete && bg.naturalWidth > 8) {
-      const drawH = canvas.height + 90;
-      const drawW = drawH * (bg.naturalWidth / bg.naturalHeight);
-      const scroll = cameraX * 0.17;
-      const offset = ((scroll % drawW) + drawW) % drawW;
-
-      for (let x = -offset - drawW; x < canvas.width + drawW; x += drawW) {
-        ctx.drawImage(bg, x, -45, drawW, drawH);
-      }
-      return;
-    }
-
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, "#1e2a23");
-    grad.addColorStop(1, "#0f1712");
-    ctx.fillStyle = grad;
-    ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
-    return;
-  }
-
   if (currentMap.id === "town-square" && townSquareMapImg && townSquareMapImg.complete && townSquareMapImg.naturalWidth > 8) {
     const drawH = canvas.height + 80;
     const drawW = drawH * (townSquareMapImg.naturalWidth / townSquareMapImg.naturalHeight);
@@ -6324,7 +6276,7 @@ function drawCloud(x, y) {
 
 function drawGround() {
   const mapId = getCurrentMap().id;
-  if (mapId === "town-square" || mapId === "stric-woods" || mapId === "long-john-silvers") {
+  if (mapId === "town-square" || mapId === "long-john-silvers") {
     return;
   }
 
@@ -6353,40 +6305,37 @@ function drawGround() {
 
 function drawMapDecor() {
   const mapId = getCurrentMap().id;
-  const isStricWoods = mapId === "stric-woods";
   const isLjs = mapId === "long-john-silvers";
 
-  if (!isStricWoods) {
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 20px Trebuchet MS";
-    const mapTitle = mapId === "town-square"
-      ? "Town Square"
-      : mapId === "long-john-silvers"
-        ? "Long John Silvers"
-      : "Faith Christian Campus (Fictional)";
-    ctx.fillText(mapTitle, 18, 35);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "bold 20px Trebuchet MS";
+  const mapTitle = mapId === "town-square"
+    ? "Town Square"
+    : mapId === "long-john-silvers"
+      ? "Long John Silvers"
+    : "Faith Christian Campus (Fictional)";
+  ctx.fillText(mapTitle, 18, 35);
 
-    const markerStep = world.markersEvery * 10;
-    const startMarkerX = Math.max(
-      world.launchX,
-      world.launchX + Math.floor((cameraX - world.launchX) / markerStep) * markerStep
-    );
-    const endMarkerX = cameraX + canvas.width + markerStep;
+  const markerStep = world.markersEvery * 10;
+  const startMarkerX = Math.max(
+    world.launchX,
+    world.launchX + Math.floor((cameraX - world.launchX) / markerStep) * markerStep
+  );
+  const endMarkerX = cameraX + canvas.width + markerStep;
 
-    for (let wx = startMarkerX; wx <= endMarkerX; wx += markerStep) {
-      const sx = wx - cameraX;
-      if (sx < -40 || sx > canvas.width + 40) continue;
-      const gy = terrainY(wx);
-      const markerMeters = Math.max(0, Math.round((wx - world.launchX) / 10));
-      ctx.strokeStyle = "#ffffff99";
-      ctx.beginPath();
-      ctx.moveTo(sx, gy - 35);
-      ctx.lineTo(sx, gy);
-      ctx.stroke();
-      ctx.fillStyle = "#ffffffcc";
-      ctx.font = "12px Trebuchet MS";
-      ctx.fillText(`${markerMeters}m`, sx - 18, gy - 40);
-    }
+  for (let wx = startMarkerX; wx <= endMarkerX; wx += markerStep) {
+    const sx = wx - cameraX;
+    if (sx < -40 || sx > canvas.width + 40) continue;
+    const gy = terrainY(wx);
+    const markerMeters = Math.max(0, Math.round((wx - world.launchX) / 10));
+    ctx.strokeStyle = "#ffffff99";
+    ctx.beginPath();
+    ctx.moveTo(sx, gy - 35);
+    ctx.lineTo(sx, gy);
+    ctx.stroke();
+    ctx.fillStyle = "#ffffffcc";
+    ctx.font = "12px Trebuchet MS";
+    ctx.fillText(`${markerMeters}m`, sx - 18, gy - 40);
   }
 
   obstacles.forEach((o) => {
@@ -6405,16 +6354,16 @@ function drawMapDecor() {
     const janetSX = fatalRect.x - cameraX;
     if (janetSX <= -fatalRect.w - 60 || janetSX >= canvas.width + 60) return;
 
-    const obstacleImg = getCurrentMap().id === "stric-woods" ? mikeObstacleImg : getCurrentMap().id === "long-john-silvers" ? ljsObstacleImg : fatalObstacleImg;
+    const obstacleImg = getCurrentMap().id === "long-john-silvers" ? ljsObstacleImg : fatalObstacleImg;
     if (obstacleImg && obstacleImg.complete && obstacleImg.naturalWidth > 10) {
       ctx.save();
-      if (!isStricWoods && !isLjs) {
+      if (!isLjs) {
         ctx.fillStyle = "#ffffffd9";
         ctx.fillRect(janetSX - 6, janetY - 6, fatalRect.w + 12, fatalRect.h + 12);
       }
       ctx.drawImage(obstacleImg, janetSX, janetY, fatalRect.w, fatalRect.h);
       ctx.restore();
-    } else if (!isStricWoods) {
+    } else if (!isLjs) {
       ctx.fillStyle = fatalRect.color;
       ctx.fillRect(janetSX, janetY, fatalRect.w, fatalRect.h);
       ctx.fillStyle = "#8f4f64";
@@ -6427,7 +6376,7 @@ function drawMapDecor() {
       ctx.fillText("!", janetSX + fatalRect.w / 2, janetY + 54);
       ctx.textAlign = "start";
     }
-    if (!isStricWoods && !isLjs) {
+    if (!isLjs) {
       ctx.fillStyle = "#8f3f5b";
       ctx.font = "bold 13px Trebuchet MS";
       ctx.fillText(fatalRect.label, janetSX + 4, janetY - 8);
@@ -7886,25 +7835,8 @@ function preloadCharacterImages() {
     c._img = img;
   });
 
-  fatalObstacleImg = new Image();
-  let fatalIndex = 0;
-  fatalObstacleImg.onerror = () => {
-    fatalIndex += 1;
-    if (fatalIndex < fatalObstacleImageCandidates.length) {
-      fatalObstacleImg.src = fatalObstacleImageCandidates[fatalIndex];
-    }
-  };
-  fatalObstacleImg.src = fatalObstacleImageCandidates[fatalIndex];
-
-  mikeObstacleImg = new Image();
-  let mikeIdx = 0;
-  mikeObstacleImg.onerror = () => {
-    mikeIdx += 1;
-    if (mikeIdx < mikeObstacleImageCandidates.length) {
-      mikeObstacleImg.src = buildSiteAssetUrl(mikeObstacleImageCandidates[mikeIdx]);
-    }
-  };
-  mikeObstacleImg.src = buildSiteAssetUrl(mikeObstacleImageCandidates[mikeIdx]);
+  fatalObstacleImg = null;
+  mikeObstacleImg = null;
 
   ljsObstacleImg = new Image();
   let ljsObstacleIdx = 0;
@@ -7926,15 +7858,7 @@ function preloadCharacterImages() {
   };
   ljsProjectileImg.src = ljsProjectileImageCandidates[ljsProjectileIdx];
 
-  strickerBossImg = new Image();
-  let strickerIdx = 0;
-  strickerBossImg.onerror = () => {
-    strickerIdx += 1;
-    if (strickerIdx < strickerBossImageCandidates.length) {
-      strickerBossImg.src = buildSiteAssetUrl(strickerBossImageCandidates[strickerIdx]);
-    }
-  };
-  strickerBossImg.src = buildSiteAssetUrl(strickerBossImageCandidates[strickerIdx]);
+  strickerBossImg = null;
 
   spencerBombImg = new Image();
   let bombIndex = 0;
@@ -8168,18 +8092,7 @@ function preloadCharacterImages() {
   longJohnSilversMapImg = null;
   loadLongJohnSilversMapFromPdf();
 
-  stricWoodsMapImgs = stricWoodsMapImageCandidates.map((candidates) => {
-    const img = new Image();
-    let idx = 0;
-    img.onerror = () => {
-      idx += 1;
-      if (idx < candidates.length) {
-        img.src = buildSiteAssetUrl(candidates[idx]);
-      }
-    };
-    img.src = buildSiteAssetUrl(candidates[idx]);
-    return img;
-  });
+  stricWoodsMapImgs = [];
 
   candyImgs.length = 0;
   candyImageCandidates.forEach((path) => {
