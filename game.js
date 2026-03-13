@@ -4,7 +4,7 @@ const AUTH_SESSION_KEY = "faith-flight-auth-session";
 const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
-const AUTH_ACCOUNT_DOMAIN = "faithflight.local";
+const AUTH_ACCOUNT_DOMAIN = "faithflightgame.com";
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
@@ -945,6 +945,7 @@ const myerPotGoldImageCandidates = [
 ];
 
 const jjNeedleImageCandidates = [
+  "characters props/JJs Creatine.webp",
   "JJs Creatine.webp",
   "characters props/JJFOOTBALLBOSSNEEDLE.png",
   "JJFOOTBALLBOSSNEEDLE.png",
@@ -997,8 +998,8 @@ const evanBasketballImageCandidates = [
 ];
 
 const nathanTacomaImageCandidates = [
-  "Nathans Tacoma.png",
   "characters props/Nathans Tacoma.png",
+  "Nathans Tacoma.png",
   "characters props/Nathan Tacoma.png",
   "characters props/Nate Tacoma.png",
   "characters props/Nathans Truck.png",
@@ -1009,9 +1010,9 @@ const nathanTacomaImageCandidates = [
 ];
 
 const nathanGasImageCandidates = [
+  "characters props/Nathans Fuel.png",
   "Nathans Fuel.png",
   "characters props/Nathans Gas.png",
-  "characters props/Nathans Fuel.png",
   "characters props/Nathan Gas.png",
   "characters props/Nate Gas.png",
   "characters props/Nathans Gas Can.png",
@@ -1029,8 +1030,8 @@ const travisCraddleImageCandidates = [
 ];
 
 const nathanTrumpImageCandidates = [
-  "Nathans Trumps.png",
   "characters props/Nathans Trumps.png",
+  "Nathans Trumps.png",
   "characters props/Nathan Trumps.png",
   "characters props/Nate Trumps.png",
   "characters props/Trumps.png",
@@ -1040,8 +1041,8 @@ const nathanTrumpImageCandidates = [
 ];
 
 const nathanJetImageCandidates = [
-  "Nathans Jet.png",
   "characters props/Nathans Jet.png",
+  "Nathans Jet.png",
   "characters props/Nathan Jet.png",
   "characters props/Nate Jet.png",
   "characters props/Jet.png",
@@ -1051,9 +1052,10 @@ const nathanJetImageCandidates = [
 ];
 
 const nathanBombImageCandidates = [
+  "characters props/Nathans Jets Bomb.png",
   "Nathans Jets Bomb.png",
-  "Nathans Bomb.png",
   "characters props/Nathans Bomb.png",
+  "Nathans Bomb.png",
   "characters props/Nathan Bomb.png",
   "characters props/Nate Bomb.png",
   "characters props/Bomb.png",
@@ -1063,8 +1065,8 @@ const nathanBombImageCandidates = [
 ];
 
 const nathanFlagImageCandidates = [
-  "Nathans Flag.png",
   "characters props/Nathans Flag.png",
+  "Nathans Flag.png",
   "characters props/Nathan Flag.png",
   "characters props/American Flag.png",
   "characters props/US Flag.png",
