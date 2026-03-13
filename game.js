@@ -202,6 +202,7 @@ const maps = [
 let currentMapIndex = 0;
 let townSquareMapImg = null;
 let stricWoodsMapImgs = [];
+let longJohnSilversMapImg = null;
 const townSquareMapImageCandidates = [
   "Map 2 (Town Sqaure).png",
   "Map 2 (Town Square).png",
@@ -212,6 +213,12 @@ const stricWoodsMapImageCandidates = [
   ["assets/images/stricwoods/page2.png"],
   ["assets/images/stricwoods/page3.png"],
   ["assets/images/stricwoods/page4.png"],
+];
+const longJohnSilversMapImageCandidates = [
+  "Long John Silvers Map.png",
+  "Long John Silvers Map.jpg",
+  "Long John Silvers Map.webp",
+  "Long John Silvers Map.pdf",
 ];
 
 const ljsObstacleImageCandidates = [
@@ -5422,7 +5429,7 @@ function getCharacterImageCandidates(character) {
     return ["characters/JJFOOTBALLBOSS.png", "characters/JJFOOTBALLBOSS.jpg"];
   }
   if (character.id === "nathan") {
-    return ["Nathan.png", "characters/Nate.png"];
+    return ["characters/Nathan.png", "Nathan.png"];
   }
   if (character.id === "traviswilliams") {
     return ["characters/Travis Williams.png", "Travis Williams.png"];
@@ -5464,30 +5471,19 @@ function drawBackground() {
   const currentMap = getCurrentMap();
 
   if (currentMap.id === "long-john-silvers") {
-    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    grad.addColorStop(0, "#ffd59a");
-    grad.addColorStop(0.42, "#ffb06a");
-    grad.addColorStop(0.72, "#4db4d7");
-    grad.addColorStop(1, "#146d8c");
-    ctx.fillStyle = grad;
-    ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
+    const bg = longJohnSilversMapImg;
+    if (bg && bg.complete && bg.naturalWidth > 8) {
+      const drawH = canvas.height + 90;
+      const drawW = drawH * (bg.naturalWidth / bg.naturalHeight);
+      const scroll = cameraX * 0.18;
+      const offset = ((scroll % drawW) + drawW) % drawW;
 
-    ctx.fillStyle = "#fff3b1";
-    ctx.beginPath();
-    ctx.arc(canvas.width - 110, 92, 54, 0, Math.PI * 2);
-    ctx.fill();
-
-    for (let i = 0; i < 5; i += 1) {
-      const y = canvas.height * 0.58 + i * 18;
-      ctx.strokeStyle = `rgba(255,255,255,${0.16 - i * 0.02})`;
-      ctx.lineWidth = 6 - i * 0.7;
-      ctx.beginPath();
-      for (let x = -40; x <= canvas.width + 40; x += 24) {
-        const waveY = y + Math.sin((x + cameraX * 0.3) * 0.02 + i) * 7;
-        if (x === -40) ctx.moveTo(x, waveY);
-        else ctx.lineTo(x, waveY);
+      for (let x = -offset - drawW; x < canvas.width + drawW; x += drawW) {
+        ctx.drawImage(bg, x, -45, drawW, drawH);
       }
-      ctx.stroke();
+    } else {
+      ctx.fillStyle = "#0f1115";
+      ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
     }
     return;
   }
@@ -7415,6 +7411,16 @@ function preloadCharacterImages() {
     }
   };
   townSquareMapImg.src = townSquareMapImageCandidates[townSquareIdx];
+
+  longJohnSilversMapImg = new Image();
+  let longJohnSilversMapIdx = 0;
+  longJohnSilversMapImg.onerror = () => {
+    longJohnSilversMapIdx += 1;
+    if (longJohnSilversMapIdx < longJohnSilversMapImageCandidates.length) {
+      longJohnSilversMapImg.src = longJohnSilversMapImageCandidates[longJohnSilversMapIdx];
+    }
+  };
+  longJohnSilversMapImg.src = longJohnSilversMapImageCandidates[longJohnSilversMapIdx];
 
   stricWoodsMapImgs = stricWoodsMapImageCandidates.map((candidates) => {
     const img = new Image();
