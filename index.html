@@ -33,8 +33,16 @@
         <section id="menuScreen" class="overlay active">
           <div class="panel">
             <h2>Launch Day</h2>
-            <p>Pick a Faith Student, set angle and power, then launch from the catapult.</p>
-            <input id="headToHeadNameInput" class="headtohead-name-input" type="text" maxlength="16" placeholder="Enter your name for Head to Head" />
+            <p>Create or sign into an account with just an account name and password to play.</p>
+            <div id="accountForm" style="margin: 14px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center;">
+              <input id="accountEmailInput" type="text" maxlength="16" placeholder="Account name" style="padding: 10px; border: 2px solid #dce4ff; border-radius: 8px;" />
+              <input id="accountPasswordInput" type="password" placeholder="Password" style="padding: 10px; border: 2px solid #dce4ff; border-radius: 8px;" />
+              <button id="signUpBtn" class="btn btn-secondary">Create Account</button>
+              <button id="signInBtn" class="btn btn-secondary">Sign In</button>
+              <button id="signOutBtn" class="btn btn-secondary">Sign Out</button>
+            </div>
+            <div id="accountStatus" style="font-size: 0.9rem; color: #445; margin-bottom: 10px;">Account: Guest</div>
+            <input id="headToHeadNameInput" class="headtohead-name-input" type="text" maxlength="16" placeholder="Signed-in account name" />
             <input id="privateMatchCodeInput" class="headtohead-name-input" type="text" maxlength="10" placeholder="Private match code (optional)" />
             <div class="actions">
               <button id="toSelectBtn" class="btn btn-primary">Start</button>
@@ -103,14 +111,6 @@
               <h3 style="margin: 0 0 8px;">🏆 Ranked Leaderboard</h3>
               <div id="rankedLeaderboardList" style="max-height: 180px; overflow-y: auto; border: 1px solid #dfe6ff; border-radius: 10px; background: #ffffffcc;"></div>
             </div>
-            <div id="accountForm" style="margin: 14px 0; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center;">
-              <input id="accountEmailInput" type="email" placeholder="Email" style="padding: 10px; border: 2px solid #dce4ff; border-radius: 8px;" />
-              <input id="accountPasswordInput" type="password" placeholder="Password" style="padding: 10px; border: 2px solid #dce4ff; border-radius: 8px;" />
-              <button id="signUpBtn" class="btn btn-secondary">Sign Up</button>
-              <button id="signInBtn" class="btn btn-secondary">Sign In</button>
-              <button id="signOutBtn" class="btn btn-secondary">Sign Out</button>
-            </div>
-            <div id="accountStatus" style="font-size: 0.9rem; color: #445; margin-bottom: 10px;">Account: Guest</div>
             <div id="submitForm" style="margin: 20px 0;">
               <input id="playerNameInput" type="text" placeholder="Enter your name" maxlength="20" />
               <button id="submitScoreBtn" class="btn btn-primary">Submit Score</button>
@@ -125,6 +125,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="game.js?v=20260313-mobile10"></script>
+    <script src="game.js?v=20260313-account-ranks1"></script>
   </body>
 </html>

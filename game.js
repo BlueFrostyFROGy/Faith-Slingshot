@@ -4,6 +4,7 @@ const AUTH_SESSION_KEY = "faith-flight-auth-session";
 const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
+const AUTH_ACCOUNT_DOMAIN = "faithflight.local";
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
@@ -59,6 +60,7 @@ const leaderboardCharBtn = document.getElementById("leaderboardCharBtn");
 const leaderboardMapBtn = document.getElementById("leaderboardMapBtn");
 const leaderboardAllBtn = document.getElementById("leaderboardAllBtn");
 const accountEmailInput = document.getElementById("accountEmailInput");
+const accountNameInput = accountEmailInput;
 const accountPasswordInput = document.getElementById("accountPasswordInput");
 const signUpBtn = document.getElementById("signUpBtn");
 const signInBtn = document.getElementById("signInBtn");
@@ -75,6 +77,19 @@ let leaderboardRunCharacterName = "";
 let leaderboardRunMapId = "";
 let leaderboardRunMapName = "";
 const headToHeadRivals = ["Riley", "Jordan", "Blake", "Avery", "Parker", "Casey", "Logan", "Sky", "Taylor"];
+const AIR_FORCE_RANKS = [
+  { name: "Airman Basic", code: "AB/E-1", minRating: 1000 },
+  { name: "Airman", code: "Amn/E-2", minRating: 1075 },
+  { name: "Airman First Class", code: "A1C/E-3", minRating: 1150 },
+  { name: "Senior Airman", code: "SrA/E-4", minRating: 1225 },
+  { name: "Staff Sergeant", code: "SSgt/E-5", minRating: 1300 },
+  { name: "Technical Sergeant", code: "TSgt/E-6", minRating: 1400 },
+  { name: "Master Sergeant", code: "MSgt/E-7", minRating: 1500 },
+  { name: "Senior Master Sergeant", code: "SMSgt/E-8", minRating: 1625 },
+  { name: "Chief Master Sergeant", code: "CMSgt/E-9", minRating: 1750 },
+  { name: "Command Chief Master Sergeant", code: "CCM/E-9S", minRating: 1900 },
+  { name: "Chief Master Sergeant of the Air Force", code: "CMSAF/E-9S", minRating: 2100 },
+];
 
 const headToHeadState = {
   mode: "idle", // idle | searching | roulette | active
@@ -190,8 +205,8 @@ const TRAVIS_CRADDLES_FOR_LAUNCH = 10;
 const TRAVIS_LAUNCH_FORWARD_METERS = 300;
 const SAM_DUMBBELLS_PER_BENCH = 5;
 const SAM_BENCH_VISIBLE_SECONDS = 8;
-const SAM_SWIM_ACTIVE_SECONDS = 3.2;
-const SAM_JUMP_REGEN_SECONDS = 7;
+const SAM_SWIM_ACTIVE_SECONDS = 4.0;
+const SAM_JUMP_REGEN_SECONDS = 5.2;
 const EVAN_BASKETBALL_COOLDOWN = 5;
 const OWEN_MILKS_PER_LIFE = 5;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
@@ -580,15 +595,15 @@ const characters = [
     id: "samhallet",
     name: "Sam Hallet",
     trait: "Bench press swimmer",
-    bio: "Slower mover with high bounce. Collect dumbbells. Every 5 dumbbells spawns a temporary bench press. Hit bench for +1 swim charge and +1 Hugh pass per swim. Double-Space jump regenerates every 7s.",
+    bio: "Balanced mover with high bounce. Collect dumbbells. Every 5 dumbbells spawns a temporary bench press. Hit bench for +1 swim charge and +1 Hugh pass per swim. Double-Space jump regenerates quickly.",
     imageBase: "Sam Hallet",
     initials: "SH",
-    mass: 1.32,
+    mass: 1.22,
     radius: 29,
-    drag: 0.135,
-    bounce: 0.74,
-    gravityMult: 1.01,
-    launchBoost: 0.97,
+    drag: 0.118,
+    bounce: 0.78,
+    gravityMult: 0.97,
+    launchBoost: 1.04,
     unlockAt: 0,
     ability: "samswim",
   },
@@ -3035,9 +3050,9 @@ function useAbility() {
       actor.samSwimActive = true;
       actor.samSwimTimer = SAM_SWIM_ACTIVE_SECONDS;
       actor.samSwimPassesLeft = Math.max(1, actor.samSwimPerTurn);
-      actor.abilityCooldown = 1.2;
-      actor.vx += 120;
-      actor.vy -= 70;
+      actor.abilityCooldown = 0.9;
+      actor.vx += 170;
+      actor.vy -= 110;
       tone(300, 0.08, "triangle", 0.08);
       tone(460, 0.06, "triangle", 0.07);
       spawnParticles(actor.x, actor.y, 24, "#bde7ff");
@@ -3150,8 +3165,8 @@ function useSamJump() {
 
   actor.samJumpCharges -= 1;
   actor.samJumpRegenTimer = SAM_JUMP_REGEN_SECONDS;
-  actor.vy -= 620;
-  actor.vx += 90;
+  actor.vy -= 700;
+  actor.vx += 120;
   spawnParticles(actor.x, actor.y, 18, "#d6f0ff");
   tone(560, 0.06, "triangle", 0.07);
   tone(760, 0.05, "triangle", 0.06);
@@ -3640,7 +3655,7 @@ function update(dt) {
 
       if (actor.samSwimActive) {
         actor.samSwimTimer = Math.max(0, actor.samSwimTimer - dt);
-        actor.vx += 34 * dt;
+        actor.vx += 48 * dt;
         if (Math.random() < 0.4) spawnParticles(actor.x - actor.radius * 0.4, actor.y, 2, "#9ad8ff");
         if (actor.samSwimTimer <= 0 || actor.samSwimPassesLeft <= 0) {
           actor.samSwimActive = false;
@@ -4237,9 +4252,9 @@ function refreshHeadToHeadLocks() {
 }
 
 function getNetworkPlayerName() {
+  const accountName = getSessionAccountName();
+  if (accountName) return accountName;
   if (networkState.displayName) return networkState.displayName;
-  const email = authSession?.user?.email;
-  if (email && email.includes("@")) return email.split("@")[0].slice(0, 16);
   return `Player-${networkState.playerId.slice(-4)}`;
 }
 
@@ -4249,6 +4264,92 @@ function normalizeRankedName(name) {
     .trim()
     .slice(0, 16)
     .toLowerCase();
+}
+
+function normalizeAccountName(name) {
+  return (name || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]/g, "")
+    .slice(0, 16);
+}
+
+function validateAccountName(name) {
+  const normalized = normalizeAccountName(name);
+  if (normalized.length < 3) {
+    throw new Error("Account names must be 3-16 characters using letters, numbers, dots, dashes, or underscores.");
+  }
+  return normalized;
+}
+
+function buildAccountEmail(accountName) {
+  return `${validateAccountName(accountName)}@${AUTH_ACCOUNT_DOMAIN}`;
+}
+
+function getSessionAccountName(session = authSession) {
+  const metadataName = session?.user?.user_metadata?.account_name;
+  if (metadataName) return metadataName.toString().slice(0, 16);
+  const email = session?.user?.email;
+  if (email && email.includes("@")) return email.split("@")[0].slice(0, 16);
+  return "";
+}
+
+function getAuthenticatedRankedKey() {
+  const id = authSession?.user?.id;
+  return id ? `uid:${id}` : "";
+}
+
+function getDefaultRankedDisplayName() {
+  const accountName = getSessionAccountName();
+  if (accountName) return accountName;
+  return `Player-${networkState.playerId.slice(-4)}`;
+}
+
+function requireAuthenticatedAccount(actionLabel = "play") {
+  if (authSession?.user?.id) return true;
+  alert(`You need to create or sign into an account with an account name and password before you can ${actionLabel}.`);
+  accountNameInput?.focus();
+  return false;
+}
+
+function syncSignedInIdentityUI() {
+  const accountName = getSessionAccountName();
+  if (headToHeadNameInput) {
+    headToHeadNameInput.value = accountName;
+    headToHeadNameInput.disabled = true;
+  }
+  if (playerNameInput && accountName) {
+    playerNameInput.value = accountName;
+  }
+}
+
+function clearSignedInIdentityUI() {
+  if (headToHeadNameInput) {
+    headToHeadNameInput.value = "";
+    headToHeadNameInput.disabled = true;
+  }
+}
+
+function getRankedLocalIdentity(preferredName) {
+  const chosenDisplay = (preferredName || "").toString().trim().slice(0, 16);
+  const authKey = getAuthenticatedRankedKey();
+  if (authKey) {
+    return {
+      key: authKey,
+      cloudName: authKey,
+      displayName: chosenDisplay || getDefaultRankedDisplayName(),
+      authenticated: true,
+    };
+  }
+
+  const fallback = chosenDisplay || getDefaultRankedDisplayName();
+  return {
+    key: `guest:${normalizeRankedName(fallback)}`,
+    cloudName: fallback,
+    displayName: fallback,
+    authenticated: false,
+  };
 }
 
 function loadHeadToHeadRankings() {
@@ -4265,33 +4366,65 @@ function saveHeadToHeadRankings(data) {
   localStorage.setItem(H2H_RANKINGS_KEY, JSON.stringify(data || {}));
 }
 
-function getOrCreateHeadToHeadProfile(data, playerName) {
-  const key = normalizeRankedName(playerName);
+function getOrCreateHeadToHeadProfile(data, playerName, options = {}) {
+  const identity = options.isLocalPlayer ? getRankedLocalIdentity(playerName) : null;
+  const key = identity
+    ? identity.key
+    : ((playerName || "Player").toString().startsWith("uid:")
+      ? (playerName || "Player").toString()
+      : normalizeRankedName(playerName));
   if (!data[key]) {
     data[key] = {
-      name: (playerName || "Player").toString().slice(0, 16),
+      key,
+      name: identity ? identity.cloudName : (playerName || "Player").toString().slice(0, 64),
+      displayName: identity ? identity.displayName : (playerName || "Player").toString().slice(0, 16),
       wins: 0,
       losses: 0,
       draws: 0,
       matches: 0,
       rating: 1000,
+      peakRating: 1000,
       bestWinMargin: 0,
     };
+  } else if (identity) {
+    data[key].key = key;
+    data[key].name = identity.cloudName;
+    data[key].displayName = identity.displayName;
+  } else {
+    if (!data[key].key) data[key].key = key;
+    if (!data[key].displayName) {
+      data[key].displayName = (data[key].name || playerName || "Player").toString().slice(0, 16);
+    }
+  }
+  const parsedRating = Number.isFinite(Number(data[key].rating)) ? Number(data[key].rating) : 1000;
+  data[key].rating = parsedRating;
+  if (!Number.isFinite(Number(data[key].peakRating))) {
+    data[key].peakRating = parsedRating;
   }
   return data[key];
 }
 
 function getRankTierFromRating(rating) {
-  if (rating >= 1500) return "Diamond";
-  if (rating >= 1300) return "Platinum";
-  if (rating >= 1150) return "Gold";
-  if (rating >= 1000) return "Silver";
-  return "Bronze";
+  const numericRating = Number(rating) || 0;
+  let currentRank = AIR_FORCE_RANKS[0];
+  AIR_FORCE_RANKS.forEach((rank) => {
+    if (numericRating >= rank.minRating) currentRank = rank;
+  });
+  return `${currentRank.name} (${currentRank.code})`;
+}
+
+function getRankFloorFromPeakRating(peakRating) {
+  const numericPeak = Number(peakRating) || 0;
+  let floor = AIR_FORCE_RANKS[0].minRating;
+  AIR_FORCE_RANKS.forEach((rank) => {
+    if (numericPeak >= rank.minRating) floor = rank.minRating;
+  });
+  return floor;
 }
 
 function getHeadToHeadProfileSummary(playerName) {
   const data = loadHeadToHeadRankings();
-  const p = getOrCreateHeadToHeadProfile(data, playerName);
+  const p = getOrCreateHeadToHeadProfile(data, playerName, { isLocalPlayer: true });
   const tier = getRankTierFromRating(p.rating);
   return `${tier} ${Math.round(p.rating)} • W:${p.wins} L:${p.losses} D:${p.draws}`;
 }
@@ -4303,7 +4436,7 @@ async function fetchCloudHeadToHeadRankings(force = false) {
 
   rankedCloudFetchInFlight = true;
   try {
-    const fullUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?select=player_name,rating,wins,losses,draws,matches,best_win_margin,updated_at&order=rating.desc&limit=200`;
+    const fullUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?select=player_key,player_name,display_name,rating,peak_rating,wins,losses,draws,matches,best_win_margin,updated_at&order=rating.desc&limit=200`;
     const basicUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?select=player_name,rating,wins,losses&order=rating.desc&limit=200`;
     const minimalUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?select=player_name,rating&order=rating.desc&limit=200`;
 
@@ -4322,15 +4455,25 @@ async function fetchCloudHeadToHeadRankings(force = false) {
 
     const local = loadHeadToHeadRankings();
     rows.forEach((r) => {
-      const name = (r.player_name || "Player").toString().slice(0, 16);
-      const key = normalizeRankedName(name);
+      const cloudName = (r.player_name || "Player").toString().slice(0, 64);
+      const key = (r.player_key || "").toString().trim()
+        || (cloudName.startsWith("uid:") ? cloudName : normalizeRankedName(cloudName));
+      const existing = local[key];
+      const rating = Number.isFinite(Number(r.rating)) ? Number(r.rating) : 1000;
       local[key] = {
-        name,
-        rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 1000,
+        key,
+        name: cloudName,
+        displayName: (r.display_name || existing?.displayName || cloudName).toString().slice(0, 16),
+        rating,
         wins: Number.isFinite(Number(r.wins)) ? Number(r.wins) : 0,
         losses: Number.isFinite(Number(r.losses)) ? Number(r.losses) : 0,
         draws: Number.isFinite(Number(r.draws)) ? Number(r.draws) : 0,
         matches: Number.isFinite(Number(r.matches)) ? Number(r.matches) : 0,
+        peakRating: Math.max(
+          rating,
+          Number.isFinite(Number(r.peak_rating)) ? Number(r.peak_rating) : 0,
+          Number.isFinite(Number(existing?.peakRating)) ? Number(existing.peakRating) : 0,
+        ),
         bestWinMargin: Number.isFinite(Number(r.best_win_margin)) ? Number(r.best_win_margin) : 0,
       };
     });
@@ -4348,7 +4491,11 @@ async function fetchCloudHeadToHeadRankings(force = false) {
 async function pushCloudHeadToHeadProfile(profile) {
   if (!profile) return false;
   try {
-    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?on_conflict=player_name`;
+    const key = (profile.key || profile.name || "").toString().slice(0, 64);
+    const cloudName = (profile.name || "Player").toString().slice(0, 64);
+    const displayName = (profile.displayName || getNetworkPlayerName()).toString().slice(0, 16);
+    const urlByKey = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?on_conflict=player_key`;
+    const urlByName = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?on_conflict=player_name`;
     const headers = {
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${getAuthToken()}`,
@@ -4357,8 +4504,11 @@ async function pushCloudHeadToHeadProfile(profile) {
     };
 
     const fullBody = JSON.stringify({
-      player_name: (profile.name || "Player").toString().slice(0, 16),
+      player_key: key,
+      player_name: cloudName,
+      display_name: displayName,
       rating: Math.round(Number(profile.rating) || 1000),
+      peak_rating: Math.round(Number(profile.peakRating) || Number(profile.rating) || 1000),
       wins: Number(profile.wins) || 0,
       losses: Number(profile.losses) || 0,
       draws: Number(profile.draws) || 0,
@@ -4367,19 +4517,22 @@ async function pushCloudHeadToHeadProfile(profile) {
       updated_at: new Date().toISOString(),
     });
     const basicBody = JSON.stringify({
-      player_name: (profile.name || "Player").toString().slice(0, 16),
+      player_key: key,
+      player_name: cloudName,
+      display_name: displayName,
       rating: Math.round(Number(profile.rating) || 1000),
       wins: Number(profile.wins) || 0,
       losses: Number(profile.losses) || 0,
     });
     const minimalBody = JSON.stringify({
-      player_name: (profile.name || "Player").toString().slice(0, 16),
+      player_name: cloudName,
       rating: Math.round(Number(profile.rating) || 1000),
     });
 
-    let res = await fetch(url, { method: "POST", headers, body: fullBody });
-    if (!res.ok) res = await fetch(url, { method: "POST", headers, body: basicBody });
-    if (!res.ok) res = await fetch(url, { method: "POST", headers, body: minimalBody });
+    let res = await fetch(urlByKey, { method: "POST", headers, body: fullBody });
+    if (!res.ok) res = await fetch(urlByName, { method: "POST", headers, body: fullBody });
+    if (!res.ok) res = await fetch(urlByName, { method: "POST", headers, body: basicBody });
+    if (!res.ok) res = await fetch(urlByName, { method: "POST", headers, body: minimalBody });
     return res.ok;
   } catch (e) {
     console.error("pushCloudHeadToHeadProfile error:", e);
@@ -4389,13 +4542,16 @@ async function pushCloudHeadToHeadProfile(profile) {
 
 function applyHeadToHeadRankedResult(localName, rivalName, outcome, marginMeters) {
   const data = loadHeadToHeadRankings();
-  const localProfile = getOrCreateHeadToHeadProfile(data, localName);
+  const localProfile = getOrCreateHeadToHeadProfile(data, localName, { isLocalPlayer: true });
   const rivalProfile = getOrCreateHeadToHeadProfile(data, rivalName || "Opponent");
 
   const expected = 1 / (1 + (10 ** ((rivalProfile.rating - localProfile.rating) / 400)));
   const score = outcome > 0 ? 1 : outcome < 0 ? 0 : 0.5;
   const k = 24;
   localProfile.rating = Math.max(100, Math.round(localProfile.rating + k * (score - expected)));
+  localProfile.peakRating = Math.max(Number(localProfile.peakRating) || 1000, Number(localProfile.rating) || 1000);
+  const rankFloor = getRankFloorFromPeakRating(localProfile.peakRating);
+  localProfile.rating = Math.max(rankFloor, localProfile.rating);
 
   localProfile.matches += 1;
   if (outcome > 0) {
@@ -4708,12 +4864,17 @@ function stopLiveNetworkSession() {
 }
 
 function beginHeadToHeadSearch(options = {}) {
-  const enteredName = (headToHeadNameInput?.value || "").trim();
-  if (!enteredName) {
-    alert("Type your name before searching for a head-to-head match.");
-    headToHeadNameInput?.focus();
+  if (!authSession?.user?.id) {
+    alert("Ranked head-to-head now requires a claimed account. Create or sign into an account name + password first.");
     return;
   }
+
+  const enteredName = getSessionAccountName().slice(0, 16);
+  if (!enteredName) {
+    alert("Sign into your account before searching for a head-to-head match.");
+    return;
+  }
+  if (headToHeadNameInput) headToHeadNameInput.value = enteredName;
   networkState.displayName = enteredName.slice(0, 16);
   localStorage.setItem("faith-h2h-name", networkState.displayName);
 
@@ -5390,10 +5551,13 @@ function getAuthToken() {
 
 function updateAccountUI() {
   if (!accountStatus) return;
-  if (authSession?.user?.email) {
-    accountStatus.textContent = `Account: ${authSession.user.email}`;
+  const accountName = getSessionAccountName();
+  if (authSession?.user?.id && accountName) {
+    accountStatus.textContent = `Account: ${accountName} (signed in, required to play)`;
+    syncSignedInIdentityUI();
   } else {
-    accountStatus.textContent = "Account: Guest";
+    accountStatus.textContent = "Account: Guest (create or sign in to play)";
+    clearSignedInIdentityUI();
   }
 }
 
@@ -5412,19 +5576,26 @@ function saveAuthSession(session) {
   if (session) localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
   else localStorage.removeItem(AUTH_SESSION_KEY);
   updateAccountUI();
+  if (session?.user?.id) {
+    fetchCloudHeadToHeadRankings(true).then(() => renderRankedLeaderboard());
+  }
 }
 
 async function signUpAccount(email, password) {
+  const accountName = validateAccountName(email);
   const res = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: buildAccountEmail(accountName), password, data: { account_name: accountName } }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.msg || data?.error_description || "Sign up failed");
+  if (data?.user && !data.user.user_metadata?.account_name) {
+    data.user.user_metadata = { ...(data.user.user_metadata || {}), account_name: accountName };
+  }
   if (data?.access_token) {
     saveAuthSession(data);
   }
@@ -5432,22 +5603,27 @@ async function signUpAccount(email, password) {
 }
 
 async function signInAccount(email, password) {
+  const accountName = validateAccountName(email);
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_ANON_KEY,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: buildAccountEmail(accountName), password }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.msg || data?.error_description || "Sign in failed");
+  if (data?.user && !data.user.user_metadata?.account_name) {
+    data.user.user_metadata = { ...(data.user.user_metadata || {}), account_name: accountName };
+  }
   saveAuthSession(data);
   return data;
 }
 
 function signOutAccount() {
   saveAuthSession(null);
+  networkState.displayName = "";
 }
 
 function addScoreToLeaderboard(playerName, distance) {
@@ -5689,6 +5865,19 @@ function getRankedLeaderboardEntries(limit = 10) {
     .slice(0, limit);
 }
 
+function getRankedDisplayName(entry) {
+  if (!entry || typeof entry !== "object") return "Player";
+  const explicit = (entry.displayName || "").toString().trim();
+  if (explicit) return explicit.slice(0, 16);
+
+  const raw = (entry.name || "Player").toString();
+  if (raw.startsWith("uid:")) {
+    const id = raw.slice(4);
+    return `Account-${id.slice(0, 4)}${id.length > 8 ? `…${id.slice(-4)}` : ""}`;
+  }
+  return raw.slice(0, 16);
+}
+
 function renderRankedLeaderboard() {
   if (!rankedLeaderboardList) return;
   fetchCloudHeadToHeadRankings(false).then((synced) => {
@@ -5714,7 +5903,7 @@ function renderRankedLeaderboard() {
     const left = document.createElement("div");
     const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
     const tier = getRankTierFromRating(Number(entry.rating) || 0);
-    left.textContent = `${medal} ${idx + 1}. ${(entry.name || "Player").toString().slice(0, 16)} (${tier})`;
+    left.textContent = `${medal} ${idx + 1}. ${getRankedDisplayName(entry)} (${tier})`;
 
     const right = document.createElement("div");
     right.style.fontWeight = "700";
@@ -7861,17 +8050,14 @@ powerSlider.addEventListener("input", () => {
   powerLabel.textContent = `${powerSlider.value}`;
 });
 
-toSelectBtn.addEventListener("click", showCharacterSelect);
+toSelectBtn.addEventListener("click", () => {
+  if (!requireAuthenticatedAccount("play")) return;
+  showCharacterSelect();
+});
 headToHeadBtn?.addEventListener("click", beginHeadToHeadSearch);
 privateHeadToHeadBtn?.addEventListener("click", () => beginHeadToHeadSearch({ requirePrivate: true }));
 hudHeadToHeadBtn?.addEventListener("click", () => {
-  const hasName = !!(headToHeadNameInput?.value || "").trim();
-  if (!hasName) {
-    const typed = window.prompt("Enter your name for Head to Head:", "") || "";
-    const clean = typed.trim().slice(0, 16);
-    if (!clean) return;
-    if (headToHeadNameInput) headToHeadNameInput.value = clean;
-  }
+  if (!requireAuthenticatedAccount("enter head-to-head")) return;
   beginHeadToHeadSearch();
 });
 cancelMatchmakingBtn?.addEventListener("click", cancelHeadToHeadSearch);
@@ -7882,15 +8068,15 @@ document.getElementById("changeCharBtn").addEventListener("click", () => {
 switchMapBtn?.addEventListener("click", toggleMap);
 signUpBtn?.addEventListener("click", async () => {
   try {
-    const email = accountEmailInput?.value?.trim();
+    const email = accountNameInput?.value?.trim();
     const password = accountPasswordInput?.value || "";
     if (!email || !password) {
-      alert("Enter email and password first.");
+      alert("Enter an account name and password first.");
       return;
     }
     const data = await signUpAccount(email, password);
     if (!data?.access_token) {
-      alert("Sign-up created. If email confirmation is enabled, confirm then sign in.");
+      alert("Account created. If auto-login is disabled on Supabase, sign in with the same account name and password.");
     }
   } catch (e) {
     alert(e.message || "Sign-up failed");
@@ -7899,10 +8085,10 @@ signUpBtn?.addEventListener("click", async () => {
 
 signInBtn?.addEventListener("click", async () => {
   try {
-    const email = accountEmailInput?.value?.trim();
+    const email = accountNameInput?.value?.trim();
     const password = accountPasswordInput?.value || "";
     if (!email || !password) {
-      alert("Enter email and password first.");
+      alert("Enter an account name and password first.");
       return;
     }
     await signInAccount(email, password);
@@ -7916,6 +8102,7 @@ signOutBtn?.addEventListener("click", () => {
 });
 
 playBtn.addEventListener("click", () => {
+  if (!requireAuthenticatedAccount("play")) return;
   stopLiveNetworkSession();
   headToHeadState.mode = "idle";
   headToHeadState.active = false;
@@ -8198,7 +8385,7 @@ bindMobileActionButton(mobileSecondaryBtn, () => {
 
 preloadCharacterImages();
 const storedH2HName = localStorage.getItem("faith-h2h-name");
-if (storedH2HName) {
+if (storedH2HName && !authSession?.user?.id) {
   networkState.displayName = storedH2HName.slice(0, 16);
   if (headToHeadNameInput) headToHeadNameInput.value = networkState.displayName;
 }
@@ -8210,6 +8397,10 @@ updateHighScoreUI();
 updateHeightUI();
 updateMapUI();
 loadAuthSession();
+if (authSession?.user?.id) {
+  const accountName = getSessionAccountName();
+  if (accountNameInput) accountNameInput.value = accountName;
+}
 subscribeToLeaderboard();
 window.addEventListener("resize", updateViewportLayout);
 window.visualViewport?.addEventListener("resize", updateViewportLayout);
