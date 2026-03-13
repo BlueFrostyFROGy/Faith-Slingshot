@@ -60,6 +60,7 @@ const signUpBtn = document.getElementById("signUpBtn");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const accountStatus = document.getElementById("accountStatus");
+const hudTop = document.querySelector(".hud-top");
 
 let authSession = null;
 let leaderboardViewMode = "character";
@@ -6575,6 +6576,15 @@ function updateMobileControls() {
   mobileSecondaryBtn.textContent = getSecondaryActionLabel();
 }
 
+function updateViewportLayout() {
+  const hudHeight = hudTop?.offsetHeight || 0;
+  const mobileHeight = mobileControls?.classList.contains("active")
+    ? (mobileControls.offsetHeight || 68)
+    : 0;
+  document.documentElement.style.setProperty("--hud-height", `${hudHeight}px`);
+  document.documentElement.style.setProperty("--mobile-controls-height", `${mobileHeight}px`);
+}
+
 function triggerPrimaryAction() {
   ensureAudio();
   if (selectedCharacter.id === "spencer") {
@@ -7141,17 +7151,31 @@ function canvasCoords(ev) {
   };
 }
 
+function canStartDragFromPos(clientX, clientY) {
+  const { wx, wy, inPlayerPane } = canvasCoords({ clientX, clientY });
+  if (!inPlayerPane || wy == null) return false;
+
+  const actorDx = wx - actor.x;
+  const actorDy = wy - actor.y;
+  const actorHitRadius = actor.radius + 18;
+  if (Math.sqrt(actorDx * actorDx + actorDy * actorDy) < actorHitRadius) return true;
+
+  if (!isLikelyMobile()) return false;
+
+  const anchorX = world.launchX;
+  const anchorY = terrainY(world.launchX) - 70;
+  const anchorDx = wx - anchorX;
+  const anchorDy = wy - anchorY;
+  return Math.sqrt(anchorDx * anchorDx + anchorDy * anchorDy) < 150;
+}
+
 function beginDragAtClientPos(clientX, clientY) {
   if (actor.state !== "ready") return;
 
-  const { wx, wy, inPlayerPane } = canvasCoords({ clientX, clientY });
-  if (!inPlayerPane || wy == null) return;
-  const dx = wx - actor.x;
-  const dy = wy - actor.y;
-
-  if (Math.sqrt(dx * dx + dy * dy) < actor.radius + 18) {
+  if (canStartDragFromPos(clientX, clientY)) {
     isDragging = true;
     ensureAudio();
+    updateAimAndDragAtClientPos(clientX, clientY);
   }
 }
 
@@ -7297,6 +7321,18 @@ canvas.addEventListener("touchcancel", (ev) => {
   cancelDragLaunch();
 }, { passive: false });
 
+window.addEventListener("mouseup", () => {
+  endDragLaunch();
+});
+
+window.addEventListener("touchend", () => {
+  endDragLaunch();
+}, { passive: true });
+
+window.addEventListener("touchcancel", () => {
+  cancelDragLaunch();
+}, { passive: true });
+
 bindMobileActionButton(mobilePrimaryBtn, () => {
   triggerPrimaryAction();
 });
@@ -7320,8 +7356,11 @@ updateHeightUI();
 updateMapUI();
 loadAuthSession();
 subscribeToLeaderboard();
+window.addEventListener("resize", updateViewportLayout);
+window.visualViewport?.addEventListener("resize", updateViewportLayout);
 showMenu();
 resetActor();
+updateViewportLayout();
 
 submitScoreBtn.addEventListener("click", async () => {
   const name = playerNameInput.value.trim();
