@@ -52,6 +52,7 @@ const submitScoreBtn = document.getElementById("submitScoreBtn");
 const playAgainBtn = document.getElementById("playAgainBtn");
 const finalScore = document.getElementById("finalScore");
 const leaderboardList = document.getElementById("leaderboardList");
+const rankedLeaderboardList = document.getElementById("rankedLeaderboardList");
 const leaderboardTitle = document.getElementById("leaderboardTitle");
 const leaderboardCharBtn = document.getElementById("leaderboardCharBtn");
 const leaderboardMapBtn = document.getElementById("leaderboardMapBtn");
@@ -5544,9 +5545,57 @@ function updateLeaderboardModeUI() {
   if (leaderboardViewMode === "all" && leaderboardAllBtn) leaderboardAllBtn.classList.add("lb-tab-active");
 }
 
+function getRankedLeaderboardEntries(limit = 10) {
+  const data = loadHeadToHeadRankings();
+  return Object.values(data)
+    .filter((p) => p && Number.isFinite(Number(p.rating)))
+    .sort((a, b) => {
+      if (Number(b.rating) !== Number(a.rating)) return Number(b.rating) - Number(a.rating);
+      if (Number(b.wins) !== Number(a.wins)) return Number(b.wins) - Number(a.wins);
+      return Number(b.matches || 0) - Number(a.matches || 0);
+    })
+    .slice(0, limit);
+}
+
+function renderRankedLeaderboard() {
+  if (!rankedLeaderboardList) return;
+  const entries = getRankedLeaderboardEntries(10);
+  rankedLeaderboardList.innerHTML = "";
+
+  if (!entries.length) {
+    rankedLeaderboardList.innerHTML = "<p style=\"margin:10px;\">No ranked matches yet.</p>";
+    return;
+  }
+
+  entries.forEach((entry, idx) => {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.justifyContent = "space-between";
+    row.style.alignItems = "center";
+    row.style.padding = "8px 10px";
+    row.style.borderBottom = "1px solid #e8edff";
+    row.style.fontSize = "0.9rem";
+
+    const left = document.createElement("div");
+    const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
+    const tier = getRankTierFromRating(Number(entry.rating) || 0);
+    left.textContent = `${medal} ${idx + 1}. ${(entry.name || "Player").toString().slice(0, 16)} (${tier})`;
+
+    const right = document.createElement("div");
+    right.style.fontWeight = "700";
+    right.style.color = "#3f5dff";
+    right.textContent = `${Math.round(Number(entry.rating) || 0)} • W${entry.wins || 0}-L${entry.losses || 0}-D${entry.draws || 0}`;
+
+    row.appendChild(left);
+    row.appendChild(right);
+    rankedLeaderboardList.appendChild(row);
+  });
+}
+
 function displayLeaderboard() {
   const scores = getLeaderboardScoresForView();
   updateLeaderboardModeUI();
+  renderRankedLeaderboard();
   leaderboardList.innerHTML = "";
   if (scores.length === 0) {
     leaderboardList.innerHTML = leaderboardViewMode === "character"
