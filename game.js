@@ -807,7 +807,10 @@ const JANET_BASE = {
   fatal: true,
 };
 
-const fatalObstacleImageCandidates = [];
+const fatalObstacleImageCandidates = [
+  "assets/images/office-obstacle.png",
+  "office-obstacle.png",
+];
 
 const mikeObstacleImageCandidates = [];
 
@@ -7835,7 +7838,15 @@ function preloadCharacterImages() {
     c._img = img;
   });
 
-  fatalObstacleImg = null;
+  fatalObstacleImg = new Image();
+  let fatalIndex = 0;
+  fatalObstacleImg.onerror = () => {
+    fatalIndex += 1;
+    if (fatalIndex < fatalObstacleImageCandidates.length) {
+      fatalObstacleImg.src = fatalObstacleImageCandidates[fatalIndex];
+    }
+  };
+  fatalObstacleImg.src = fatalObstacleImageCandidates[fatalIndex];
   mikeObstacleImg = null;
 
   ljsObstacleImg = new Image();
