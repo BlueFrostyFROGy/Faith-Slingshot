@@ -1,6 +1,7 @@
 const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const AUTH_SESSION_KEY = "faith-flight-auth-session";
+const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
@@ -137,11 +138,11 @@ const NATHAN_ACCEL = 255;
 const NATHAN_MAX_SPEED = 4600;
 const NATHAN_GAS_TARGET = 5;
 const DAVY_JUMP_RESET_SPEED = 110;
-const DAVY_ACCEL = 260;
-const DAVY_MAX_SPEED = 4700;
-const DAVY_GOD_MODE_DURATION = 3.8;
-const DAVY_GOD_MODE_INTERVAL_MIN = 10;
-const DAVY_GOD_MODE_INTERVAL_MAX = 20;
+const DAVY_ACCEL = 335;
+const DAVY_MAX_SPEED = 6200;
+const DAVY_GOD_MODE_DURATION = 5.2;
+const DAVY_GOD_MODE_INTERVAL_MIN = 8;
+const DAVY_GOD_MODE_INTERVAL_MAX = 14;
 const CALEB_JUMP_VY = 760;         // fixed jump strength
 const CALEB_JUMP_COOLDOWN = 2.5;   // seconds between jumps
 const CALEB_ACCEL = 190;           // px/s² passive T-Rex acceleration
@@ -742,6 +743,7 @@ const actor = {
   davyGodModeTimer: 0,
   davyGodModeCooldown: DAVY_GOD_MODE_INTERVAL_MIN,
   davyFlameTimer: 0,
+  davyJumpCooldown: 0,
 };
 
 const obstacles = [];
@@ -2187,10 +2189,11 @@ function resetActor() {
   actor.davyHasRide = true;
   actor.davySpeed = DAVY_JUMP_RESET_SPEED;
   actor.davySlowdownPending = false;
-  actor.davyShotTimer = getCurrentMap().id === "long-john-silvers" ? 0.12 : 0.48;
+  actor.davyShotTimer = getCurrentMap().id === "long-john-silvers" ? 0.08 : 0.3;
   actor.davyGodModeTimer = 0;
   actor.davyGodModeCooldown = DAVY_GOD_MODE_INTERVAL_MIN + Math.random() * (DAVY_GOD_MODE_INTERVAL_MAX - DAVY_GOD_MODE_INTERVAL_MIN);
   actor.davyFlameTimer = 0;
+  actor.davyJumpCooldown = 0;
   samBenchPickup = null;
   cameraX = 0;
   particles.length = 0;
@@ -2539,14 +2542,23 @@ function finalizeHeadToHeadIfReady() {
       ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
       : 0);
 
-  const localWin = playerM >= oppM;
-  const result = localWin
-    ? `You win the head-to-head! (${playerM.toFixed(1)}m vs ${oppM.toFixed(1)}m)`
-    : `${headToHeadState.rivalName} wins the head-to-head. (${oppM.toFixed(1)}m vs ${playerM.toFixed(1)}m)`;
+  const isDraw = Math.abs(playerM - oppM) <= 0.05;
+  const localWin = !isDraw && playerM > oppM;
+  const result = isDraw
+    ? `Head-to-head draw! (${playerM.toFixed(1)}m vs ${oppM.toFixed(1)}m)`
+    : localWin
+      ? `You win the head-to-head! (${playerM.toFixed(1)}m vs ${oppM.toFixed(1)}m)`
+      : `${headToHeadState.rivalName} wins the head-to-head. (${oppM.toFixed(1)}m vs ${playerM.toFixed(1)}m)`;
+  const rankedSummary = applyHeadToHeadRankedResult(
+    getNetworkPlayerName(),
+    headToHeadState.rivalName || "Opponent",
+    isDraw ? 0 : (localWin ? 1 : -1),
+    playerM - oppM
+  );
 
-  const finalMessage = `${headToHeadState.localFinishMessage || "Run ended."} ${result}`;
+  const finalMessage = `${headToHeadState.localFinishMessage || "Run ended."} ${result} ${rankedSummary}`;
   headToHeadState.resultText = result;
-  headToHeadState.localWonLastMatch = localWin;
+  headToHeadState.localWonLastMatch = !isDraw && localWin;
   if (localWin) triggerConfetti();
 
   if (headToHeadState.liveNetwork) {
@@ -3140,6 +3152,24 @@ function useSamJump() {
   updateAbilityHint();
 }
 
+function useDavyJump() {
+  if (selectedCharacter.id !== "davy") return;
+  if (actor.state === "ready" || actor.state === "ended") return;
+  if (actor.davyJumpCooldown > 0) {
+    tone(140, 0.05, "sine", 0.05);
+    return;
+  }
+
+  const inLjs = getCurrentMap().id === "long-john-silvers";
+  actor.vy -= inLjs ? 760 : 650;
+  actor.vx += inLjs ? 200 : 140;
+  actor.davyJumpCooldown = inLjs ? 1.05 : 1.35;
+  spawnParticles(actor.x, actor.y, 20, "#ffc48a");
+  tone(620, 0.06, "triangle", 0.08);
+  tone(760, 0.05, "triangle", 0.06);
+  updateAbilityHint();
+}
+
 function explodeBomb(bomb) {
   if (bomb.exploded) return;
   bomb.exploded = true;
@@ -3528,13 +3558,16 @@ function update(dt) {
       actor.davyShotTimer -= dt;
       if (actor.davyShotTimer <= 0) {
         if (getCurrentMap().id === "long-john-silvers") {
-          fireDavyShrimp((Math.random() - 0.5) * 0.22, 180, 13, 2.9);
-          actor.davyShotTimer = 0.1 + Math.random() * 0.08;
+          fireDavyShrimp((Math.random() - 0.5) * 0.22, 260, 13, 3.1);
+          actor.davyShotTimer = 0.07 + Math.random() * 0.06;
         } else {
-          fireDavyShrimp((Math.random() - 0.5) * 0.06, 0, 12, 2.5);
-          actor.davyShotTimer = 0.42 + Math.random() * 0.14;
+          fireDavyShrimp((Math.random() - 0.5) * 0.06, 70, 12, 2.8);
+          actor.davyShotTimer = 0.26 + Math.random() * 0.12;
         }
       }
+    }
+    if (selectedCharacter.id === "davy" && actor.davyJumpCooldown > 0) {
+      actor.davyJumpCooldown = Math.max(0, actor.davyJumpCooldown - dt);
     }
 
     if (selectedCharacter.id === "davy" && getCurrentMap().id === "long-john-silvers") {
@@ -4175,6 +4208,83 @@ function getNetworkPlayerName() {
   return `Player-${networkState.playerId.slice(-4)}`;
 }
 
+function normalizeRankedName(name) {
+  return (name || "Player")
+    .toString()
+    .trim()
+    .slice(0, 16)
+    .toLowerCase();
+}
+
+function loadHeadToHeadRankings() {
+  try {
+    const raw = localStorage.getItem(H2H_RANKINGS_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHeadToHeadRankings(data) {
+  localStorage.setItem(H2H_RANKINGS_KEY, JSON.stringify(data || {}));
+}
+
+function getOrCreateHeadToHeadProfile(data, playerName) {
+  const key = normalizeRankedName(playerName);
+  if (!data[key]) {
+    data[key] = {
+      name: (playerName || "Player").toString().slice(0, 16),
+      wins: 0,
+      losses: 0,
+      draws: 0,
+      matches: 0,
+      rating: 1000,
+      bestWinMargin: 0,
+    };
+  }
+  return data[key];
+}
+
+function getRankTierFromRating(rating) {
+  if (rating >= 1500) return "Diamond";
+  if (rating >= 1300) return "Platinum";
+  if (rating >= 1150) return "Gold";
+  if (rating >= 1000) return "Silver";
+  return "Bronze";
+}
+
+function getHeadToHeadProfileSummary(playerName) {
+  const data = loadHeadToHeadRankings();
+  const p = getOrCreateHeadToHeadProfile(data, playerName);
+  const tier = getRankTierFromRating(p.rating);
+  return `${tier} ${Math.round(p.rating)} • W:${p.wins} L:${p.losses} D:${p.draws}`;
+}
+
+function applyHeadToHeadRankedResult(localName, rivalName, outcome, marginMeters) {
+  const data = loadHeadToHeadRankings();
+  const localProfile = getOrCreateHeadToHeadProfile(data, localName);
+  const rivalProfile = getOrCreateHeadToHeadProfile(data, rivalName || "Opponent");
+
+  const expected = 1 / (1 + (10 ** ((rivalProfile.rating - localProfile.rating) / 400)));
+  const score = outcome > 0 ? 1 : outcome < 0 ? 0 : 0.5;
+  const k = 24;
+  localProfile.rating = Math.max(100, Math.round(localProfile.rating + k * (score - expected)));
+
+  localProfile.matches += 1;
+  if (outcome > 0) {
+    localProfile.wins += 1;
+    localProfile.bestWinMargin = Math.max(localProfile.bestWinMargin || 0, Number(Math.max(0, marginMeters).toFixed(1)));
+  } else if (outcome < 0) {
+    localProfile.losses += 1;
+  } else {
+    localProfile.draws += 1;
+  }
+
+  saveHeadToHeadRankings(data);
+  return `(Ranked: ${getRankTierFromRating(localProfile.rating)} ${Math.round(localProfile.rating)} | W:${localProfile.wins} L:${localProfile.losses} D:${localProfile.draws})`;
+}
+
 function ensureNetworkClient() {
   if (networkState.client) return true;
   const supabaseLib = window.supabase;
@@ -4470,8 +4580,9 @@ function beginHeadToHeadSearch(options = {}) {
   refreshHeadToHeadLocks();
   const liveStarted = startLiveNetworkSearch();
   if (matchmakingStatus) {
+    const rankedSummary = getHeadToHeadProfileSummary(networkState.displayName);
     matchmakingStatus.textContent = liveStarted
-      ? (privateCode ? `Searching private code ${privateCode}...` : "Searching live network for opponent...")
+      ? (privateCode ? `Searching private code ${privateCode}... (${rankedSummary})` : `Searching live network for opponent... (${rankedSummary})`)
       : "Searching for game...";
   }
 }
@@ -4531,7 +4642,7 @@ function startHeadToHeadMatch() {
     headToHeadState.opponentActor = cloneActorState(actor);
   }
   refreshHeadToHeadLocks();
-  runStateLabel.textContent = `Head-to-Head vs ${headToHeadState.rivalName} — ${selectedCharacter.name} on ${getCurrentMap().name}`;
+  runStateLabel.textContent = `Ranked Head-to-Head vs ${headToHeadState.rivalName} — ${selectedCharacter.name} on ${getCurrentMap().name}`;
   updateAbilityHint();
 }
 
@@ -4899,14 +5010,15 @@ function updateAbilityHint() {
   if (selectedCharacter.id === "davy") {
     const mphApprox = (actor.davySpeed / 22.4).toFixed(0);
     const modeText = actor.davyHasRide ? `Ride speed: ~${mphApprox} mph` : "On foot (ride lost)";
+    const jumpText = actor.davyJumpCooldown <= 0 ? "B: jump ready" : `B: jump ${actor.davyJumpCooldown.toFixed(1)}s`;
     if (getCurrentMap().id === "long-john-silvers") {
       const godText = actor.davyGodModeTimer > 0
         ? `GOD MODE: ${actor.davyGodModeTimer.toFixed(1)}s`
         : `God mode in ${Math.max(0, actor.davyGodModeCooldown).toFixed(1)}s`;
-      abilityHint.textContent = `${modeText}  |  Auto shrimp barrage  |  ${godText}`;
+      abilityHint.textContent = `${modeText}  |  Auto shrimp barrage  |  ${jumpText}  |  ${godText}`;
       return;
     }
-    abilityHint.textContent = `${modeText}  |  Auto shrimp shots  |  Space: ride jump + shrimp burst`;
+    abilityHint.textContent = `${modeText}  |  Auto shrimp shots  |  Space: shrimp burst  |  ${jumpText}`;
     return;
   }
 
@@ -7041,6 +7153,8 @@ function getSecondaryActionLabel() {
       return "B: Jump";
     case "samhallet":
       return "B: Jump";
+    case "davy":
+      return "B: Jump";
     default:
       return "B: Alt";
   }
@@ -7065,7 +7179,8 @@ function updateMobileControls() {
     || selectedCharacter.id === "anthony"
     || selectedCharacter.id === "matteo"
     || selectedCharacter.id === "jjfootballboss"
-    || selectedCharacter.id === "samhallet";
+    || selectedCharacter.id === "samhallet"
+    || selectedCharacter.id === "davy";
   mobileSecondaryBtn.disabled = !canUseActions || !hasSecondaryAction;
 
   mobilePrimaryBtn.textContent = selectedCharacter.id === "spencer" ? "A: Jump" : "A: Ability";
@@ -7106,6 +7221,10 @@ function triggerSecondaryAction() {
   }
   if (selectedCharacter.id === "samhallet") {
     useSamJump();
+    return true;
+  }
+  if (selectedCharacter.id === "davy") {
+    useDavyJump();
     return true;
   }
   return false;
