@@ -215,6 +215,7 @@ const stricWoodsMapImageCandidates = [
   ["assets/images/stricwoods/page4.png"],
 ];
 const longJohnSilversMapImageCandidates = [
+  "Long John Silvers Map.png",
   "Long John Silvers Map.pdf",
 ];
 
@@ -2077,45 +2078,24 @@ function terrainY(x) {
 async function loadLongJohnSilversMapFromPdf() {
   if (!longJohnSilversMapImageCandidates.length) return false;
   try {
-    if (!window.pdfjsLib) {
-      await new Promise((resolve, reject) => {
-        const script = document.createElement("script");
-        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-        script.onload = resolve;
-        script.onerror = reject;
-        document.head.appendChild(script);
-      });
-    }
-    if (!window.pdfjsLib) return false;
-
-    const rawPath = longJohnSilversMapImageCandidates[0];
-    const pdfPath = encodeURI(rawPath);
-    const loadingTask = window.pdfjsLib.getDocument({
-      url: pdfPath,
-      disableWorker: true,
-      cMapUrl: undefined,
-      cMapPacked: false,
-    });
-    const pdf = await loadingTask.promise;
-    const page = await pdf.getPage(1);
-    const viewport = page.getViewport({ scale: 2.2 });
-
-    const offscreen = document.createElement("canvas");
-    offscreen.width = Math.ceil(viewport.width);
-    offscreen.height = Math.ceil(viewport.height);
-    const ctx2d = offscreen.getContext("2d");
-    await page.render({ canvasContext: ctx2d, viewport }).promise;
-
-    const rendered = new Image();
-    rendered.src = offscreen.toDataURL("image/png");
+    const img = new Image();
+    let idx = 0;
     await new Promise((resolve, reject) => {
-      rendered.onload = resolve;
-      rendered.onerror = reject;
+      img.onload = resolve;
+      img.onerror = () => {
+        idx += 1;
+        if (idx < longJohnSilversMapImageCandidates.length) {
+          img.src = encodeURI(longJohnSilversMapImageCandidates[idx]);
+        } else {
+          reject(new Error("Long John Silvers map image not found"));
+        }
+      };
+      img.src = encodeURI(longJohnSilversMapImageCandidates[idx]);
     });
-    longJohnSilversMapImg = rendered;
+    longJohnSilversMapImg = img;
     return true;
   } catch (err) {
-    console.error("Failed to load Long John Silvers PDF map:", err);
+    console.error("Failed to load Long John Silvers map asset:", err);
     return false;
   }
 }
