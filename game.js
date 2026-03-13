@@ -115,6 +115,8 @@ const networkState = {
   displayName: "",
   connectingRoom: false,
   privateCode: "",
+  queueBridgeInterval: null,
+  queueBridgeTimeout: null,
 };
 
 const world = {
@@ -375,7 +377,7 @@ const characters = [
     drag: 0.05,
     bounce: 0.78,
     gravityMult: 0.86,
-    launchBoost: 1.5,
+    launchBoost: 1.56,
     unlockAt: 0,
     ability: "jumpbomb",
   },
@@ -389,9 +391,9 @@ const characters = [
     mass: 0.72,
     radius: 22,
     drag: 0.068,
-    bounce: 0.56,
+    bounce: 0.6,
     gravityMult: 0.86,
-    launchBoost: 1.28,
+    launchBoost: 1.32,
     unlockAt: 0,
     ability: "backflip",
   },
@@ -3107,11 +3109,11 @@ function useSpencerJump() {
   if (selectedCharacter.id !== "spencer") return;
   if (actor.state === "ready" || actor.state === "ended" || actor.abilityCooldown > 0) return;
 
-  const jumpPower = Math.max(390, 700 - actor.spencerBombsUsed * 50);
+  const jumpPower = Math.max(420, 740 - actor.spencerBombsUsed * 50);
   actor.vy -= jumpPower;
-  actor.vx += 150;
+  actor.vx += 170;
   actor.usedAbility = true;
-  actor.abilityCooldown = 0.35;
+  actor.abilityCooldown = 0.3;
   tone(520, 0.07, "triangle", 0.08);
   spawnParticles(actor.x, actor.y, 16, "#99ddff");
   updateAbilityHint();
@@ -4330,6 +4332,14 @@ function ensureNetworkClient() {
 }
 
 function cleanupNetworkQueue() {
+  if (networkState.queueBridgeInterval) {
+    clearInterval(networkState.queueBridgeInterval);
+    networkState.queueBridgeInterval = null;
+  }
+  if (networkState.queueBridgeTimeout) {
+    clearTimeout(networkState.queueBridgeTimeout);
+    networkState.queueBridgeTimeout = null;
+  }
   networkState.searching = false;
   networkState.searchElapsed = 0;
   networkState.heartbeatTimer = 0;
@@ -4427,6 +4437,31 @@ function broadcastMatchFoundInvite(targetPlayerId, match, rivalName) {
   }, 520);
 }
 
+function startQueueBridgeAfterRoomJoin(match, targetPlayerId) {
+  if (!networkState.queueChannel || !targetPlayerId || !match) return;
+
+  if (networkState.queueBridgeInterval) {
+    clearInterval(networkState.queueBridgeInterval);
+  }
+  if (networkState.queueBridgeTimeout) {
+    clearTimeout(networkState.queueBridgeTimeout);
+  }
+
+  networkState.queueBridgeInterval = setInterval(() => {
+    if (!networkState.queueChannel) return;
+    if (networkState.opponentSnapshot) {
+      cleanupNetworkQueue();
+      return;
+    }
+    sendQueueHeartbeat();
+    broadcastMatchFoundInvite(targetPlayerId, match, "Opponent");
+  }, 700);
+
+  networkState.queueBridgeTimeout = setTimeout(() => {
+    cleanupNetworkQueue();
+  }, 10000);
+}
+
 function startLiveNetworkSearch() {
   if (!ensureNetworkClient()) return false;
 
@@ -4522,9 +4557,11 @@ function joinLiveNetworkRoom(roomId, characterId, mapIndex, rivalName) {
 
   roomChannel.subscribe((status) => {
     if (status === "SUBSCRIBED") {
+      const match = { roomId, characterId, mapIndex };
       networkState.connectingRoom = false;
-      networkState.searching = false;
-      cleanupNetworkQueue();
+      // Keep queue alive briefly for late peer handoff; cleanup happens automatically.
+      networkState.searching = true;
+      startQueueBridgeAfterRoomJoin(match, networkState.peerId);
       headToHeadState.liveNetwork = true;
       headToHeadState.rivalName = rivalName || "Opponent";
       headToHeadState.randomCharacter = characters.find((c) => c.id === characterId) || characters[0];
