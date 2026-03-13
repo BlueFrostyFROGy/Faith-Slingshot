@@ -4327,6 +4327,9 @@ function setAuthControlsDisabled(disabled) {
 function getAuthErrorMessage(error) {
   const raw = (error?.message || error?.error_description || error?.msg || "Authentication failed").toString();
   const lower = raw.toLowerCase();
+  if (lower.includes("email logins are disabled") || lower.includes("email provider is disabled") || String(error?.status || "") === "422") {
+    return "Supabase Email auth is disabled. In Supabase: Authentication → Providers → Email, turn Email provider ON, then disable Confirm email for instant username-style signup.";
+  }
   if (lower.includes("rate limit") || lower.includes("email rate limit") || String(error?.status || "") === "429") {
     return "Too many account creation attempts right now. Wait 60-120 seconds, then try Create Account once.";
   }
