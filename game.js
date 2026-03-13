@@ -215,9 +215,6 @@ const stricWoodsMapImageCandidates = [
   ["assets/images/stricwoods/page4.png"],
 ];
 const longJohnSilversMapImageCandidates = [
-  "Long John Silvers Map.png",
-  "Long John Silvers Map.jpg",
-  "Long John Silvers Map.webp",
   "Long John Silvers Map.pdf",
 ];
 
@@ -2066,7 +2063,7 @@ function tone(freq, duration = 0.09, type = "sine", volume = 0.08) {
 
 function terrainY(x) {
   const base = 560;
-  if (getCurrentMap().id === "town-square" || getCurrentMap().id === "stric-woods") {
+  if (getCurrentMap().id === "town-square" || getCurrentMap().id === "stric-woods" || getCurrentMap().id === "long-john-silvers") {
     return base;
   }
   return (
@@ -2075,6 +2072,35 @@ function terrainY(x) {
     - Math.sin((x + 300) * 0.0065) * 45
     - Math.max(0, Math.sin((x - 700) * 0.0014)) * 55
   );
+}
+
+async function loadLongJohnSilversMapFromPdf() {
+  if (!window.pdfjsLib || !longJohnSilversMapImageCandidates.length) return false;
+  try {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const loadingTask = window.pdfjsLib.getDocument(longJohnSilversMapImageCandidates[0]);
+    const pdf = await loadingTask.promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 2.2 });
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = Math.ceil(viewport.width);
+    offscreen.height = Math.ceil(viewport.height);
+    const ctx2d = offscreen.getContext("2d");
+    await page.render({ canvasContext: ctx2d, viewport }).promise;
+
+    const rendered = new Image();
+    rendered.src = offscreen.toDataURL("image/png");
+    await new Promise((resolve, reject) => {
+      rendered.onload = resolve;
+      rendered.onerror = reject;
+    });
+    longJohnSilversMapImg = rendered;
+    return true;
+  } catch (err) {
+    console.error("Failed to load Long John Silvers PDF map:", err);
+    return false;
+  }
 }
 
 function resetActor() {
@@ -7431,15 +7457,8 @@ function preloadCharacterImages() {
   };
   townSquareMapImg.src = townSquareMapImageCandidates[townSquareIdx];
 
-  longJohnSilversMapImg = new Image();
-  let longJohnSilversMapIdx = 0;
-  longJohnSilversMapImg.onerror = () => {
-    longJohnSilversMapIdx += 1;
-    if (longJohnSilversMapIdx < longJohnSilversMapImageCandidates.length) {
-      longJohnSilversMapImg.src = longJohnSilversMapImageCandidates[longJohnSilversMapIdx];
-    }
-  };
-  longJohnSilversMapImg.src = longJohnSilversMapImageCandidates[longJohnSilversMapIdx];
+  longJohnSilversMapImg = null;
+  loadLongJohnSilversMapFromPdf();
 
   stricWoodsMapImgs = stricWoodsMapImageCandidates.map((candidates) => {
     const img = new Image();
