@@ -808,6 +808,7 @@ const JANET_BASE = {
 };
 
 const fatalObstacleImageCandidates = [
+  "Luke Kelly (Obstacle).png",
   "assets/images/office-obstacle.png",
   "office-obstacle.png",
 ];
