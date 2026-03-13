@@ -2075,10 +2075,27 @@ function terrainY(x) {
 }
 
 async function loadLongJohnSilversMapFromPdf() {
-  if (!window.pdfjsLib || !longJohnSilversMapImageCandidates.length) return false;
+  if (!longJohnSilversMapImageCandidates.length) return false;
   try {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-    const loadingTask = window.pdfjsLib.getDocument(longJohnSilversMapImageCandidates[0]);
+    if (!window.pdfjsLib) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+    if (!window.pdfjsLib) return false;
+
+    const rawPath = longJohnSilversMapImageCandidates[0];
+    const pdfPath = encodeURI(rawPath);
+    const loadingTask = window.pdfjsLib.getDocument({
+      url: pdfPath,
+      disableWorker: true,
+      cMapUrl: undefined,
+      cMapPacked: false,
+    });
     const pdf = await loadingTask.promise;
     const page = await pdf.getPage(1);
     const viewport = page.getViewport({ scale: 2.2 });
