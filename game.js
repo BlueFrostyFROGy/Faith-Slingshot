@@ -4140,6 +4140,35 @@ function update(dt) {
     distanceValue.textContent = travelled.toFixed(1);
     updateHeightUI();
 
+    if (headToHeadState.active && !headToHeadState.localFinished && headToHeadState.opponentFinished) {
+      const oppM = headToHeadState.liveNetwork
+        ? networkState.opponentFinalDistance
+        : (headToHeadState.opponentActor
+          ? Math.max(0, (headToHeadState.opponentActor.maxX - world.launchX) / 10)
+          : 0);
+      if (travelled > oppM + 0.05) {
+        headToHeadState.localFinished = true;
+        headToHeadState.localFinalDistance = travelled;
+        headToHeadState.localFinishMessage = "Auto-win secured: you passed opponent distance.";
+
+        if (headToHeadState.liveNetwork && networkState.roomChannel && !networkState.localFinishSent) {
+          networkState.localFinishSent = true;
+          networkState.roomChannel.send({
+            type: "broadcast",
+            event: "finish",
+            payload: {
+              playerId: networkState.playerId,
+              message: `${getNetworkPlayerName()} auto-won by passing distance.`,
+              distance: travelled,
+              ts: Date.now(),
+            },
+          });
+        }
+
+        finalizeHeadToHeadIfReady();
+      }
+    }
+
 
     if (travelled > world.bestDistance) {
       world.bestDistance = travelled;
