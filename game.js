@@ -7,6 +7,7 @@ const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
+const SUPABASE_H2H_RANKED_TABLE = "head_to_head_rankings";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -66,6 +67,8 @@ const accountStatus = document.getElementById("accountStatus");
 const hudTop = document.querySelector(".hud-top");
 
 let authSession = null;
+let rankedCloudFetchInFlight = false;
+let rankedCloudLastFetchAt = 0;
 let leaderboardViewMode = "character";
 let leaderboardRunCharacterId = "";
 let leaderboardRunCharacterName = "";
@@ -4293,6 +4296,97 @@ function getHeadToHeadProfileSummary(playerName) {
   return `${tier} ${Math.round(p.rating)} • W:${p.wins} L:${p.losses} D:${p.draws}`;
 }
 
+async function fetchCloudHeadToHeadRankings(force = false) {
+  if (rankedCloudFetchInFlight) return false;
+  const now = Date.now();
+  if (!force && now - rankedCloudLastFetchAt < 10000) return false;
+
+  rankedCloudFetchInFlight = true;
+  try {
+    const fullUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?select=player_name,rating,wins,losses,draws,matches,best_win_margin,updated_at&order=rating.desc&limit=200`;
+    const basicUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?select=player_name,rating,wins,losses&order=rating.desc&limit=200`;
+    const minimalUrl = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?select=player_name,rating&order=rating.desc&limit=200`;
+
+    const headers = {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${getAuthToken()}`,
+    };
+
+    let res = await fetch(fullUrl, { cache: "no-store", headers });
+    if (!res.ok) res = await fetch(basicUrl, { cache: "no-store", headers });
+    if (!res.ok) res = await fetch(minimalUrl, { cache: "no-store", headers });
+    if (!res.ok) return false;
+
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return false;
+
+    const local = loadHeadToHeadRankings();
+    rows.forEach((r) => {
+      const name = (r.player_name || "Player").toString().slice(0, 16);
+      const key = normalizeRankedName(name);
+      local[key] = {
+        name,
+        rating: Number.isFinite(Number(r.rating)) ? Number(r.rating) : 1000,
+        wins: Number.isFinite(Number(r.wins)) ? Number(r.wins) : 0,
+        losses: Number.isFinite(Number(r.losses)) ? Number(r.losses) : 0,
+        draws: Number.isFinite(Number(r.draws)) ? Number(r.draws) : 0,
+        matches: Number.isFinite(Number(r.matches)) ? Number(r.matches) : 0,
+        bestWinMargin: Number.isFinite(Number(r.best_win_margin)) ? Number(r.best_win_margin) : 0,
+      };
+    });
+    saveHeadToHeadRankings(local);
+    rankedCloudLastFetchAt = now;
+    return true;
+  } catch (e) {
+    console.error("fetchCloudHeadToHeadRankings error:", e);
+    return false;
+  } finally {
+    rankedCloudFetchInFlight = false;
+  }
+}
+
+async function pushCloudHeadToHeadProfile(profile) {
+  if (!profile) return false;
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_H2H_RANKED_TABLE}?on_conflict=player_name`;
+    const headers = {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${getAuthToken()}`,
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates,return=minimal",
+    };
+
+    const fullBody = JSON.stringify({
+      player_name: (profile.name || "Player").toString().slice(0, 16),
+      rating: Math.round(Number(profile.rating) || 1000),
+      wins: Number(profile.wins) || 0,
+      losses: Number(profile.losses) || 0,
+      draws: Number(profile.draws) || 0,
+      matches: Number(profile.matches) || 0,
+      best_win_margin: Number(profile.bestWinMargin) || 0,
+      updated_at: new Date().toISOString(),
+    });
+    const basicBody = JSON.stringify({
+      player_name: (profile.name || "Player").toString().slice(0, 16),
+      rating: Math.round(Number(profile.rating) || 1000),
+      wins: Number(profile.wins) || 0,
+      losses: Number(profile.losses) || 0,
+    });
+    const minimalBody = JSON.stringify({
+      player_name: (profile.name || "Player").toString().slice(0, 16),
+      rating: Math.round(Number(profile.rating) || 1000),
+    });
+
+    let res = await fetch(url, { method: "POST", headers, body: fullBody });
+    if (!res.ok) res = await fetch(url, { method: "POST", headers, body: basicBody });
+    if (!res.ok) res = await fetch(url, { method: "POST", headers, body: minimalBody });
+    return res.ok;
+  } catch (e) {
+    console.error("pushCloudHeadToHeadProfile error:", e);
+    return false;
+  }
+}
+
 function applyHeadToHeadRankedResult(localName, rivalName, outcome, marginMeters) {
   const data = loadHeadToHeadRankings();
   const localProfile = getOrCreateHeadToHeadProfile(data, localName);
@@ -4314,6 +4408,7 @@ function applyHeadToHeadRankedResult(localName, rivalName, outcome, marginMeters
   }
 
   saveHeadToHeadRankings(data);
+  pushCloudHeadToHeadProfile(localProfile).then(() => fetchCloudHeadToHeadRankings(true).then(() => renderRankedLeaderboard()));
   return `(Ranked: ${getRankTierFromRating(localProfile.rating)} ${Math.round(localProfile.rating)} | W:${localProfile.wins} L:${localProfile.losses} D:${localProfile.draws})`;
 }
 
@@ -5596,6 +5691,9 @@ function getRankedLeaderboardEntries(limit = 10) {
 
 function renderRankedLeaderboard() {
   if (!rankedLeaderboardList) return;
+  fetchCloudHeadToHeadRankings(false).then((synced) => {
+    if (synced) renderRankedLeaderboard();
+  });
   const entries = getRankedLeaderboardEntries(10);
   rankedLeaderboardList.innerHTML = "";
 
@@ -5708,6 +5806,7 @@ function showLeaderboardScreen(distance) {
   headToHeadState.resultText = "";
   headToHeadState.localWonLastMatch = false;
   
+  fetchCloudHeadToHeadRankings(true).then(() => renderRankedLeaderboard());
   fetchCloudLeaderboard().then(() => displayLeaderboard());
 }
 
