@@ -5095,7 +5095,7 @@ function getCharacterImageCandidates(character) {
     return ["characters/Travis Williams.png", "Travis Williams.png"];
   }
   if (character.id === "matteo") {
-    return ["characters/Matteo Schirripa.png", "Matteo Schirripa.png"];
+    return ["characters/Matteo Schirripa v2.png", "characters/Matteo Schirripa.png"];
   }
   if (character.id === "kaderess") {
     return ["characters/Kade Ress.png", "Kade Ress.png"];
