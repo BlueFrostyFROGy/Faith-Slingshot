@@ -108,15 +108,21 @@ canvas {
 }
 
 .overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   display: none;
-  place-items: center;
+  align-items: flex-start;
+  justify-content: center;
   background: #1a2a5477;
+  z-index: 20;
 }
 
 .overlay.active {
-  display: grid;
+  display: flex;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px;
 }
 
 .matchmaking-status {
@@ -134,11 +140,14 @@ canvas {
   padding: 20px;
   width: min(480px, 92vw);
   text-align: center;
+  margin: 8px auto;
 }
 
 .panel.large {
   width: min(1180px, 98vw);
   padding: 14px;
+  max-height: none;
+  overflow: visible;
 }
 
 .jj-cutscene-panel {

@@ -136,6 +136,12 @@ const NATHAN_JUMP_RESET_SPEED = 110;
 const NATHAN_ACCEL = 255;
 const NATHAN_MAX_SPEED = 4600;
 const NATHAN_GAS_TARGET = 5;
+const DAVY_JUMP_RESET_SPEED = 110;
+const DAVY_ACCEL = 260;
+const DAVY_MAX_SPEED = 4700;
+const DAVY_GOD_MODE_DURATION = 3.8;
+const DAVY_GOD_MODE_INTERVAL_MIN = 10;
+const DAVY_GOD_MODE_INTERVAL_MAX = 20;
 const CALEB_JUMP_VY = 760;         // fixed jump strength
 const CALEB_JUMP_COOLDOWN = 2.5;   // seconds between jumps
 const CALEB_ACCEL = 190;           // px/s² passive T-Rex acceleration
@@ -191,6 +197,7 @@ const maps = [
   { id: "campus", name: "Campus" },
   { id: "town-square", name: "Town Square" },
   { id: "stric-woods", name: "The Stric Woods" },
+  { id: "long-john-silvers", name: "Long John Silvers" },
 ];
 let currentMapIndex = 0;
 let townSquareMapImg = null;
@@ -206,6 +213,19 @@ const stricWoodsMapImageCandidates = [
   ["assets/images/stricwoods/page3.png"],
   ["assets/images/stricwoods/page4.png"],
 ];
+
+const ljsObstacleImageCandidates = [
+  "Obstacle for Long John Silvers Map.png",
+];
+const ljsProjectileImageCandidates = [
+  "Long John SIlvers Projectiles.jpg",
+];
+let ljsObstacleImg = null;
+let ljsProjectileImg = null;
+let davyRideImg = null;
+const ljsObstaclePositionCache = [];
+const ljsObstacleCache = new Map();
+const ljsHazardCooldowns = new Map();
 
 const characters = [
   {
@@ -227,34 +247,34 @@ const characters = [
   {
     id: "hunter",
     name: "Hunter",
-    bio: "Collect beers. Every 5 beers starts spin mode for 7.5s with a 1.5s jump cooldown. At 20 beers, you die.",
-    bio: "Mid-small build. Low drag and a floaty arc.",
+    trait: "Rocket boost",
+    bio: "Mid-small build. Low drag and a floaty arc. Space fires a risky rocket burst.",
     imageBase: "assets/images/hunter",
     initials: "H",
     mass: 0.82,
-    radius: 23,
-    drag: 0.068,
-    bounce: 0.66,
-    gravityMult: 0.89,
-    launchBoost: 1.34,
-    unlockAt: 0,
-    ability: "rocket",
-  },
-  {
-    id: "anthony",
-    name: "Anthony",
-    trait: "Shrinking speedster",
-    bio: "Big body with huge launch carry. Every 100m he loses weight and shrinks, but gets faster and faster.",
-    imageBase: "assets/images/anthony",
-    initials: "A",
-    mass: 1.8,
     radius: 34,
     drag: 0.16,
     bounce: 0.60,
     gravityMult: 1.09,
     launchBoost: 1.10,
     unlockAt: 0,
-    ability: "slam",
+    ability: "rocket",
+  },
+  {
+    id: "davy",
+    name: "Davy",
+    trait: "Sailor's ride + shrimp cannon",
+    bio: "Rides Davy's Ride like Nathan's Tacoma. Fires shrimp projectiles. On Long John Silvers map: rapid shrimp barrage + random god mode every 10-20s with a massive flame dive.",
+    imageBase: "Davy",
+    initials: "DV",
+    mass: 1.48,
+    radius: 33,
+    drag: 0.03,
+    bounce: 0.54,
+    gravityMult: 0.96,
+    launchBoost: 1.16,
+    unlockAt: 0,
+    ability: "davytruck",
   },
   {
     id: "nathan",
@@ -694,6 +714,13 @@ const actor = {
   nathanJetX: 0,
   nathanJetY: 0,
   nathanFlagTimer: 0,
+  davyHasRide: true,
+  davySpeed: DAVY_JUMP_RESET_SPEED,
+  davySlowdownPending: false,
+  davyShotTimer: 0.45,
+  davyGodModeTimer: 0,
+  davyGodModeCooldown: DAVY_GOD_MODE_INTERVAL_MIN,
+  davyFlameTimer: 0,
 };
 
 const obstacles = [];
@@ -1161,14 +1188,70 @@ function getMikesInRange(startX, endX) {
   return mikes;
 }
 
+function getLjsObstacleBaseX(index) {
+  while (ljsObstaclePositionCache.length <= index) {
+    const i = ljsObstaclePositionCache.length;
+    if (i === 0) {
+      const firstX = 2400 + Math.floor(seededNoise(900) * 480);
+      ljsObstaclePositionCache.push(firstX);
+    } else {
+      const prevX = ljsObstaclePositionCache[i - 1];
+      const gap = 820 + Math.floor(seededNoise(i + 901) * 1400);
+      ljsObstaclePositionCache.push(prevX + gap);
+    }
+  }
+  return ljsObstaclePositionCache[index];
+}
+
+function createLjsObstacle(index) {
+  const baseX = getLjsObstacleBaseX(index);
+  const offset = Math.floor(seededNoise(index + 920) * 200) - 100;
+  const yOffset = 66 + Math.floor(seededNoise(index + 921) * 22);
+  return {
+    index: 200000 + index,
+    x: baseX + offset,
+    yOffset,
+    w: 72,
+    h: 72,
+    color: "#f0d2a5",
+    label: "Shrimp Turret",
+    fatal: true,
+    isLjsObstacle: true,
+  };
+}
+
+function getLjsObstacle(index) {
+  if (!ljsObstacleCache.has(index)) {
+    ljsObstacleCache.set(index, createLjsObstacle(index));
+  }
+  return ljsObstacleCache.get(index);
+}
+
+function getLjsObstaclesInRange(startX, endX) {
+  const ljs = [];
+  for (let index = 0; index < 2000; index += 1) {
+    const baseX = getLjsObstacleBaseX(index);
+    if (baseX > endX + 3000) break;
+    const obstacle = getLjsObstacle(index);
+    if (destroyedJanets.has(obstacle.index)) continue;
+    if (obstacle.x + obstacle.w >= startX && obstacle.x <= endX) {
+      ljs.push(obstacle);
+    }
+  }
+  return ljs;
+}
+
 function getFatalObstaclesInRange(startX, endX) {
   if (getCurrentMap().id === "stric-woods") {
     return getMikesInRange(startX, endX);
   }
+  if (getCurrentMap().id === "long-john-silvers") {
+    return getLjsObstaclesInRange(startX, endX);
+  }
   return getJanetsInRange(startX, endX);
 }
 
-function spawnEnemyLaser(x, y, angle, speed = 920, life = 3.2, color = "#ff3b3b", isFire = false) {
+function spawnEnemyLaser(x, y, angle, speed = 920, life = 3.2, color = "#ff3b3b", isFire = false, spriteType = "") {
   enemyLasers.push({
     x,
     y,
@@ -1178,7 +1261,64 @@ function spawnEnemyLaser(x, y, angle, speed = 920, life = 3.2, color = "#ff3b3b"
     radius: 7,
     color,
     isFire,
+    spriteType,
   });
+}
+
+function fireDavyShrimp(angleJitter = 0, speedBonus = 0, radius = 12, life = 2.6) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mouseWorldX = lastMouseX * scaleX + cameraX;
+  const mouseWorldY = lastMouseY * scaleY;
+  const dx = mouseWorldX - actor.x;
+  const dy = mouseWorldY - actor.y;
+  const dist = Math.max(1, Math.hypot(dx, dy));
+  const baseAngle = Math.atan2(dy, dx) + angleJitter;
+  const dirX = Math.cos(baseAngle);
+  const dirY = Math.sin(baseAngle);
+  nathanTrumps.push({
+    x: actor.x + dirX * (actor.radius + 10),
+    y: actor.y + dirY * (actor.radius + 10),
+    vx: dirX * (860 + speedBonus) + actor.vx * 0.34,
+    vy: dirY * (860 + speedBonus) + actor.vy * 0.2,
+    life,
+    radius,
+    rotation: 0,
+    isShrimp: true,
+  });
+}
+
+function triggerDavyGodMode() {
+  actor.davyGodModeTimer = DAVY_GOD_MODE_DURATION;
+  actor.davyFlameTimer = DAVY_GOD_MODE_DURATION;
+  actor.vy = Math.min(actor.vy, -1280);
+  actor.vx = Math.max(actor.vx + 480, 1100);
+  spawnParticles(actor.x, actor.y, 42, "#ff7a00");
+  spawnParticles(actor.x, actor.y, 24, "#fff2b0");
+  startScreenShake(20, 0.55);
+  tone(160, 0.14, "sawtooth", 0.12);
+  tone(280, 0.12, "square", 0.1);
+  runStateLabel.textContent = "DAVY GOD MODE ACTIVATED!";
+}
+
+function updateLongJohnSilversHazards(dt, nearbyFatals) {
+  if (getCurrentMap().id !== "long-john-silvers") {
+    return;
+  }
+
+  for (const turret of nearbyFatals) {
+    const current = ljsHazardCooldowns.get(turret.index) ?? (0.7 + seededNoise(turret.index + 40) * 0.8);
+    const next = current - dt;
+    if (next <= 0) {
+      const oy = terrainY(turret.x) - turret.yOffset + turret.h * 0.44;
+      const angle = Math.atan2(actor.y - oy, actor.x - turret.x) + (seededNoise(turret.index + performance.now() * 0.001) - 0.5) * 0.12;
+      spawnEnemyLaser(turret.x + turret.w * 0.2, oy, angle, 880, 3.1, "#ff9c4a", false, "shrimp");
+      ljsHazardCooldowns.set(turret.index, 0.9 + seededNoise(turret.index + 73) * 1.15);
+    } else {
+      ljsHazardCooldowns.set(turret.index, next);
+    }
+  }
 }
 
 function updateEnemyLasers(dt) {
@@ -1998,6 +2138,13 @@ function resetActor() {
   actor.nathanJetX = world.launchX - 920;
   actor.nathanJetY = terrainY(world.launchX) - 390;
   actor.nathanFlagTimer = 0;
+  actor.davyHasRide = true;
+  actor.davySpeed = DAVY_JUMP_RESET_SPEED;
+  actor.davySlowdownPending = false;
+  actor.davyShotTimer = getCurrentMap().id === "long-john-silvers" ? 0.12 : 0.48;
+  actor.davyGodModeTimer = 0;
+  actor.davyGodModeCooldown = DAVY_GOD_MODE_INTERVAL_MIN + Math.random() * (DAVY_GOD_MODE_INTERVAL_MAX - DAVY_GOD_MODE_INTERVAL_MIN);
+  actor.davyFlameTimer = 0;
   samBenchPickup = null;
   cameraX = 0;
   particles.length = 0;
@@ -2012,6 +2159,7 @@ function resetActor() {
   resetOwenGoKartTimer();
   destroyedJanets.clear();
   mikeLaserCooldowns.clear();
+  ljsHazardCooldowns.clear();
   stricBossState.active = false;
   stricBossState.phase = 0;
   stricBossState.phaseTimer = 0;
@@ -2649,6 +2797,21 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 20, "#ffd8a6");
       break;
     }
+    case "davytruck": {
+      fireDavyShrimp(0, getCurrentMap().id === "long-john-silvers" ? 200 : 40, getCurrentMap().id === "long-john-silvers" ? 13 : 12, 2.8);
+      if (getCurrentMap().id === "long-john-silvers") {
+        actor.vy -= 340;
+        actor.vx += 160;
+      } else {
+        actor.vy -= 430;
+        actor.vx += 120;
+      }
+      actor.davySlowdownPending = actor.davyHasRide;
+      tone(520, 0.06, "square", 0.08);
+      tone(700, 0.05, "triangle", 0.06);
+      spawnParticles(actor.x, actor.y, 20, "#ffd8a6");
+      break;
+    }
     case "warp":
       actor.x += 130;
       actor.vx += 210;
@@ -3113,6 +3276,24 @@ function collideRect(rect) {
         runStateLabel.textContent = "Nathan lost the Tacoma but keeps running!";
         return;
       }
+      if (selectedCharacter.id === "davy" && actor.davyHasRide) {
+        actor.davyHasRide = false;
+        actor.davySlowdownPending = false;
+        actor.radius = CALEB_ON_FOOT_RADIUS;
+        actor.drag = CALEB_ON_FOOT_DRAG;
+        actor.bounce = CALEB_ON_FOOT_BOUNCE;
+        actor.gravityMult = CALEB_ON_FOOT_GRAVITY;
+        actor.vx = Math.max(actor.vx * 0.78, 250);
+        actor.vy = Math.min(actor.vy - 130, -130);
+        destroyedJanets.add(rect.index);
+        spawnParticles(actor.x, actor.y, 34, "#ffd39a");
+        spawnParticles(actor.x, actor.y, 14, "#ffffff");
+        tone(220, 0.08, "square", 0.09);
+        tone(140, 0.08, "triangle", 0.08);
+        startScreenShake(13, 0.24);
+        runStateLabel.textContent = "Davy lost the ride but keeps running!";
+        return;
+      }
       if (selectedCharacter.id === "calebparker" && actor.calebHasDino) {
         actor.calebHasDino = false;
         actor.radius = CALEB_ON_FOOT_RADIUS;
@@ -3296,6 +3477,39 @@ function update(dt) {
     if (selectedCharacter.id === "nathan" && actor.state === "flying" && actor.nathanHasTruck) {
       actor.nathanSpeed = Math.min(NATHAN_MAX_SPEED, actor.nathanSpeed + NATHAN_ACCEL * dt);
     }
+    if (selectedCharacter.id === "davy" && actor.state === "flying" && actor.davyHasRide) {
+      actor.davySpeed = Math.min(DAVY_MAX_SPEED, actor.davySpeed + DAVY_ACCEL * dt);
+      actor.davyShotTimer -= dt;
+      if (actor.davyShotTimer <= 0) {
+        if (getCurrentMap().id === "long-john-silvers") {
+          fireDavyShrimp((Math.random() - 0.5) * 0.22, 180, 13, 2.9);
+          actor.davyShotTimer = 0.1 + Math.random() * 0.08;
+        } else {
+          fireDavyShrimp((Math.random() - 0.5) * 0.06, 0, 12, 2.5);
+          actor.davyShotTimer = 0.42 + Math.random() * 0.14;
+        }
+      }
+    }
+
+    if (selectedCharacter.id === "davy" && getCurrentMap().id === "long-john-silvers") {
+      if (actor.davyGodModeTimer > 0) {
+        actor.davyGodModeTimer = Math.max(0, actor.davyGodModeTimer - dt);
+        actor.davyFlameTimer = Math.max(0, actor.davyFlameTimer - dt);
+        actor.vx = Math.max(actor.vx, 1280);
+        actor.vy = Math.min(actor.vy - 120 * dt, -220);
+        const nearbyTargets = getFatalObstaclesInRange(actor.x - 260, actor.x + 520);
+        nearbyTargets.forEach((target) => destroyedJanets.add(target.index));
+        if (Math.random() < 0.85) {
+          spawnEnemyLaser(actor.x - actor.radius * 0.6, actor.y + actor.radius * 0.8, Math.PI / 2 + (Math.random() - 0.5) * 0.18, 980, 0.55, "#ff7a00", true);
+        }
+      } else {
+        actor.davyGodModeCooldown = Math.max(0, actor.davyGodModeCooldown - dt);
+        if (actor.davyGodModeCooldown <= 0) {
+          triggerDavyGodMode();
+          actor.davyGodModeCooldown = DAVY_GOD_MODE_INTERVAL_MIN + Math.random() * (DAVY_GOD_MODE_INTERVAL_MAX - DAVY_GOD_MODE_INTERVAL_MIN);
+        }
+      }
+    }
 
     if (selectedCharacter.id === "nathan" && actor.nathanFlagTimer > 0) {
       actor.nathanFlagTimer = Math.max(0, actor.nathanFlagTimer - dt);
@@ -3391,6 +3605,9 @@ function update(dt) {
       // Tacoma momentum keeps climbing unless reset by jump landing
       actor.vx = Math.max(actor.vx, actor.nathanSpeed);
     }
+    if (selectedCharacter.id === "davy" && actor.state === "flying" && actor.davyHasRide) {
+      actor.vx = Math.max(actor.vx, actor.davySpeed);
+    }
     if (selectedCharacter.id === "calebparker" && actor.state === "flying" && actor.calebHasDino) {
       // T-Rex momentum keeps building through the run
       actor.vx = Math.max(actor.vx, actor.calebSpeed);
@@ -3450,6 +3667,7 @@ function update(dt) {
       : [];
 
     updateStricWoodsHazards(dt, nearbyJanets);
+    updateLongJohnSilversHazards(dt, nearbyJanets);
     if (updateEnemyLasers(dt)) {
       return;
     }
@@ -3820,6 +4038,13 @@ function update(dt) {
         actor.nathanSpeed = actor.nathanSpeed * 0.75;
         actor.vx = actor.vx * 0.75;
         spawnParticles(actor.x, actor.y, 12, "#c7e3ff");
+      }
+
+      if (selectedCharacter.id === "davy" && actor.davySlowdownPending && actor.davyHasRide) {
+        actor.davySlowdownPending = false;
+        actor.davySpeed = actor.davySpeed * 0.75;
+        actor.vx = actor.vx * 0.75;
+        spawnParticles(actor.x, actor.y, 12, "#ffd2a8");
       }
 
       if (Math.abs(actor.vx) < 55) {
@@ -4583,6 +4808,20 @@ function updateAbilityHint() {
     return;
   }
 
+  if (selectedCharacter.id === "davy") {
+    const mphApprox = (actor.davySpeed / 22.4).toFixed(0);
+    const modeText = actor.davyHasRide ? `Ride speed: ~${mphApprox} mph` : "On foot (ride lost)";
+    if (getCurrentMap().id === "long-john-silvers") {
+      const godText = actor.davyGodModeTimer > 0
+        ? `GOD MODE: ${actor.davyGodModeTimer.toFixed(1)}s`
+        : `God mode in ${Math.max(0, actor.davyGodModeCooldown).toFixed(1)}s`;
+      abilityHint.textContent = `${modeText}  |  Auto shrimp barrage  |  ${godText}`;
+      return;
+    }
+    abilityHint.textContent = `${modeText}  |  Auto shrimp shots  |  Space: ride jump + shrimp burst`;
+    return;
+  }
+
   if (selectedCharacter.id === "nate") {
     const phaseText = actor.natePhaseCooldown <= 0
       ? "Phase ready"
@@ -5197,6 +5436,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "calebparker") {
     return ["characters/Caleb Parker.png", "Caleb Parker.png"];
   }
+  if (character.id === "davy") {
+    return ["Davy.png", "characters/Davy.png"];
+  }
   if (character.id === "lincolnjames") {
     return ["characters/Lincoln James.png", "Lincoln James.png"];
   }
@@ -5220,6 +5462,35 @@ function getCharacterImageCandidates(character) {
 
 function drawBackground() {
   const currentMap = getCurrentMap();
+
+  if (currentMap.id === "long-john-silvers") {
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, "#ffd59a");
+    grad.addColorStop(0.42, "#ffb06a");
+    grad.addColorStop(0.72, "#4db4d7");
+    grad.addColorStop(1, "#146d8c");
+    ctx.fillStyle = grad;
+    ctx.fillRect(-40, -40, canvas.width + 80, canvas.height + 80);
+
+    ctx.fillStyle = "#fff3b1";
+    ctx.beginPath();
+    ctx.arc(canvas.width - 110, 92, 54, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (let i = 0; i < 5; i += 1) {
+      const y = canvas.height * 0.58 + i * 18;
+      ctx.strokeStyle = `rgba(255,255,255,${0.16 - i * 0.02})`;
+      ctx.lineWidth = 6 - i * 0.7;
+      ctx.beginPath();
+      for (let x = -40; x <= canvas.width + 40; x += 24) {
+        const waveY = y + Math.sin((x + cameraX * 0.3) * 0.02 + i) * 7;
+        if (x === -40) ctx.moveTo(x, waveY);
+        else ctx.lineTo(x, waveY);
+      }
+      ctx.stroke();
+    }
+    return;
+  }
 
   if (currentMap.id === "stric-woods") {
     const distanceM = Math.max(0, (actor.maxX - world.launchX) / 10);
@@ -5311,7 +5582,7 @@ function drawCloud(x, y) {
 
 function drawGround() {
   const mapId = getCurrentMap().id;
-  if (mapId === "town-square" || mapId === "stric-woods") {
+  if (mapId === "town-square" || mapId === "stric-woods" || mapId === "long-john-silvers") {
     return;
   }
 
@@ -5341,12 +5612,15 @@ function drawGround() {
 function drawMapDecor() {
   const mapId = getCurrentMap().id;
   const isStricWoods = mapId === "stric-woods";
+  const isLjs = mapId === "long-john-silvers";
 
   if (!isStricWoods) {
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 20px Trebuchet MS";
     const mapTitle = mapId === "town-square"
       ? "Town Square"
+      : mapId === "long-john-silvers"
+        ? "Long John Silvers"
       : "Faith Christian Campus (Fictional)";
     ctx.fillText(mapTitle, 18, 35);
 
@@ -5389,10 +5663,10 @@ function drawMapDecor() {
     const janetSX = fatalRect.x - cameraX;
     if (janetSX <= -fatalRect.w - 60 || janetSX >= canvas.width + 60) return;
 
-    const obstacleImg = getCurrentMap().id === "stric-woods" ? mikeObstacleImg : fatalObstacleImg;
+    const obstacleImg = getCurrentMap().id === "stric-woods" ? mikeObstacleImg : getCurrentMap().id === "long-john-silvers" ? ljsObstacleImg : fatalObstacleImg;
     if (obstacleImg && obstacleImg.complete && obstacleImg.naturalWidth > 10) {
       ctx.save();
-      if (!isStricWoods) {
+      if (!isStricWoods && !isLjs) {
         ctx.fillStyle = "#ffffffd9";
         ctx.fillRect(janetSX - 6, janetY - 6, fatalRect.w + 12, fatalRect.h + 12);
       }
@@ -5411,10 +5685,14 @@ function drawMapDecor() {
       ctx.fillText("!", janetSX + fatalRect.w / 2, janetY + 54);
       ctx.textAlign = "start";
     }
-    if (!isStricWoods) {
+    if (!isStricWoods && !isLjs) {
       ctx.fillStyle = "#8f3f5b";
       ctx.font = "bold 13px Trebuchet MS";
       ctx.fillText(fatalRect.label, janetSX + 4, janetY - 8);
+    } else if (isLjs) {
+      ctx.fillStyle = "#fff5d6";
+      ctx.font = "bold 13px Trebuchet MS";
+      ctx.fillText(fatalRect.label, janetSX + 2, janetY - 8);
     }
   });
 
@@ -6102,6 +6380,40 @@ function drawNathanTacoma() {
   ctx.restore();
 }
 
+function drawDavyRide() {
+  if (selectedCharacter.id !== "davy" || actor.state === "ready" || !actor.davyHasRide) return;
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const r = actor.radius;
+
+  const rideW = r * 4.7;
+  const rideH = r * 2.2;
+  const rideX = sx - rideW / 2;
+  const rideY = sy - r * 0.36;
+
+  ctx.save();
+  if (davyRideImg && davyRideImg.complete && davyRideImg.naturalWidth > 10) {
+    ctx.drawImage(davyRideImg, rideX, rideY, rideW, rideH);
+  } else {
+    ctx.fillStyle = "#a45c22";
+    ctx.fillRect(rideX, rideY + rideH * 0.25, rideW, rideH * 0.52);
+    ctx.fillStyle = "#ffd18a";
+    ctx.fillRect(rideX + rideW * 0.15, rideY, rideW * 0.5, rideH * 0.38);
+  }
+
+  if (actor.davySpeed > 560) {
+    const alpha = Math.min(0.52, (actor.davySpeed - 560) / 2900);
+    const grd = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, r * 3.0);
+    grd.addColorStop(0, `rgba(255,180,120,${alpha})`);
+    grd.addColorStop(1, "rgba(255,180,120,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.ellipse(sx - r * 1.4, sy + r * 0.35, r * 2.4, r * 0.82, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawCalebTrex() {
   if (selectedCharacter.id !== "calebparker" || actor.state === "ready" || !actor.calebHasDino) return;
   const sx = actor.x - cameraX;
@@ -6168,7 +6480,13 @@ function drawNathanTrumps() {
     const sx = shot.x - cameraX;
     if (sx < -90 || sx > canvas.width + 90) return;
     const size = shot.radius * 2.2;
-    if (nathanTrumpImg && nathanTrumpImg.complete && nathanTrumpImg.naturalWidth > 8) {
+    if (shot.isShrimp && ljsProjectileImg && ljsProjectileImg.complete && ljsProjectileImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, shot.y);
+      ctx.rotate(shot.rotation || 0);
+      ctx.drawImage(ljsProjectileImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else if (nathanTrumpImg && nathanTrumpImg.complete && nathanTrumpImg.naturalWidth > 8) {
       ctx.save();
       ctx.translate(sx, shot.y);
       ctx.rotate(shot.rotation || 0);
@@ -6382,7 +6700,14 @@ function drawEnemyLasersAndBoss() {
   enemyLasers.forEach((laser) => {
     const sx = laser.x - cameraX;
     if (sx < -220 || sx > canvas.width + 220) return;
-    if (laser.isFire) {
+    if (laser.spriteType === "shrimp" && ljsProjectileImg && ljsProjectileImg.complete && ljsProjectileImg.naturalWidth > 8) {
+      const size = laser.radius * 4.2;
+      ctx.save();
+      ctx.translate(sx, laser.y);
+      ctx.rotate(Math.atan2(laser.vy, laser.vx));
+      ctx.drawImage(ljsProjectileImg, -size * 0.5, -size * 0.28, size, size * 0.56);
+      ctx.restore();
+    } else if (laser.isFire) {
       const cx = sx;
       const cy = laser.y;
       const r = laser.radius * 2.4;
@@ -6502,6 +6827,7 @@ function drawSceneCore() {
   drawTrajectory();
   drawKadeBMW();
   drawNathanTacoma();
+  drawDavyRide();
   drawCalebTrex();
   drawActor();
   drawFishingRod();
@@ -6831,6 +7157,26 @@ function preloadCharacterImages() {
   };
   mikeObstacleImg.src = buildSiteAssetUrl(mikeObstacleImageCandidates[mikeIdx]);
 
+  ljsObstacleImg = new Image();
+  let ljsObstacleIdx = 0;
+  ljsObstacleImg.onerror = () => {
+    ljsObstacleIdx += 1;
+    if (ljsObstacleIdx < ljsObstacleImageCandidates.length) {
+      ljsObstacleImg.src = ljsObstacleImageCandidates[ljsObstacleIdx];
+    }
+  };
+  ljsObstacleImg.src = ljsObstacleImageCandidates[ljsObstacleIdx];
+
+  ljsProjectileImg = new Image();
+  let ljsProjectileIdx = 0;
+  ljsProjectileImg.onerror = () => {
+    ljsProjectileIdx += 1;
+    if (ljsProjectileIdx < ljsProjectileImageCandidates.length) {
+      ljsProjectileImg.src = ljsProjectileImageCandidates[ljsProjectileIdx];
+    }
+  };
+  ljsProjectileImg.src = ljsProjectileImageCandidates[ljsProjectileIdx];
+
   strickerBossImg = new Image();
   let strickerIdx = 0;
   strickerBossImg.onerror = () => {
@@ -6998,6 +7344,9 @@ function preloadCharacterImages() {
     if (nathanTacomaIdx < nathanTacomaImageCandidates.length) nathanTacomaImg.src = nathanTacomaImageCandidates[nathanTacomaIdx];
   };
   nathanTacomaImg.src = nathanTacomaImageCandidates[0];
+
+  davyRideImg = new Image();
+  davyRideImg.src = "Davys Ride.webp";
 
   nathanGasImg = new Image();
   let nathanGasIdx = 0;
