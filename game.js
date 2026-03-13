@@ -268,6 +268,22 @@ const characters = [
     ability: "rocket",
   },
   {
+    id: "anthony",
+    name: "Anthony",
+    trait: "Shrinking truck slammer",
+    bio: "Space: slam upward. Double-Space: truck blast. Every 100m he shrinks, gets lighter, and gains speed.",
+    imageBase: "Sal",
+    initials: "A",
+    mass: 0.82,
+    radius: 34,
+    drag: 0.16,
+    bounce: 0.60,
+    gravityMult: 1.09,
+    launchBoost: 1.10,
+    unlockAt: 0,
+    ability: "slam",
+  },
+  {
     id: "davy",
     name: "Davy",
     trait: "Sailor's ride + shrimp cannon",
@@ -5427,6 +5443,9 @@ function getCharacterImageCandidates(character) {
   }
   if (character.id === "jjfootballboss") {
     return ["characters/JJFOOTBALLBOSS.png", "characters/JJFOOTBALLBOSS.jpg"];
+  }
+  if (character.id === "anthony") {
+    return ["characters/Sal.png", "Sal.png"];
   }
   if (character.id === "nathan") {
     return ["characters/Nathan.png", "Nathan.png"];
