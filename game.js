@@ -4449,7 +4449,6 @@ function getHeadToHeadProfileSummary(playerName) {
 }
 
 async function fetchCloudHeadToHeadRankings(force = false) {
-  if (!hasCloudAuthSession()) return false;
   if (rankedCloudFetchInFlight) return false;
   const now = Date.now();
   if (!force && now - rankedCloudLastFetchAt < 10000) return false;
@@ -4509,8 +4508,12 @@ async function fetchCloudHeadToHeadRankings(force = false) {
 }
 
 async function pushCloudHeadToHeadProfile(profile) {
-  if (!hasCloudAuthSession()) return false;
   if (!profile) return false;
+
+  if (!hasCloudAuthSession()) {
+    return pushRankedProfileViaGameAccountRpc(profile);
+  }
+
   try {
     const key = (profile.key || profile.name || "").toString().slice(0, 64);
     const cloudName = (profile.name || "Player").toString().slice(0, 64);
@@ -5574,6 +5577,81 @@ function hasCloudAuthSession() {
   return !!authSession?.access_token;
 }
 
+function getLocalSessionPasswordHash() {
+  return (authSession?.user?.user_metadata?.account_password_hash || "").toString();
+}
+
+async function callSupabaseRpc(rpcName, payload) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${getAuthToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function createCloudGameAccount(accountName, passwordHash) {
+  try {
+    const { ok, data } = await callSupabaseRpc(GAME_ACCOUNT_CREATE_RPC, {
+      p_account_name: accountName,
+      p_password_hash: passwordHash,
+    });
+    if (!ok) return { ok: false, exists: false };
+    return {
+      ok: !!(data?.ok ?? data?.created ?? false),
+      exists: !!data?.exists,
+    };
+  } catch {
+    return { ok: false, exists: false };
+  }
+}
+
+async function verifyCloudGameAccount(accountName, passwordHash) {
+  try {
+    const { ok, data } = await callSupabaseRpc(GAME_ACCOUNT_VERIFY_RPC, {
+      p_account_name: accountName,
+      p_password_hash: passwordHash,
+    });
+    if (!ok) return false;
+    return !!(data?.ok ?? data?.valid ?? false);
+  } catch {
+    return false;
+  }
+}
+
+async function pushRankedProfileViaGameAccountRpc(profile) {
+  const accountName = getSessionAccountName();
+  const passwordHash = getLocalSessionPasswordHash();
+  if (!accountName || !passwordHash || !profile) return false;
+  try {
+    const { ok, data } = await callSupabaseRpc(GAME_RANKED_UPSERT_RPC, {
+      p_account_name: normalizeAccountName(accountName),
+      p_password_hash: passwordHash,
+      p_display_name: (profile.displayName || accountName).toString().slice(0, 16),
+      p_rating: Math.round(Number(profile.rating) || 1000),
+      p_peak_rating: Math.round(Number(profile.peakRating) || Number(profile.rating) || 1000),
+      p_wins: Number(profile.wins) || 0,
+      p_losses: Number(profile.losses) || 0,
+      p_draws: Number(profile.draws) || 0,
+      p_matches: Number(profile.matches) || 0,
+      p_best_win_margin: Number(profile.bestWinMargin) || 0,
+    });
+    return !!(ok && (data?.ok ?? true));
+  } catch {
+    return false;
+  }
+}
+
 function updateAccountUI() {
   if (!accountStatus) return;
   const accountName = getSessionAccountName();
@@ -5631,7 +5709,7 @@ async function hashAccountPassword(password) {
   return btoa(input);
 }
 
-function buildLocalSession(accountName) {
+function buildLocalSession(accountName, passwordHash = "", cloudLinked = false) {
   const normalized = normalizeAccountName(accountName);
   return {
     provider: "local",
@@ -5641,7 +5719,11 @@ function buildLocalSession(accountName) {
     user: {
       id: `local-${normalized}`,
       email: `${normalized}@local.account`,
-      user_metadata: { account_name: normalized },
+      user_metadata: {
+        account_name: normalized,
+        account_password_hash: passwordHash,
+        account_cloud_linked: !!cloudLinked,
+      },
       app_metadata: { provider: "local" },
       created_at: new Date().toISOString(),
     },
@@ -5657,28 +5739,48 @@ async function signUpLocalAccount(accountName, password) {
   if (accounts[normalized]) {
     throw new Error("That account name already exists. Use Sign In instead.");
   }
+  const passwordHash = await hashAccountPassword(password);
+  const cloudCreate = await createCloudGameAccount(normalized, passwordHash);
+  if (cloudCreate.exists) {
+    throw new Error("That account name already exists. Use Sign In instead.");
+  }
+
   accounts[normalized] = {
-    passwordHash: await hashAccountPassword(password),
+    passwordHash,
     createdAt: Date.now(),
   };
   saveLocalAccounts(accounts);
-  const session = buildLocalSession(normalized);
+  const session = buildLocalSession(normalized, passwordHash, cloudCreate.ok);
   saveAuthSession(session);
   return session;
 }
 
 async function signInLocalAccount(accountName, password) {
   const normalized = validateAccountName(accountName);
+  const passwordHash = await hashAccountPassword(password);
   const accounts = loadLocalAccounts();
   const entry = accounts[normalized];
+
   if (!entry) {
-    throw new Error("Invalid login credentials.");
+    const cloudValid = await verifyCloudGameAccount(normalized, passwordHash);
+    if (!cloudValid) {
+      throw new Error("Invalid login credentials.");
+    }
+    accounts[normalized] = {
+      passwordHash,
+      createdAt: Date.now(),
+    };
+    saveLocalAccounts(accounts);
+    const cloudSession = buildLocalSession(normalized, passwordHash, true);
+    saveAuthSession(cloudSession);
+    return cloudSession;
   }
-  const passwordHash = await hashAccountPassword(password);
+
   if (entry.passwordHash !== passwordHash) {
     throw new Error("Invalid login credentials.");
   }
-  const session = buildLocalSession(normalized);
+  const cloudValid = await verifyCloudGameAccount(normalized, passwordHash);
+  const session = buildLocalSession(normalized, passwordHash, cloudValid);
   saveAuthSession(session);
   return session;
 }
