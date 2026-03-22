@@ -65,6 +65,52 @@
           <div class="panel large">
             <h2>Character Select</h2>
             <div id="characterGrid" class="character-grid"></div>
+            <div id="adminCharacterPanel" style="display:none; margin:14px 0; padding:12px; border:2px solid #dce4ff; border-radius:10px; background:#ffffffd9;">
+              <h3 style="margin:0 0 8px;">🛠️ Admin Character Maker</h3>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px;">
+                <input id="makerName" type="text" maxlength="24" placeholder="Name" />
+                <input id="makerId" type="text" maxlength="24" placeholder="ID (optional)" />
+                <input id="makerInitials" type="text" maxlength="3" placeholder="Initials" />
+                <input id="makerImageBase" type="text" maxlength="120" placeholder="Image base/path (optional)" />
+                <input id="makerTrait" type="text" maxlength="48" placeholder="Trait" />
+                <input id="makerBio" type="text" maxlength="160" placeholder="Bio" />
+                <select id="makerAbility">
+                  <option value="rocket">rocket</option>
+                  <option value="fishingrod">fishingrod</option>
+                  <option value="slam">slam</option>
+                  <option value="warp">warp</option>
+                  <option value="trumpjump">trumpjump</option>
+                  <option value="jumpbomb">jumpbomb</option>
+                  <option value="backflip">backflip</option>
+                  <option value="dunk">dunk</option>
+                  <option value="tennis">tennis</option>
+                  <option value="truck">truck</option>
+                  <option value="fartpassive">fartpassive</option>
+                  <option value="leprejump">leprejump</option>
+                  <option value="bmwjump">bmwjump</option>
+                  <option value="trexjump">trexjump</option>
+                  <option value="lincolnjump">lincolnjump</option>
+                  <option value="lukejump">lukejump</option>
+                  <option value="owenjump">owenjump</option>
+                  <option value="samswim">samswim</option>
+                  <option value="basketshot">basketshot</option>
+                  <option value="travisjump">travisjump</option>
+                  <option value="davytruck">davytruck</option>
+                </select>
+                <input id="makerMass" type="number" step="0.01" placeholder="Mass (e.g. 1.0)" />
+                <input id="makerRadius" type="number" step="1" placeholder="Radius (e.g. 28)" />
+                <input id="makerDrag" type="number" step="0.001" placeholder="Drag (e.g. 0.08)" />
+                <input id="makerBounce" type="number" step="0.01" placeholder="Bounce (e.g. 0.6)" />
+                <input id="makerGravityMult" type="number" step="0.01" placeholder="Gravity mult (e.g. 1.0)" />
+                <input id="makerLaunchBoost" type="number" step="0.01" placeholder="Launch boost (e.g. 1.1)" />
+                <input id="makerUnlockAt" type="number" step="1" placeholder="Unlock at meters" />
+              </div>
+              <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+                <button id="makerAddBtn" class="btn btn-secondary" type="button">Add Character</button>
+                <input id="makerRemoveId" type="text" maxlength="24" placeholder="ID to remove" style="min-width:180px;" />
+                <button id="makerRemoveBtn" class="btn btn-secondary" type="button">Remove Character</button>
+              </div>
+            </div>
             <div class="map-select-row">
               <label for="mapSelectDropdown">🗺️ Select Map:</label>
               <select id="mapSelectDropdown" class="map-select-dropdown">

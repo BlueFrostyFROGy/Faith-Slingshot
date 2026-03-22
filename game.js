@@ -2,6 +2,7 @@ const STORAGE_KEY = "faith-flight-best";
 const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const AUTH_SESSION_KEY = "faith-flight-auth-session";
 const LOCAL_ACCOUNTS_KEY = "faith-flight-local-accounts";
+const CUSTOM_CHARACTERS_KEY = "faith-flight-custom-characters";
 const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
@@ -13,6 +14,8 @@ const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
 const SUPABASE_H2H_RANKED_TABLE = "head_to_head_rankings";
+const ADMIN_ACCOUNT_NAME = "admin";
+const ADMIN_ACCOUNT_PASSWORD = "admin123";
 
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
@@ -70,6 +73,24 @@ const signUpBtn = document.getElementById("signUpBtn");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const accountStatus = document.getElementById("accountStatus");
+const adminCharacterPanel = document.getElementById("adminCharacterPanel");
+const makerNameInput = document.getElementById("makerName");
+const makerIdInput = document.getElementById("makerId");
+const makerInitialsInput = document.getElementById("makerInitials");
+const makerImageBaseInput = document.getElementById("makerImageBase");
+const makerTraitInput = document.getElementById("makerTrait");
+const makerBioInput = document.getElementById("makerBio");
+const makerAbilityInput = document.getElementById("makerAbility");
+const makerMassInput = document.getElementById("makerMass");
+const makerRadiusInput = document.getElementById("makerRadius");
+const makerDragInput = document.getElementById("makerDrag");
+const makerBounceInput = document.getElementById("makerBounce");
+const makerGravityMultInput = document.getElementById("makerGravityMult");
+const makerLaunchBoostInput = document.getElementById("makerLaunchBoost");
+const makerUnlockAtInput = document.getElementById("makerUnlockAt");
+const makerAddBtn = document.getElementById("makerAddBtn");
+const makerRemoveIdInput = document.getElementById("makerRemoveId");
+const makerRemoveBtn = document.getElementById("makerRemoveBtn");
 const hudTop = document.querySelector(".hud-top");
 
 let authSession = null;
@@ -644,6 +665,74 @@ const characters = [
     ability: "basketshot",
   },
 ];
+
+function loadCustomCharacters() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_CHARACTERS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomCharacters(list) {
+  localStorage.setItem(CUSTOM_CHARACTERS_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+}
+
+function supportedMakerAbilities() {
+  return new Set([
+    "rocket", "fishingrod", "slam", "warp", "trumpjump", "jumpbomb", "backflip", "dunk", "tennis", "truck",
+    "fartpassive", "leprejump", "bmwjump", "trexjump", "lincolnjump", "lukejump", "owenjump", "samswim", "basketshot", "travisjump", "davytruck",
+  ]);
+}
+
+function normalizeCharacterId(value) {
+  const base = (value || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "");
+  return base.slice(0, 24);
+}
+
+function sanitizeCustomCharacter(raw) {
+  const name = (raw?.name || "Custom").toString().trim().slice(0, 24);
+  const id = normalizeCharacterId(raw?.id || name || `custom-${Date.now()}`);
+  const initials = ((raw?.initials || name.slice(0, 2) || "C").toString().trim().slice(0, 3) || "C").toUpperCase();
+  const ability = supportedMakerAbilities().has(raw?.ability) ? raw.ability : "rocket";
+  const numberOr = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  return {
+    id,
+    name,
+    trait: (raw?.trait || "Custom build").toString().slice(0, 48),
+    bio: (raw?.bio || "Admin-created character.").toString().slice(0, 160),
+    imageBase: (raw?.imageBase || `characters/${name}`).toString().trim() || `characters/${name}`,
+    initials,
+    mass: numberOr(raw?.mass, 1.0),
+    radius: Math.max(16, Math.min(56, Math.round(numberOr(raw?.radius, 28)))),
+    drag: Math.max(0.01, Math.min(0.3, numberOr(raw?.drag, 0.08))),
+    bounce: Math.max(0.2, Math.min(0.95, numberOr(raw?.bounce, 0.6))),
+    gravityMult: Math.max(0.6, Math.min(1.4, numberOr(raw?.gravityMult, 1.0))),
+    launchBoost: Math.max(0.7, Math.min(1.8, numberOr(raw?.launchBoost, 1.1))),
+    unlockAt: Math.max(0, Math.round(numberOr(raw?.unlockAt, 0))),
+    ability,
+    custom: true,
+  };
+}
+
+function applySavedCustomCharacters() {
+  const saved = loadCustomCharacters();
+  const baseIds = new Set(characters.map((c) => c.id));
+  saved.forEach((entry) => {
+    const c = sanitizeCustomCharacter(entry);
+    if (!c.id || baseIds.has(c.id)) return;
+    baseIds.add(c.id);
+    characters.push(c);
+  });
+}
+
+applySavedCustomCharacters();
 
 let selectedCharacter = characters[0];
 let cameraX = 0;
@@ -4332,6 +4421,15 @@ function updateAccountStatusMessage(message) {
   accountStatus.textContent = message;
 }
 
+function isAdminSignedIn() {
+  return getSessionAccountName() === ADMIN_ACCOUNT_NAME;
+}
+
+function refreshAdminCharacterPanel() {
+  if (!adminCharacterPanel) return;
+  adminCharacterPanel.style.display = isAdminSignedIn() ? "block" : "none";
+}
+
 function syncSignedInIdentityUI() {
   const accountName = getSessionAccountName();
   if (headToHeadNameInput) {
@@ -5663,6 +5761,7 @@ function updateAccountUI() {
     accountStatus.textContent = "Account: Guest (create or sign in to play)";
     clearSignedInIdentityUI();
   }
+  refreshAdminCharacterPanel();
 }
 
 function loadAuthSession() {
@@ -5753,6 +5852,119 @@ async function signUpLocalAccount(accountName, password) {
   const session = buildLocalSession(normalized, passwordHash, cloudCreate.ok);
   saveAuthSession(session);
   return session;
+}
+
+async function ensureAdminAccountExists() {
+  try {
+    const accounts = loadLocalAccounts();
+    const key = normalizeAccountName(ADMIN_ACCOUNT_NAME);
+    if (accounts[key]) return;
+    accounts[key] = {
+      passwordHash: await hashAccountPassword(ADMIN_ACCOUNT_PASSWORD),
+      createdAt: Date.now(),
+    };
+    saveLocalAccounts(accounts);
+  } catch (e) {
+    console.warn("Failed to seed admin account:", e);
+  }
+}
+
+function clearMakerFields() {
+  [
+    makerNameInput,
+    makerIdInput,
+    makerInitialsInput,
+    makerImageBaseInput,
+    makerTraitInput,
+    makerBioInput,
+    makerMassInput,
+    makerRadiusInput,
+    makerDragInput,
+    makerBounceInput,
+    makerGravityMultInput,
+    makerLaunchBoostInput,
+    makerUnlockAtInput,
+    makerRemoveIdInput,
+  ].forEach((el) => {
+    if (el) el.value = "";
+  });
+  if (makerAbilityInput) makerAbilityInput.value = "rocket";
+}
+
+function addCustomCharacterFromMaker() {
+  if (!isAdminSignedIn()) {
+    alert("Admin account required to use Character Maker.");
+    return;
+  }
+  const candidate = sanitizeCustomCharacter({
+    name: makerNameInput?.value,
+    id: makerIdInput?.value,
+    initials: makerInitialsInput?.value,
+    imageBase: makerImageBaseInput?.value,
+    trait: makerTraitInput?.value,
+    bio: makerBioInput?.value,
+    ability: makerAbilityInput?.value,
+    mass: makerMassInput?.value,
+    radius: makerRadiusInput?.value,
+    drag: makerDragInput?.value,
+    bounce: makerBounceInput?.value,
+    gravityMult: makerGravityMultInput?.value,
+    launchBoost: makerLaunchBoostInput?.value,
+    unlockAt: makerUnlockAtInput?.value,
+  });
+
+  if (!candidate.id || !candidate.name) {
+    alert("Name is required.");
+    return;
+  }
+  if (characters.some((c) => c.id === candidate.id)) {
+    alert("Character ID already exists. Use a different ID.");
+    return;
+  }
+
+  characters.push(candidate);
+  const saved = loadCustomCharacters();
+  saved.push(candidate);
+  saveCustomCharacters(saved);
+
+  const img = new Image();
+  const [pngPath, jpgPath] = getCharacterImageCandidates(candidate);
+  img.onerror = () => {
+    if (!img.src.endsWith(".jpg")) img.src = jpgPath;
+  };
+  img.src = pngPath;
+  candidate._img = img;
+
+  clearMakerFields();
+  renderCharacterCards();
+  alert(`Added character: ${candidate.name}`);
+}
+
+function removeCustomCharacterById() {
+  if (!isAdminSignedIn()) {
+    alert("Admin account required to use Character Maker.");
+    return;
+  }
+  const rawId = makerRemoveIdInput?.value || makerIdInput?.value || "";
+  const id = normalizeCharacterId(rawId);
+  if (!id) {
+    alert("Enter a character ID to remove.");
+    return;
+  }
+  const idx = characters.findIndex((c) => c.id === id && c.custom);
+  if (idx === -1) {
+    alert("Custom character not found.");
+    return;
+  }
+  if (selectedCharacter?.id === id) {
+    selectedCharacter = characters[0];
+    applyCharacterStats(selectedCharacter);
+  }
+  characters.splice(idx, 1);
+  const saved = loadCustomCharacters().filter((c) => sanitizeCustomCharacter(c).id !== id);
+  saveCustomCharacters(saved);
+  renderCharacterCards();
+  alert(`Removed character: ${id}`);
 }
 
 async function signInLocalAccount(accountName, password) {
@@ -8240,6 +8452,8 @@ document.getElementById("changeCharBtn").addEventListener("click", () => {
   showCharacterSelect();
 });
 switchMapBtn?.addEventListener("click", toggleMap);
+makerAddBtn?.addEventListener("click", addCustomCharacterFromMaker);
+makerRemoveBtn?.addEventListener("click", removeCustomCharacterById);
 signUpBtn?.addEventListener("click", async () => {
   if (authRequestInFlight) return;
   try {
@@ -8570,6 +8784,7 @@ bindMobileActionButton(mobileSecondaryBtn, () => {
 });
 
 preloadCharacterImages();
+ensureAdminAccountExists();
 const storedH2HName = localStorage.getItem("faith-h2h-name");
 if (storedH2HName && !authSession?.user?.id) {
   networkState.displayName = storedH2HName.slice(0, 16);
