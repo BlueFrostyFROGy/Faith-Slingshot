@@ -11,10 +11,13 @@ const AUTH_ACCOUNT_DOMAIN = "faithflightgame.com";
 const GAME_ACCOUNT_CREATE_RPC = "create_game_account";
 const GAME_ACCOUNT_VERIFY_RPC = "verify_game_account";
 const GAME_RANKED_UPSERT_RPC = "upsert_game_ranked_profile";
+const GAME_CHARACTER_UPSERT_RPC = "upsert_game_character";
+const GAME_CHARACTER_DELETE_RPC = "delete_game_character";
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
 const SUPABASE_H2H_RANKED_TABLE = "head_to_head_rankings";
+const SUPABASE_LIVE_CHAR_TABLE = "published_characters";
 const ADMIN_ACCOUNT_NAME = "admin";
 const ADMIN_ACCOUNT_PASSWORD = "admin123";
 
@@ -99,6 +102,8 @@ const makerGravityMultInput = document.getElementById("makerGravityMult");
 const makerLaunchBoostInput = document.getElementById("makerLaunchBoost");
 const makerUnlockAtInput = document.getElementById("makerUnlockAt");
 const makerAddBtn = document.getElementById("makerAddBtn");
+const makerPublishBtn = document.getElementById("makerPublishBtn");
+const makerPullLiveBtn = document.getElementById("makerPullLiveBtn");
 const makerRemoveIdInput = document.getElementById("makerRemoveId");
 const makerRemoveBtn = document.getElementById("makerRemoveBtn");
 const hudTop = document.querySelector(".hud-top");
@@ -901,6 +906,66 @@ function applySavedCustomCharacters() {
     baseIds.add(c.id);
     characters.push(c);
   });
+}
+
+function serializeCharacterForCloud(character) {
+  if (!character) return null;
+  const c = sanitizeCustomCharacter(character);
+  return {
+    id: c.id,
+    name: c.name,
+    initials: c.initials,
+    trait: c.trait,
+    bio: c.bio,
+    ability: c.ability,
+    mass: Number(c.mass),
+    radius: Number(c.radius),
+    drag: Number(c.drag),
+    bounce: Number(c.bounce),
+    gravity_mult: Number(c.gravityMult),
+    launch_boost: Number(c.launchBoost),
+    unlock_at: Number(c.unlockAt),
+    image_data: sanitizePngDataUrl(c.imageData),
+    item_image_data: sanitizePngDataUrl(c.itemImageData),
+  };
+}
+
+function mergeCloudCharacterIntoRuntime(raw) {
+  const next = sanitizeCustomCharacter({
+    id: raw?.id,
+    name: raw?.name,
+    initials: raw?.initials,
+    trait: raw?.trait,
+    bio: raw?.bio,
+    ability: raw?.ability,
+    mass: raw?.mass,
+    radius: raw?.radius,
+    drag: raw?.drag,
+    bounce: raw?.bounce,
+    gravityMult: raw?.gravity_mult,
+    launchBoost: raw?.launch_boost,
+    unlockAt: raw?.unlock_at,
+    imageData: raw?.image_data,
+    itemImageData: raw?.item_image_data,
+    custom: true,
+    published: true,
+  });
+  const idx = characters.findIndex((c) => c.id === next.id);
+  if (idx === -1) {
+    characters.push(next);
+    return true;
+  }
+  if (!characters[idx].custom) return false;
+  characters[idx] = {
+    ...characters[idx],
+    ...next,
+    published: true,
+  };
+  if (selectedCharacter?.id === next.id) {
+    selectedCharacter = characters[idx];
+    applyCharacterStats(selectedCharacter);
+  }
+  return true;
 }
 
 applySavedCustomCharacters();
@@ -5888,6 +5953,105 @@ async function createCloudGameAccount(accountName, passwordHash) {
   }
 }
 
+function getRpcErrorMessage(status, data) {
+  const msg = (data?.message || data?.error || data?.hint || "").toString().trim();
+  if (msg) return msg;
+  if (status === 401 || status === 403) return "Not allowed.";
+  return "Request failed.";
+}
+
+async function fetchCloudPublishedCharacters() {
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LIVE_CHAR_TABLE}?select=id,name,initials,trait,bio,ability,mass,radius,drag,bounce,gravity_mult,launch_boost,unlock_at,image_data,item_image_data,updated_at&order=updated_at.desc&limit=300`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+    });
+    if (!res.ok) return false;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return false;
+    let changed = false;
+    rows.forEach((row) => {
+      changed = mergeCloudCharacterIntoRuntime(row) || changed;
+    });
+    if (changed) renderCharacterCards();
+    return true;
+  } catch (e) {
+    console.warn("fetchCloudPublishedCharacters error:", e);
+    return false;
+  }
+}
+
+async function publishCharacterToCloud(character) {
+  const accountName = normalizeAccountName(getSessionAccountName());
+  const passwordHash = getLocalSessionPasswordHash();
+  if (!accountName || !passwordHash) {
+    return { ok: false, message: "Admin account session missing." };
+  }
+  const payload = serializeCharacterForCloud(character);
+  if (!payload?.id || !payload?.name) {
+    return { ok: false, message: "Character name and ID are required." };
+  }
+
+  try {
+    const { ok, status, data } = await callSupabaseRpc(GAME_CHARACTER_UPSERT_RPC, {
+      p_account_name: accountName,
+      p_password_hash: passwordHash,
+      p_id: payload.id,
+      p_name: payload.name,
+      p_initials: payload.initials,
+      p_trait: payload.trait,
+      p_bio: payload.bio,
+      p_ability: payload.ability,
+      p_mass: payload.mass,
+      p_radius: payload.radius,
+      p_drag: payload.drag,
+      p_bounce: payload.bounce,
+      p_gravity_mult: payload.gravity_mult,
+      p_launch_boost: payload.launch_boost,
+      p_unlock_at: payload.unlock_at,
+      p_image_data: payload.image_data,
+      p_item_image_data: payload.item_image_data,
+    });
+
+    if (!ok || !(data?.ok ?? true)) {
+      return { ok: false, message: getRpcErrorMessage(status, data) };
+    }
+
+    mergeCloudCharacterIntoRuntime(payload);
+    return { ok: true, message: "Published live." };
+  } catch (e) {
+    return { ok: false, message: e?.message || "Publish failed." };
+  }
+}
+
+async function deleteCharacterFromCloud(characterId) {
+  const accountName = normalizeAccountName(getSessionAccountName());
+  const passwordHash = getLocalSessionPasswordHash();
+  if (!accountName || !passwordHash) {
+    return { ok: false, message: "Admin account session missing." };
+  }
+  const normalizedId = normalizeCharacterId(characterId);
+  if (!normalizedId) {
+    return { ok: false, message: "Character ID required." };
+  }
+  try {
+    const { ok, status, data } = await callSupabaseRpc(GAME_CHARACTER_DELETE_RPC, {
+      p_account_name: accountName,
+      p_password_hash: passwordHash,
+      p_id: normalizedId,
+    });
+    if (!ok || !(data?.ok ?? true)) {
+      return { ok: false, message: getRpcErrorMessage(status, data) };
+    }
+    return { ok: true, message: "Removed from live characters." };
+  } catch (e) {
+    return { ok: false, message: e?.message || "Delete failed." };
+  }
+}
+
 async function verifyCloudGameAccount(accountName, passwordHash) {
   try {
     const { ok, data } = await callSupabaseRpc(GAME_ACCOUNT_VERIFY_RPC, {
@@ -6228,12 +6392,8 @@ function bindProfilePngDropZone() {
   });
 }
 
-function addCustomCharacterFromMaker() {
-  if (!isAdminSignedIn()) {
-    alert("Admin account required to use Character Maker.");
-    return;
-  }
-  const candidate = sanitizeCustomCharacter({
+function buildMakerCandidate() {
+  return sanitizeCustomCharacter({
     name: makerNameInput?.value,
     id: makerIdInput?.value,
     initials: makerInitialsInput?.value,
@@ -6251,19 +6411,35 @@ function addCustomCharacterFromMaker() {
     launchBoost: makerLaunchBoostInput?.value,
     unlockAt: makerUnlockAtInput?.value,
   });
+}
 
-  if (!candidate.id || !candidate.name) {
-    alert("Name is required.");
-    return;
+function upsertCustomCharacter(candidate) {
+  if (!candidate?.id || !candidate?.name) {
+    return { ok: false, message: "Name and ID are required." };
   }
-  if (characters.some((c) => c.id === candidate.id)) {
-    alert("Character ID already exists. Use a different ID.");
-    return;
+  const idx = characters.findIndex((c) => c.id === candidate.id);
+  if (idx !== -1 && !characters[idx].custom) {
+    return { ok: false, message: "Cannot overwrite built-in character ID." };
   }
 
-  characters.push(candidate);
+  if (idx === -1) {
+    characters.push(candidate);
+  } else {
+    characters[idx] = {
+      ...characters[idx],
+      ...candidate,
+      custom: true,
+    };
+    if (selectedCharacter?.id === candidate.id) {
+      selectedCharacter = characters[idx];
+      applyCharacterStats(selectedCharacter);
+    }
+  }
+
   const saved = loadCustomCharacters();
-  saved.push(candidate);
+  const savedIdx = saved.findIndex((entry) => sanitizeCustomCharacter(entry).id === candidate.id);
+  if (savedIdx === -1) saved.push(candidate);
+  else saved[savedIdx] = candidate;
   const savedOk = saveCustomCharacters(saved);
 
   const img = new Image();
@@ -6277,16 +6453,65 @@ function addCustomCharacterFromMaker() {
   img.src = pngPath;
   candidate._img = img;
 
-  clearMakerFields();
   renderCharacterCards();
-  if (!savedOk) {
-    alert(`Added character: ${candidate.name} (session only; local storage is full).`);
+  return { ok: true, savedOk, updated: idx !== -1 };
+}
+
+function addCustomCharacterFromMaker() {
+  if (!isAdminSignedIn()) {
+    alert("Admin account required to use Character Maker.");
+    return;
+  }
+
+  const candidate = buildMakerCandidate();
+  const result = upsertCustomCharacter(candidate);
+  if (!result.ok) {
+    alert(result.message || "Unable to add character.");
+    return;
+  }
+
+  clearMakerFields();
+  if (!result.savedOk) {
+    alert(`${result.updated ? "Updated" : "Added"} character: ${candidate.name} (session only; local storage is full).`);
   } else {
-    alert(`Added character: ${candidate.name}`);
+    alert(`${result.updated ? "Updated" : "Added"} character: ${candidate.name}`);
   }
 }
 
-function removeCustomCharacterById() {
+async function publishCustomCharacterFromMaker() {
+  if (!isAdminSignedIn()) {
+    alert("Admin account required to publish live characters.");
+    return;
+  }
+
+  const candidate = buildMakerCandidate();
+  const localResult = upsertCustomCharacter(candidate);
+  if (!localResult.ok) {
+    alert(localResult.message || "Unable to publish character.");
+    return;
+  }
+
+  const cloudResult = await publishCharacterToCloud(candidate);
+  if (!cloudResult.ok) {
+    alert(`Character saved locally but publish failed: ${cloudResult.message}`);
+    return;
+  }
+
+  clearMakerFields();
+  await fetchCloudPublishedCharacters();
+  alert(`Published live: ${candidate.name}`);
+}
+
+async function pullLiveCharactersNow() {
+  const ok = await fetchCloudPublishedCharacters();
+  if (!ok) {
+    alert("Could not pull live characters right now.");
+    return;
+  }
+  alert("Live characters refreshed.");
+}
+
+async function removeCustomCharacterById() {
   if (!isAdminSignedIn()) {
     alert("Admin account required to use Character Maker.");
     return;
@@ -6309,11 +6534,12 @@ function removeCustomCharacterById() {
   characters.splice(idx, 1);
   const saved = loadCustomCharacters().filter((c) => sanitizeCustomCharacter(c).id !== id);
   const savedOk = saveCustomCharacters(saved);
+  const cloud = await deleteCharacterFromCloud(id);
   renderCharacterCards();
   if (!savedOk) {
-    alert(`Removed character: ${id} (session only; local storage update failed).`);
+    alert(`Removed character: ${id} (local storage update failed). ${cloud.ok ? "Removed from live list too." : `Live delete failed: ${cloud.message}`}`);
   } else {
-    alert(`Removed character: ${id}`);
+    alert(cloud.ok ? `Removed character: ${id} (and removed live)` : `Removed local character: ${id}. Live delete failed: ${cloud.message}`);
   }
 }
 
@@ -8813,7 +9039,11 @@ document.getElementById("changeCharBtn").addEventListener("click", () => {
 });
 switchMapBtn?.addEventListener("click", toggleMap);
 makerAddBtn?.addEventListener("click", addCustomCharacterFromMaker);
-makerRemoveBtn?.addEventListener("click", removeCustomCharacterById);
+makerPublishBtn?.addEventListener("click", publishCustomCharacterFromMaker);
+makerPullLiveBtn?.addEventListener("click", pullLiveCharactersNow);
+makerRemoveBtn?.addEventListener("click", () => {
+  removeCustomCharacterById();
+});
 makerAiGenerateBtn?.addEventListener("click", applyAiBuildToMaker);
 makerCharacterPngInput?.addEventListener("change", () => handleMakerImageUpload(makerCharacterPngInput, "character"));
 makerItemPngInput?.addEventListener("change", () => handleMakerImageUpload(makerItemPngInput, "item"));
@@ -9174,6 +9404,7 @@ if (authSession?.user?.id) {
   const accountName = getSessionAccountName();
   if (accountNameInput) accountNameInput.value = accountName;
 }
+fetchCloudPublishedCharacters();
 subscribeToLeaderboard();
 window.addEventListener("resize", updateViewportLayout);
 window.visualViewport?.addEventListener("resize", updateViewportLayout);
