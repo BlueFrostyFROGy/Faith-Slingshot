@@ -76,6 +76,10 @@
                 <textarea id="makerAiDescription" rows="3" placeholder="Describe your character for AI build/tuning (ex: fast ninja that can jump high and throw bombs)"></textarea>
                 <button id="makerAiGenerateBtn" class="btn btn-secondary" type="button">AI Auto-Build + Tune</button>
               </div>
+              <div class="makerEditableCharacters" style="margin-bottom:12px;">
+                <h4 style="margin:0 0 8px; color:#666;">Edit Custom Character:</h4>
+                <div id="makerEditCharacterGrid" class="character-grid" style="max-width:100%; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));"></div>
+              </div>
               <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px;">
                 <input id="makerName" type="text" maxlength="24" placeholder="Name" />
                 <input id="makerId" type="text" maxlength="24" placeholder="ID (optional)" />

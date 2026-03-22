@@ -791,15 +791,20 @@ function clamp(v, min, max) {
 function getSuggestedAbilityFromDescription(text) {
   const lower = text.toLowerCase();
   const map = [
-    { keys: ["bomb", "explosive", "blast"], ability: "jumpbomb" },
-    { keys: ["truck", "car", "vehicle"], ability: "truck" },
-    { keys: ["dunk", "basketball", "hoop"], ability: "dunk" },
-    { keys: ["tennis", "racket"], ability: "tennis" },
-    { keys: ["fish", "hook", "rod"], ability: "fishingrod" },
-    { keys: ["teleport", "warp", "blink"], ability: "warp" },
-    { keys: ["slam", "smash", "ground pound"], ability: "slam" },
-    { keys: ["jump", "double jump", "air jump"], ability: "backflip" },
-    { keys: ["rocket", "boost", "jet"], ability: "rocket" },
+    { keys: ["bomb", "explosive", "blast", "detonate", "explode"], ability: "jumpbomb" },
+    { keys: ["truck", "car", "vehicle", "drive", "ride"], ability: "truck" },
+    { keys: ["dunk", "basketball", "hoop", "slam dunk", "shoot"], ability: "dunk" },
+    { keys: ["tennis", "racket", "ball", "serve"], ability: "tennis" },
+    { keys: ["fish", "hook", "rod", "cast", "line"], ability: "fishingrod" },
+    { keys: ["teleport", "warp", "blink", "phase", "shift"], ability: "warp" },
+    { keys: ["slam", "smash", "ground pound", "crash", "pound"], ability: "slam" },
+    { keys: ["jump", "double jump", "air jump", "leap", "hop"], ability: "backflip" },
+    { keys: ["rocket", "boost", "jet", "fly", "launch"], ability: "rocket" },
+    { keys: ["fart", "gas", "wind", "pass"], ability: "fartpassive" },
+    { keys: ["leprechaun", "lucky", "green"], ability: "leprejump" },
+    { keys: ["bmw", "car", "race"], ability: "bmwjump" },
+    { keys: ["trex", "dinosaur", "dino"], ability: "trexjump" },
+    { keys: ["swim", "water", "bench press"], ability: "samswim" },
   ];
   for (const entry of map) {
     if (entry.keys.some((k) => lower.includes(k))) return entry.ability;
@@ -840,8 +845,14 @@ function buildAiDraftFromDescription(descriptionText) {
     drag += 0.02;
   }
 
+  // Generate character name and ID from description
+  const { name, id, initials } = generateCharacterNameFromDescription(text);
   const suggestedAbility = getSuggestedAbilityFromDescription(text);
+
   return {
+    name,
+    id,
+    initials,
     trait: "AI-tuned build",
     bio: text.slice(0, 160) || "AI-generated character build.",
     ability: supportedMakerAbilities().has(suggestedAbility) ? suggestedAbility : "rocket",
@@ -852,6 +863,38 @@ function buildAiDraftFromDescription(descriptionText) {
     gravityMult: clamp(gravityMult, 0.6, 1.4).toFixed(2),
     launchBoost: clamp(launchBoost, 0.7, 1.8).toFixed(2),
   };
+}
+
+function generateCharacterNameFromDescription(description) {
+  const words = (description || "").toLowerCase().trim().split(/\s+/).filter((w) => w.length > 2);
+  
+  // Adjectives and nouns that make good character names
+  const adjectives = ["swift", "fierce", "quick", "wild", "mighty", "crafty", "bold", "shadow", "storm", "cosmic", "cyber", "silent"];
+  const nouns = ["ninja", "dragon", "wolf", "phoenix", "tiger", "eagle", "viper", "knight", "hunter", "warrior", "rogue", "guardian"];
+  
+  let selectedAdj = adjectives[Math.floor(Math.random() * adjectives.length)];
+  let selectedNoun = nouns[Math.floor(Math.random() * nouns.length)];
+  
+  // Check description for keyword matches
+  const lower = description.toLowerCase();
+  if (/(ninja|shadow|stealth|sneak)/.test(lower)) selectedNoun = "ninja";
+  if (/(dragon|fire|flame|hot)/.test(lower)) selectedNoun = "dragon";
+  if (/(wolf|wolf|pack|wild)/.test(lower)) selectedNoun = "wolf";
+  if (/(phoenix|rebirth|flame)/.test(lower)) selectedNoun = "phoenix";
+  if (/(tiger|stripe|power)/.test(lower)) selectedNoun = "tiger";
+  if (/(eagle|sky|soar)/.test(lower)) selectedNoun = "eagle";
+  
+  if (/(fast|swift|quick|speed)/.test(lower)) selectedAdj = "swift";
+  if (/(fierce|angry|aggressive|wild)/.test(lower)) selectedAdj = "fierce";
+  if (/(silent|quiet|stealth)/.test(lower)) selectedAdj = "silent";
+  if (/(cosmic|space|galaxy|star)/.test(lower)) selectedAdj = "cosmic";
+  if (/(cyber|tech|electric|digital)/.test(lower)) selectedAdj = "cyber";
+  
+  const name = selectedAdj.charAt(0).toUpperCase() + selectedAdj.slice(1) + " " + selectedNoun.charAt(0).toUpperCase() + selectedNoun.slice(1);
+  const id = (selectedAdj + selectedNoun).toLowerCase();
+  const initials = (selectedAdj.charAt(0) + selectedNoun.charAt(0)).toUpperCase();
+  
+  return { name, id, initials };
 }
 
 function supportedMakerAbilities() {
@@ -6259,6 +6302,13 @@ function applyAiBuildToMaker() {
     return;
   }
   const draft = buildAiDraftFromDescription(prompt);
+  
+  // Always populate name, id, and initials from AI
+  if (makerNameInput) makerNameInput.value = draft.name;
+  if (makerIdInput) makerIdInput.value = draft.id;
+  if (makerInitialsInput) makerInitialsInput.value = draft.initials;
+  
+  // Populate other fields if empty
   if (makerTraitInput && !makerTraitInput.value.trim()) makerTraitInput.value = draft.trait;
   if (makerBioInput) makerBioInput.value = draft.bio;
   if (makerAbilityInput) makerAbilityInput.value = draft.ability;
@@ -6268,32 +6318,6 @@ function applyAiBuildToMaker() {
   if (makerBounceInput) makerBounceInput.value = draft.bounce;
   if (makerGravityMultInput) makerGravityMultInput.value = draft.gravityMult;
   if (makerLaunchBoostInput) makerLaunchBoostInput.value = draft.launchBoost;
-
-  if (makerNameInput && !makerNameInput.value.trim()) {
-    const firstWords = prompt
-      .replace(/[^a-zA-Z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(" ");
-    makerNameInput.value = firstWords || "AI Hero";
-  }
-
-  if (makerIdInput && !makerIdInput.value.trim()) {
-    makerIdInput.value = normalizeCharacterId(makerNameInput?.value || "ai-hero");
-  }
-
-  if (makerInitialsInput && !makerInitialsInput.value.trim()) {
-    const name = (makerNameInput?.value || "AI").trim();
-    const initials = name
-      .split(/\s+/)
-      .map((w) => w.charAt(0))
-      .join("")
-      .slice(0, 3)
-      .toUpperCase();
-    makerInitialsInput.value = initials || "AI";
-  }
 }
 
 function updateMakerImagePreview(imgEl, dataUrl) {
@@ -6398,6 +6422,31 @@ function bindProfilePngDropZone() {
   });
 }
 
+function loadCharacterIntoMaker(character) {
+  if (!character) return;
+  const c = sanitizeCustomCharacter(character);
+  makerNameInput.value = c.name;
+  makerIdInput.value = c.id;
+  makerInitialsInput.value = c.initials;
+  makerImageBaseInput.value = c.imageBase;
+  makerTraitInput.value = c.trait;
+  makerBioInput.value = c.bio;
+  makerAbilityInput.value = c.ability;
+  makerMassInput.value = c.mass;
+  makerRadiusInput.value = c.radius;
+  makerDragInput.value = c.drag;
+  makerBounceInput.value = c.bounce;
+  makerGravityMultInput.value = c.gravityMult;
+  makerLaunchBoostInput.value = c.launchBoost;
+  makerUnlockAtInput.value = c.unlockAt;
+  makerAiDescriptionInput.value = c.bio;
+
+  makerCharacterImageData = c.imageData || "";
+  makerItemImageData = c.itemImageData || "";
+  updateMakerImagePreview(makerCharacterPreview, makerCharacterImageData);
+  updateMakerImagePreview(makerItemPreview, makerItemImageData);
+}
+
 function buildMakerCandidate() {
   return sanitizeCustomCharacter({
     name: makerNameInput?.value,
@@ -6416,6 +6465,59 @@ function buildMakerCandidate() {
     gravityMult: makerGravityMultInput?.value,
     launchBoost: makerLaunchBoostInput?.value,
     unlockAt: makerUnlockAtInput?.value,
+  });
+}
+
+function loadCharacterIntoMaker(character) {
+  if (!character) return;
+  const c = sanitizeCustomCharacter(character);
+  makerNameInput.value = c.name;
+  makerIdInput.value = c.id;
+  makerInitialsInput.value = c.initials;
+  makerImageBaseInput.value = c.imageBase;
+  makerTraitInput.value = c.trait;
+  makerBioInput.value = c.bio;
+  makerAbilityInput.value = c.ability;
+  makerMassInput.value = c.mass;
+  makerRadiusInput.value = c.radius;
+  makerDragInput.value = c.drag;
+  makerBounceInput.value = c.bounce;
+  makerGravityMultInput.value = c.gravityMult;
+  makerLaunchBoostInput.value = c.launchBoost;
+  makerUnlockAtInput.value = c.unlockAt;
+  makerAiDescriptionInput.value = c.bio;
+
+  makerCharacterImageData = c.imageData || "";
+  makerItemImageData = c.itemImageData || "";
+  updateMakerImagePreview(makerCharacterPreview, makerCharacterImageData);
+  updateMakerImagePreview(makerItemPreview, makerItemImageData);
+}
+
+function renderMakerEditableCharacters() {
+  const editGrid = document.getElementById("makerEditCharacterGrid");
+  if (!editGrid) return;
+
+  editGrid.innerHTML = "";
+  const customChars = characters.filter((c) => c.custom);
+
+  if (customChars.length === 0) {
+    editGrid.innerHTML = "<p style='grid-column: 1 / -1; text-align: center; color: #666;'>No custom characters to edit.</p>";
+    return;
+  }
+
+  customChars.forEach((c) => {
+    const btn = document.createElement("button");
+    btn.className = "btn btn-secondary";
+    btn.style.padding = "8px 12px";
+    btn.style.whiteSpace = "normal";
+    btn.style.textAlign = "left";
+    btn.innerHTML = `<strong>${c.name}</strong><br><small>${c.id}</small>`;
+    btn.addEventListener("click", () => {
+      loadCharacterIntoMaker(c);
+      const elem = document.querySelector(".makerEditableCharacters");
+      if (elem) elem.scrollIntoView({ behavior: "smooth" });
+    });
+    editGrid.appendChild(btn);
   });
 }
 
@@ -8701,6 +8803,10 @@ function renderCharacterCards() {
 
     characterGrid.append(card);
   });
+  
+  if (isAdminSignedIn()) {
+    renderMakerEditableCharacters();
+  }
 }
 
 function showMenu() {
