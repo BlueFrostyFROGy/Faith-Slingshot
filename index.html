@@ -43,6 +43,11 @@
               <button id="signOutBtn" class="btn btn-secondary">Sign Out</button>
             </div>
             <div id="accountStatus" style="font-size: 0.9rem; color: #445; margin-bottom: 10px;">Account: Guest</div>
+            <div id="profilePicDrop" class="png-drop-zone" role="button" tabindex="0" aria-label="Upload profile picture PNG">
+              Drop PNG profile pic here (or click)
+              <input id="profilePicInput" type="file" accept="image/png" style="display:none;" />
+            </div>
+            <img id="accountProfilePreview" class="account-profile-preview" alt="Profile picture preview" />
             <input id="headToHeadNameInput" class="headtohead-name-input" type="text" maxlength="16" placeholder="Signed-in account name" />
             <input id="privateMatchCodeInput" class="headtohead-name-input" type="text" maxlength="10" placeholder="Private match code (optional)" />
             <div class="actions">
@@ -67,11 +72,21 @@
             <div id="characterGrid" class="character-grid"></div>
             <div id="adminCharacterPanel" style="display:none; margin:14px 0; padding:12px; border:2px solid #dce4ff; border-radius:10px; background:#ffffffd9;">
               <h3 style="margin:0 0 8px;">🛠️ Admin Character Maker</h3>
+              <div style="display:grid; gap:8px; margin-bottom:8px;">
+                <textarea id="makerAiDescription" rows="3" placeholder="Describe your character for AI build/tuning (ex: fast ninja that can jump high and throw bombs)"></textarea>
+                <button id="makerAiGenerateBtn" class="btn btn-secondary" type="button">AI Auto-Build + Tune</button>
+              </div>
               <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:8px;">
                 <input id="makerName" type="text" maxlength="24" placeholder="Name" />
                 <input id="makerId" type="text" maxlength="24" placeholder="ID (optional)" />
                 <input id="makerInitials" type="text" maxlength="3" placeholder="Initials" />
                 <input id="makerImageBase" type="text" maxlength="120" placeholder="Image base/path (optional)" />
+                <label class="maker-file-field">Character PNG
+                  <input id="makerCharacterPngInput" type="file" accept="image/png" />
+                </label>
+                <label class="maker-file-field">Item PNG (optional)
+                  <input id="makerItemPngInput" type="file" accept="image/png" />
+                </label>
                 <input id="makerTrait" type="text" maxlength="48" placeholder="Trait" />
                 <input id="makerBio" type="text" maxlength="160" placeholder="Bio" />
                 <select id="makerAbility">
@@ -104,6 +119,10 @@
                 <input id="makerGravityMult" type="number" step="0.01" placeholder="Gravity mult (e.g. 1.0)" />
                 <input id="makerLaunchBoost" type="number" step="0.01" placeholder="Launch boost (e.g. 1.1)" />
                 <input id="makerUnlockAt" type="number" step="1" placeholder="Unlock at meters" />
+              </div>
+              <div style="display:flex; gap:8px; margin-top:10px; align-items:center; flex-wrap:wrap;">
+                <img id="makerCharacterPreview" class="maker-preview" alt="Character PNG preview" />
+                <img id="makerItemPreview" class="maker-preview" alt="Item PNG preview" />
               </div>
               <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
                 <button id="makerAddBtn" class="btn btn-secondary" type="button">Add Character</button>
@@ -171,6 +190,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="game.js?v=20260313-account-ranks2"></script>
+    <script src="game.js?v=20260321-png-ai-maker"></script>
   </body>
 </html>

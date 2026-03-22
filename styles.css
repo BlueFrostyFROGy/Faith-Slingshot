@@ -249,6 +249,67 @@ canvas {
   font-weight: 700;
 }
 
+.png-drop-zone {
+  width: min(360px, 88%);
+  margin: 6px auto 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 2px dashed #9ab0ff;
+  background: #f6f8ff;
+  color: #2c3d70;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.png-drop-zone.drag-over {
+  background: #eaf0ff;
+  border-color: #5f7bff;
+}
+
+.account-profile-preview {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px solid #dce4ff;
+  object-fit: cover;
+  margin: 0 auto 8px;
+  display: none;
+  background: #eef3ff;
+}
+
+.maker-file-field {
+  display: grid;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #2a3a67;
+}
+
+.maker-preview {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid #dce4ff;
+  background: #eef3ff;
+  display: none;
+}
+
+.character-item-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 2px solid #fff;
+  object-fit: cover;
+  box-shadow: 0 2px 8px rgba(15, 26, 56, 0.35);
+  background: #ffffffcc;
+}
+
 .map-select-row {
   display: flex;
   align-items: center;

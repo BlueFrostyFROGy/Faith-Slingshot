@@ -3,6 +3,7 @@ const LEADERBOARD_KEY = "faith-flight-leaderboard";
 const AUTH_SESSION_KEY = "faith-flight-auth-session";
 const LOCAL_ACCOUNTS_KEY = "faith-flight-local-accounts";
 const CUSTOM_CHARACTERS_KEY = "faith-flight-custom-characters";
+const PROFILE_PICTURES_KEY = "faith-flight-profile-pictures";
 const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
@@ -73,11 +74,20 @@ const signUpBtn = document.getElementById("signUpBtn");
 const signInBtn = document.getElementById("signInBtn");
 const signOutBtn = document.getElementById("signOutBtn");
 const accountStatus = document.getElementById("accountStatus");
+const profilePicDrop = document.getElementById("profilePicDrop");
+const profilePicInput = document.getElementById("profilePicInput");
+const accountProfilePreview = document.getElementById("accountProfilePreview");
 const adminCharacterPanel = document.getElementById("adminCharacterPanel");
+const makerAiDescriptionInput = document.getElementById("makerAiDescription");
+const makerAiGenerateBtn = document.getElementById("makerAiGenerateBtn");
 const makerNameInput = document.getElementById("makerName");
 const makerIdInput = document.getElementById("makerId");
 const makerInitialsInput = document.getElementById("makerInitials");
 const makerImageBaseInput = document.getElementById("makerImageBase");
+const makerCharacterPngInput = document.getElementById("makerCharacterPngInput");
+const makerItemPngInput = document.getElementById("makerItemPngInput");
+const makerCharacterPreview = document.getElementById("makerCharacterPreview");
+const makerItemPreview = document.getElementById("makerItemPreview");
 const makerTraitInput = document.getElementById("makerTrait");
 const makerBioInput = document.getElementById("makerBio");
 const makerAbilityInput = document.getElementById("makerAbility");
@@ -680,6 +690,159 @@ function saveCustomCharacters(list) {
   localStorage.setItem(CUSTOM_CHARACTERS_KEY, JSON.stringify(Array.isArray(list) ? list : []));
 }
 
+function loadProfilePictures() {
+  try {
+    const raw = localStorage.getItem(PROFILE_PICTURES_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveProfilePictures(map) {
+  localStorage.setItem(PROFILE_PICTURES_KEY, JSON.stringify(map || {}));
+}
+
+function sanitizePngDataUrl(value) {
+  const raw = (value || "").toString();
+  if (!raw.startsWith("data:image/png;base64,")) return "";
+  if (raw.length > 900000) return "";
+  return raw;
+}
+
+function getSignedInProfilePicture() {
+  const accountName = normalizeAccountName(getSessionAccountName());
+  if (!accountName) return "";
+  const map = loadProfilePictures();
+  return sanitizePngDataUrl(map[accountName]);
+}
+
+function setSignedInProfilePicture(dataUrl) {
+  const accountName = normalizeAccountName(getSessionAccountName());
+  if (!accountName) return false;
+  const map = loadProfilePictures();
+  map[accountName] = sanitizePngDataUrl(dataUrl);
+  saveProfilePictures(map);
+  return true;
+}
+
+function renderProfilePicturePreview() {
+  if (!accountProfilePreview) return;
+  const dataUrl = getSignedInProfilePicture();
+  if (dataUrl) {
+    accountProfilePreview.src = dataUrl;
+    accountProfilePreview.style.display = "block";
+  } else {
+    accountProfilePreview.removeAttribute("src");
+    accountProfilePreview.style.display = "none";
+  }
+}
+
+function isPngFile(file) {
+  if (!file) return false;
+  const type = (file.type || "").toLowerCase();
+  const name = (file.name || "").toLowerCase();
+  return type === "image/png" || name.endsWith(".png");
+}
+
+async function pngFileToDataUrl(file, maxSide = 360) {
+  if (!file) throw new Error("No file selected.");
+  if (!isPngFile(file)) {
+    throw new Error("Only PNG files are supported for this upload.");
+  }
+  const blobUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("Unable to read PNG image."));
+      i.src = blobUrl;
+    });
+    const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+    const w = Math.max(1, Math.round((img.width || 1) * scale));
+    const h = Math.max(1, Math.round((img.height || 1) * scale));
+    const temp = document.createElement("canvas");
+    temp.width = w;
+    temp.height = h;
+    const tctx = temp.getContext("2d");
+    tctx.drawImage(img, 0, 0, w, h);
+    return temp.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function getSuggestedAbilityFromDescription(text) {
+  const lower = text.toLowerCase();
+  const map = [
+    { keys: ["bomb", "explosive", "blast"], ability: "jumpbomb" },
+    { keys: ["truck", "car", "vehicle"], ability: "truck" },
+    { keys: ["dunk", "basketball", "hoop"], ability: "dunk" },
+    { keys: ["tennis", "racket"], ability: "tennis" },
+    { keys: ["fish", "hook", "rod"], ability: "fishingrod" },
+    { keys: ["teleport", "warp", "blink"], ability: "warp" },
+    { keys: ["slam", "smash", "ground pound"], ability: "slam" },
+    { keys: ["jump", "double jump", "air jump"], ability: "backflip" },
+    { keys: ["rocket", "boost", "jet"], ability: "rocket" },
+  ];
+  for (const entry of map) {
+    if (entry.keys.some((k) => lower.includes(k))) return entry.ability;
+  }
+  return "rocket";
+}
+
+function buildAiDraftFromDescription(descriptionText) {
+  const text = (descriptionText || "").trim();
+  const lower = text.toLowerCase();
+  let mass = 1.0;
+  let radius = 28;
+  let drag = 0.08;
+  let bounce = 0.6;
+  let gravityMult = 1.0;
+  let launchBoost = 1.1;
+
+  if (/(heavy|tank|big|giant|brute)/.test(lower)) {
+    mass += 0.26;
+    radius += 6;
+    launchBoost -= 0.08;
+    bounce -= 0.07;
+  }
+  if (/(fast|speed|quick|agile|nimble)/.test(lower)) {
+    mass -= 0.14;
+    drag -= 0.02;
+    launchBoost += 0.18;
+  }
+  if (/(jump|air|float|glide|wing)/.test(lower)) {
+    gravityMult -= 0.14;
+    bounce += 0.08;
+    launchBoost += 0.08;
+  }
+  if (/(bouncy|rubber|spring)/.test(lower)) {
+    bounce += 0.2;
+  }
+  if (/(stable|accurate|precision|control)/.test(lower)) {
+    drag += 0.02;
+  }
+
+  const suggestedAbility = getSuggestedAbilityFromDescription(text);
+  return {
+    trait: "AI-tuned build",
+    bio: text.slice(0, 160) || "AI-generated character build.",
+    ability: supportedMakerAbilities().has(suggestedAbility) ? suggestedAbility : "rocket",
+    mass: clamp(mass, 0.72, 1.5).toFixed(2),
+    radius: String(Math.round(clamp(radius, 18, 56))),
+    drag: clamp(drag, 0.01, 0.3).toFixed(3),
+    bounce: clamp(bounce, 0.2, 0.95).toFixed(2),
+    gravityMult: clamp(gravityMult, 0.6, 1.4).toFixed(2),
+    launchBoost: clamp(launchBoost, 0.7, 1.8).toFixed(2),
+  };
+}
+
 function supportedMakerAbilities() {
   return new Set([
     "rocket", "fishingrod", "slam", "warp", "trumpjump", "jumpbomb", "backflip", "dunk", "tennis", "truck",
@@ -717,6 +880,8 @@ function sanitizeCustomCharacter(raw) {
     launchBoost: Math.max(0.7, Math.min(1.8, numberOr(raw?.launchBoost, 1.1))),
     unlockAt: Math.max(0, Math.round(numberOr(raw?.unlockAt, 0))),
     ability,
+    imageData: sanitizePngDataUrl(raw?.imageData),
+    itemImageData: sanitizePngDataUrl(raw?.itemImageData),
     custom: true,
   };
 }
@@ -733,6 +898,9 @@ function applySavedCustomCharacters() {
 }
 
 applySavedCustomCharacters();
+
+let makerCharacterImageData = "";
+let makerItemImageData = "";
 
 let selectedCharacter = characters[0];
 let cameraX = 0;
@@ -5761,6 +5929,7 @@ function updateAccountUI() {
     accountStatus.textContent = "Account: Guest (create or sign in to play)";
     clearSignedInIdentityUI();
   }
+  renderProfilePicturePreview();
   refreshAdminCharacterPanel();
 }
 
@@ -5889,6 +6058,168 @@ function clearMakerFields() {
     if (el) el.value = "";
   });
   if (makerAbilityInput) makerAbilityInput.value = "rocket";
+  makerCharacterImageData = "";
+  makerItemImageData = "";
+  if (makerCharacterPreview) {
+    makerCharacterPreview.removeAttribute("src");
+    makerCharacterPreview.style.display = "none";
+  }
+  if (makerItemPreview) {
+    makerItemPreview.removeAttribute("src");
+    makerItemPreview.style.display = "none";
+  }
+  if (makerCharacterPngInput) makerCharacterPngInput.value = "";
+  if (makerItemPngInput) makerItemPngInput.value = "";
+}
+
+function applyAiBuildToMaker() {
+  if (!isAdminSignedIn()) {
+    alert("Admin account required to use Character Maker.");
+    return;
+  }
+  const prompt = (makerAiDescriptionInput?.value || "").trim();
+  if (!prompt) {
+    alert("Add a character description first.");
+    return;
+  }
+  const draft = buildAiDraftFromDescription(prompt);
+  if (makerTraitInput && !makerTraitInput.value.trim()) makerTraitInput.value = draft.trait;
+  if (makerBioInput) makerBioInput.value = draft.bio;
+  if (makerAbilityInput) makerAbilityInput.value = draft.ability;
+  if (makerMassInput) makerMassInput.value = draft.mass;
+  if (makerRadiusInput) makerRadiusInput.value = draft.radius;
+  if (makerDragInput) makerDragInput.value = draft.drag;
+  if (makerBounceInput) makerBounceInput.value = draft.bounce;
+  if (makerGravityMultInput) makerGravityMultInput.value = draft.gravityMult;
+  if (makerLaunchBoostInput) makerLaunchBoostInput.value = draft.launchBoost;
+
+  if (makerNameInput && !makerNameInput.value.trim()) {
+    const firstWords = prompt
+      .replace(/[^a-zA-Z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+    makerNameInput.value = firstWords || "AI Hero";
+  }
+
+  if (makerIdInput && !makerIdInput.value.trim()) {
+    makerIdInput.value = normalizeCharacterId(makerNameInput?.value || "ai-hero");
+  }
+
+  if (makerInitialsInput && !makerInitialsInput.value.trim()) {
+    const name = (makerNameInput?.value || "AI").trim();
+    const initials = name
+      .split(/\s+/)
+      .map((w) => w.charAt(0))
+      .join("")
+      .slice(0, 3)
+      .toUpperCase();
+    makerInitialsInput.value = initials || "AI";
+  }
+}
+
+function updateMakerImagePreview(imgEl, dataUrl) {
+  if (!imgEl) return;
+  if (dataUrl) {
+    imgEl.src = dataUrl;
+    imgEl.style.display = "block";
+  } else {
+    imgEl.removeAttribute("src");
+    imgEl.style.display = "none";
+  }
+}
+
+async function handleMakerImageUpload(inputEl, type) {
+  const file = inputEl?.files?.[0];
+  if (!file) return;
+  try {
+    const dataUrl = sanitizePngDataUrl(await pngFileToDataUrl(file, 320));
+    if (!dataUrl) {
+      alert("PNG is too large after processing. Try a smaller image.");
+      return;
+    }
+    if (type === "character") {
+      makerCharacterImageData = dataUrl;
+      updateMakerImagePreview(makerCharacterPreview, makerCharacterImageData);
+    } else {
+      makerItemImageData = dataUrl;
+      updateMakerImagePreview(makerItemPreview, makerItemImageData);
+    }
+  } catch (e) {
+    alert(e?.message || "PNG upload failed.");
+  }
+}
+
+function bindProfilePngDropZone() {
+  if (!profilePicDrop || !profilePicInput) return;
+
+  const openPicker = () => {
+    if (!getSessionAccountName()) {
+      alert("Sign in first, then add a profile picture.");
+      return;
+    }
+    profilePicInput.click();
+  };
+
+  profilePicDrop.addEventListener("click", openPicker);
+  profilePicDrop.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      openPicker();
+    }
+  });
+
+  profilePicDrop.addEventListener("dragover", (ev) => {
+    ev.preventDefault();
+    profilePicDrop.classList.add("drag-over");
+  });
+  profilePicDrop.addEventListener("dragleave", () => {
+    profilePicDrop.classList.remove("drag-over");
+  });
+  profilePicDrop.addEventListener("drop", async (ev) => {
+    ev.preventDefault();
+    profilePicDrop.classList.remove("drag-over");
+    if (!getSessionAccountName()) {
+      alert("Sign in first, then add a profile picture.");
+      return;
+    }
+    const file = ev.dataTransfer?.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = sanitizePngDataUrl(await pngFileToDataUrl(file, 256));
+      if (!dataUrl) {
+        alert("PNG is too large after processing. Try a smaller image.");
+        return;
+      }
+      setSignedInProfilePicture(dataUrl);
+      renderProfilePicturePreview();
+    } catch (e) {
+      alert(e?.message || "Profile picture upload failed.");
+    }
+  });
+
+  profilePicInput.addEventListener("change", async () => {
+    const file = profilePicInput.files?.[0];
+    if (!file) return;
+    try {
+      const dataUrl = sanitizePngDataUrl(await pngFileToDataUrl(file, 256));
+      if (!dataUrl) {
+        alert("PNG is too large after processing. Try a smaller image.");
+        return;
+      }
+      if (!setSignedInProfilePicture(dataUrl)) {
+        alert("Sign in first, then add a profile picture.");
+        return;
+      }
+      renderProfilePicturePreview();
+    } catch (e) {
+      alert(e?.message || "Profile picture upload failed.");
+    } finally {
+      profilePicInput.value = "";
+    }
+  });
 }
 
 function addCustomCharacterFromMaker() {
@@ -5901,6 +6232,8 @@ function addCustomCharacterFromMaker() {
     id: makerIdInput?.value,
     initials: makerInitialsInput?.value,
     imageBase: makerImageBaseInput?.value,
+    imageData: makerCharacterImageData,
+    itemImageData: makerItemImageData,
     trait: makerTraitInput?.value,
     bio: makerBioInput?.value,
     ability: makerAbilityInput?.value,
@@ -5930,7 +6263,10 @@ function addCustomCharacterFromMaker() {
   const img = new Image();
   const [pngPath, jpgPath] = getCharacterImageCandidates(candidate);
   img.onerror = () => {
-    if (!img.src.endsWith(".jpg")) img.src = jpgPath;
+    if (jpgPath && !img.src.endsWith(".jpg")) {
+      img.src = jpgPath;
+      return;
+    }
   };
   img.src = pngPath;
   candidate._img = img;
@@ -6442,6 +6778,9 @@ function showLeaderboardScreen(distance) {
 }
 
 function getCharacterImageCandidates(character) {
+  if (character?.imageData) {
+    return [character.imageData, ""];
+  }
   if (character.id === "brayden") {
     return ["characters/Brayden Voth.png", "Brayden Voth.png"];
   }
@@ -8080,7 +8419,7 @@ function renderCharacterCards() {
     fallback.textContent = c.initials;
 
     img.onerror = () => {
-      if (img.src.endsWith(".png")) {
+      if (jpgPath && img.src.endsWith(".png")) {
         img.src = jpgPath;
         return;
       }
@@ -8098,6 +8437,13 @@ function renderCharacterCards() {
     tag.textContent = isUnlocked(c) ? c.trait : `Unlock at ${c.unlockAt}m`;
 
     card.append(img, title, trait, tag);
+    if (c.itemImageData) {
+      const itemBadge = document.createElement("img");
+      itemBadge.className = "character-item-badge";
+      itemBadge.alt = `${c.name} item`;
+      itemBadge.src = c.itemImageData;
+      card.append(itemBadge);
+    }
 
     card.addEventListener("click", () => {
       if (!isUnlocked(c)) return;
@@ -8145,7 +8491,7 @@ function preloadCharacterImages() {
     const img = new Image();
     const [pngPath, jpgPath] = getCharacterImageCandidates(c);
     img.onerror = () => {
-      if (!img.src.endsWith(".jpg")) {
+      if (jpgPath && !img.src.endsWith(".jpg")) {
         img.src = jpgPath;
       }
     };
@@ -8454,6 +8800,9 @@ document.getElementById("changeCharBtn").addEventListener("click", () => {
 switchMapBtn?.addEventListener("click", toggleMap);
 makerAddBtn?.addEventListener("click", addCustomCharacterFromMaker);
 makerRemoveBtn?.addEventListener("click", removeCustomCharacterById);
+makerAiGenerateBtn?.addEventListener("click", applyAiBuildToMaker);
+makerCharacterPngInput?.addEventListener("change", () => handleMakerImageUpload(makerCharacterPngInput, "character"));
+makerItemPngInput?.addEventListener("change", () => handleMakerImageUpload(makerItemPngInput, "item"));
 signUpBtn?.addEventListener("click", async () => {
   if (authRequestInFlight) return;
   try {
@@ -8785,6 +9134,7 @@ bindMobileActionButton(mobileSecondaryBtn, () => {
 
 preloadCharacterImages();
 ensureAdminAccountExists();
+bindProfilePngDropZone();
 const storedH2HName = localStorage.getItem("faith-h2h-name");
 if (storedH2HName && !authSession?.user?.id) {
   networkState.displayName = storedH2HName.slice(0, 16);
