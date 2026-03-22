@@ -687,7 +687,13 @@ function loadCustomCharacters() {
 }
 
 function saveCustomCharacters(list) {
-  localStorage.setItem(CUSTOM_CHARACTERS_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+  try {
+    localStorage.setItem(CUSTOM_CHARACTERS_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+    return true;
+  } catch (e) {
+    console.warn("Unable to persist custom characters:", e);
+    return false;
+  }
 }
 
 function loadProfilePictures() {
@@ -6258,7 +6264,7 @@ function addCustomCharacterFromMaker() {
   characters.push(candidate);
   const saved = loadCustomCharacters();
   saved.push(candidate);
-  saveCustomCharacters(saved);
+  const savedOk = saveCustomCharacters(saved);
 
   const img = new Image();
   const [pngPath, jpgPath] = getCharacterImageCandidates(candidate);
@@ -6273,7 +6279,11 @@ function addCustomCharacterFromMaker() {
 
   clearMakerFields();
   renderCharacterCards();
-  alert(`Added character: ${candidate.name}`);
+  if (!savedOk) {
+    alert(`Added character: ${candidate.name} (session only; local storage is full).`);
+  } else {
+    alert(`Added character: ${candidate.name}`);
+  }
 }
 
 function removeCustomCharacterById() {
@@ -6298,9 +6308,13 @@ function removeCustomCharacterById() {
   }
   characters.splice(idx, 1);
   const saved = loadCustomCharacters().filter((c) => sanitizeCustomCharacter(c).id !== id);
-  saveCustomCharacters(saved);
+  const savedOk = saveCustomCharacters(saved);
   renderCharacterCards();
-  alert(`Removed character: ${id}`);
+  if (!savedOk) {
+    alert(`Removed character: ${id} (session only; local storage update failed).`);
+  } else {
+    alert(`Removed character: ${id}`);
+  }
 }
 
 async function signInLocalAccount(accountName, password) {
@@ -8877,8 +8891,16 @@ restartBtn.addEventListener("click", () => {
   updateHeightUI();
 });
 
+function isTypingIntoField(target) {
+  if (!target) return false;
+  if (target.isContentEditable) return true;
+  const tag = (target.tagName || "").toUpperCase();
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
 window.addEventListener("keydown", (ev) => {
   if (ev.code === "Space") {
+    if (isTypingIntoField(ev.target)) return;
     ev.preventDefault();
     const now = performance.now();
 
