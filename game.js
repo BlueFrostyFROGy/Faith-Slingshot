@@ -4669,6 +4669,11 @@ function refreshAdminCharacterPanel() {
   adminCharacterPanel.style.display = isAdminSignedIn() ? "block" : "none";
 }
 
+function refreshAdminProfilePicPanel() {
+  if (!profilePicDrop) return;
+  profilePicDrop.style.display = isAdminSignedIn() ? "block" : "none";
+}
+
 function syncSignedInIdentityUI() {
   const accountName = getSessionAccountName();
   if (headToHeadNameInput) {
@@ -6101,6 +6106,7 @@ function updateAccountUI() {
   }
   renderProfilePicturePreview();
   refreshAdminCharacterPanel();
+  refreshAdminProfilePicPanel();
 }
 
 function loadAuthSession() {
