@@ -6468,31 +6468,6 @@ function buildMakerCandidate() {
   });
 }
 
-function loadCharacterIntoMaker(character) {
-  if (!character) return;
-  const c = sanitizeCustomCharacter(character);
-  makerNameInput.value = c.name;
-  makerIdInput.value = c.id;
-  makerInitialsInput.value = c.initials;
-  makerImageBaseInput.value = c.imageBase;
-  makerTraitInput.value = c.trait;
-  makerBioInput.value = c.bio;
-  makerAbilityInput.value = c.ability;
-  makerMassInput.value = c.mass;
-  makerRadiusInput.value = c.radius;
-  makerDragInput.value = c.drag;
-  makerBounceInput.value = c.bounce;
-  makerGravityMultInput.value = c.gravityMult;
-  makerLaunchBoostInput.value = c.launchBoost;
-  makerUnlockAtInput.value = c.unlockAt;
-  makerAiDescriptionInput.value = c.bio;
-
-  makerCharacterImageData = c.imageData || "";
-  makerItemImageData = c.itemImageData || "";
-  updateMakerImagePreview(makerCharacterPreview, makerCharacterImageData);
-  updateMakerImagePreview(makerItemPreview, makerItemImageData);
-}
-
 function renderMakerEditableCharacters() {
   const editGrid = document.getElementById("makerEditCharacterGrid");
   if (!editGrid) return;
