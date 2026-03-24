@@ -261,6 +261,10 @@ const JAKE_JUMP_RESET_SPEED = 110;
 const JAKE_ACCEL = 255;
 const JAKE_MAX_SPEED = 4600;
 const JAKE_EXPLOSION_RADIUS = 290;
+const BEN_TURRET_FIRE_INTERVAL = 0.085;
+const BEN_JUMP_RESET_SPEED = JAKE_JUMP_RESET_SPEED;
+const BEN_ACCEL = JAKE_ACCEL;
+const BEN_MAX_SPEED = JAKE_MAX_SPEED;
 const OWEN_MILKS_PER_LIFE = 5;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
 const NETWORK_QUEUE_CHANNEL = "faith-h2h-queue-v1";
@@ -402,6 +406,22 @@ const characters = [
     launchBoost: 1.14,
     unlockAt: 0,
     ability: "jaketank",
+  },
+  {
+    id: "ben",
+    name: "Ben",
+    trait: "Golf cart turret gunner",
+    bio: "Drives a golf cart like Jake's tank. Aim with mouse and hold click to fire a very fast machine-gun turret. Lose the cart on Hugh impact.",
+    imageBase: "Ben",
+    initials: "BN",
+    mass: 1.52,
+    radius: 33,
+    drag: 0.03,
+    bounce: 0.54,
+    gravityMult: 0.96,
+    launchBoost: 1.14,
+    unlockAt: 0,
+    ability: "benturret",
   },
   {
     id: "nate",
@@ -1060,11 +1080,13 @@ let bombs = [];
 let tennisBalls = [];
 let evanBasketballs = [];
 let jakeTankShells = [];
+let benTurretShots = [];
 let nathanTrumps = [];
 let nathanAirstrikeBombs = [];
 let enemyLasers = [];
 let owenGoKarts = [];
 let owenGoKartSpawnTimer = 4 + Math.random() * 6;
+let benFireHeld = false;
 const destroyedJanets = new Set();
 const mikeLaserCooldowns = new Map();
 const stricBossState = {
@@ -1161,6 +1183,9 @@ const actor = {
   nathanJetX: 0,
   nathanJetY: 0,
   nathanFlagTimer: 0,
+  benHasCart: true,
+  benSpeed: BEN_JUMP_RESET_SPEED,
+  benSlowdownPending: false,
   jakeHasTank: true,
   jakeSpeed: JAKE_JUMP_RESET_SPEED,
   jakeSlowdownPending: false,
@@ -1246,6 +1271,9 @@ let samBenchPressImg = null;
 let evanBasketballImg = null;
 let jakeTankImg = null;
 const jakeTankShellImgs = [];
+let benGolfCartImg = null;
+let benTurretImg = null;
+let benGolfBallImg = null;
 let nathanTacomaImg = null;
 let nathanGasImg = null;
 let travisCraddleImg = null;
@@ -1402,6 +1430,24 @@ const jakeTankShellImageCandidates = [
     "Tank Projectiale.png",
     "characters props/Tank Projectiale.png",
   ],
+];
+
+const benGolfCartImageCandidates = [
+  "characters props/Bens Golf Cart.webp",
+  "Bens Golf Cart.webp",
+  "isolated-golf-cart-mockup-on-transparent-background-png.webp",
+];
+
+const benTurretImageCandidates = [
+  "characters props/Bens Turret.webp",
+  "Bens Turret.webp",
+  "futuristic-turret-not-free-png.webp",
+];
+
+const benGolfBallImageCandidates = [
+  "characters props/Bens Golf Ball.png",
+  "Bens Golf Ball.png",
+  "pngtree-golf-ball-3d-element-png-image_14621624.png",
 ];
 
 const nathanTacomaImageCandidates = [
@@ -1832,6 +1878,68 @@ function updateEvanBasketballs(dt) {
   });
 
   evanBasketballs = evanBasketballs.filter((ball) => ball.life > 0);
+}
+
+function fireBenTurretShot() {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mouseWorldX = lastMouseX * scaleX + cameraX;
+  const mouseWorldY = lastMouseY * scaleY;
+  const baseY = actor.y - actor.radius * 0.42;
+  const dx = mouseWorldX - actor.x;
+  const dy = mouseWorldY - baseY;
+  const dist = Math.max(1, Math.hypot(dx, dy));
+  const dirX = dx / dist;
+  const dirY = dy / dist;
+
+  benTurretShots.push({
+    x: actor.x + dirX * (actor.radius + 22),
+    y: baseY + dirY * 14,
+    vx: dirX * 1780 + actor.vx * 0.45,
+    vy: dirY * 1780 + actor.vy * 0.2,
+    life: 1.7,
+    radius: 9,
+    rotation: Math.atan2(dirY, dirX),
+  });
+
+  actor.vx += 14;
+  actor.vy -= 8;
+  actor.abilityCooldown = BEN_TURRET_FIRE_INTERVAL;
+  tone(700, 0.02, "square", 0.03);
+  if (Math.random() < 0.35) spawnParticles(actor.x, baseY, 2, "#ffe6bf");
+}
+
+function updateBenTurretShots(dt) {
+  benTurretShots.forEach((shot) => {
+    shot.life -= dt;
+    shot.vy += world.gravity * 0.2 * dt;
+    shot.x += shot.vx * dt;
+    shot.y += shot.vy * dt;
+
+    const nearbyHughs = getFatalObstaclesInRange(shot.x - 120, shot.x + 120);
+    for (const hugh of nearbyHughs) {
+      const hy = terrainY(hugh.x) - hugh.yOffset;
+      const nearestX = Math.max(hugh.x, Math.min(shot.x, hugh.x + hugh.w));
+      const nearestY = Math.max(hy, Math.min(shot.y, hy + hugh.h));
+      const dx = shot.x - nearestX;
+      const dy = shot.y - nearestY;
+      if (dx * dx + dy * dy <= shot.radius * shot.radius) {
+        destroyedJanets.add(hugh.index);
+        shot.life = -1;
+        spawnParticles(shot.x, shot.y, 10, "#ffffff");
+        tone(260, 0.03, "square", 0.04);
+        break;
+      }
+    }
+
+    const ground = terrainY(shot.x);
+    if (shot.y + shot.radius >= ground) {
+      shot.life = -1;
+    }
+  });
+
+  benTurretShots = benTurretShots.filter((shot) => shot.life > 0);
 }
 
 function explodeJakeTankShell(shell, impactX = shell.x, impactY = shell.y) {
@@ -2680,6 +2788,9 @@ function resetActor() {
   actor.nathanJetX = world.launchX - 920;
   actor.nathanJetY = terrainY(world.launchX) - 390;
   actor.nathanFlagTimer = 0;
+  actor.benHasCart = true;
+  actor.benSpeed = BEN_JUMP_RESET_SPEED;
+  actor.benSlowdownPending = false;
   actor.jakeHasTank = true;
   actor.jakeSpeed = JAKE_JUMP_RESET_SPEED;
   actor.jakeSlowdownPending = false;
@@ -2699,6 +2810,7 @@ function resetActor() {
   tennisBalls.length = 0;
   evanBasketballs.length = 0;
   jakeTankShells.length = 0;
+  benTurretShots.length = 0;
   nathanTrumps.length = 0;
   nathanAirstrikeBombs.length = 0;
   enemyLasers.length = 0;
@@ -2738,6 +2850,7 @@ function resetActor() {
 
   runStateLabel.textContent = "Drag or touch to aim";
   launchBtn.disabled = false;
+  benFireHeld = false;
   if (switchMapBtn) switchMapBtn.disabled = !!headToHeadState.active;
   if (heightValue) {
     heightValue.textContent = "0";
@@ -3082,6 +3195,7 @@ function finalizeHeadToHeadIfReady() {
 
 
 function finishRun(message = "Run ended: no movement left. Press Restart Run.") {
+  benFireHeld = false;
   if (headToHeadState.active) {
     if (!headToHeadState.localFinished) {
       headToHeadState.localFinished = true;
@@ -3247,6 +3361,8 @@ function useAbility() {
     actor.abilityCooldown = 0.25;
   } else if (selectedCharacter.id === "jakecooper") {
     actor.abilityCooldown = JAKE_TANK_COOLDOWN;
+  } else if (selectedCharacter.id === "ben") {
+    actor.abilityCooldown = BEN_TURRET_FIRE_INTERVAL;
   } else if (selectedCharacter.id === "nathan") {
     actor.abilityCooldown = 0.7;
   } else if (selectedCharacter.id === "evan" || selectedCharacter.id === "cael") {
@@ -3388,6 +3504,10 @@ function useAbility() {
       spawnParticles(actor.x, actor.y, 22, "#ffd8a6");
       spawnParticles(actor.x, actor.y, 10, "#444444");
       startScreenShake(10, 0.22);
+      break;
+    }
+    case "benturret": {
+      fireBenTurretShot();
       break;
     }
     case "davytruck": {
@@ -3905,6 +4025,24 @@ function collideRect(rect) {
         runStateLabel.textContent = "Jake lost the tank but keeps running!";
         return;
       }
+      if (selectedCharacter.id === "ben" && actor.benHasCart) {
+        actor.benHasCart = false;
+        actor.benSlowdownPending = false;
+        actor.radius = CALEB_ON_FOOT_RADIUS;
+        actor.drag = CALEB_ON_FOOT_DRAG;
+        actor.bounce = CALEB_ON_FOOT_BOUNCE;
+        actor.gravityMult = CALEB_ON_FOOT_GRAVITY;
+        actor.vx = Math.max(actor.vx * 0.78, 250);
+        actor.vy = Math.min(actor.vy - 130, -130);
+        destroyedJanets.add(rect.index);
+        spawnParticles(actor.x, actor.y, 36, "#d8d8d8");
+        spawnParticles(actor.x, actor.y, 16, "#ffffff");
+        tone(170, 0.08, "square", 0.09);
+        tone(110, 0.08, "triangle", 0.08);
+        startScreenShake(14, 0.24);
+        runStateLabel.textContent = "Ben lost the golf cart but keeps running!";
+        return;
+      }
       if (selectedCharacter.id === "davy" && actor.davyHasRide) {
         actor.davyHasRide = false;
         actor.davySlowdownPending = false;
@@ -4014,6 +4152,7 @@ function update(dt) {
   updateTennisBalls(dt);
   updateEvanBasketballs(dt);
   updateJakeTankShells(dt);
+  updateBenTurretShots(dt);
   updateNathanTrumps(dt);
   updateNathanAirstrike(dt);
   updateConfetti(dt);
@@ -4110,6 +4249,9 @@ function update(dt) {
     if (selectedCharacter.id === "jakecooper" && actor.state === "flying" && actor.jakeHasTank) {
       actor.jakeSpeed = Math.min(JAKE_MAX_SPEED, actor.jakeSpeed + JAKE_ACCEL * dt);
     }
+    if (selectedCharacter.id === "ben" && actor.state === "flying" && actor.benHasCart) {
+      actor.benSpeed = Math.min(BEN_MAX_SPEED, actor.benSpeed + BEN_ACCEL * dt);
+    }
     if (selectedCharacter.id === "davy" && actor.state === "flying" && actor.davyHasRide) {
       actor.davySpeed = Math.min(DAVY_MAX_SPEED, actor.davySpeed + DAVY_ACCEL * dt);
       actor.davyShotTimer -= dt;
@@ -4125,6 +4267,10 @@ function update(dt) {
     }
     if (selectedCharacter.id === "davy" && actor.davyJumpCooldown > 0) {
       actor.davyJumpCooldown = Math.max(0, actor.davyJumpCooldown - dt);
+    }
+
+    if (selectedCharacter.id === "ben" && benFireHeld && actor.abilityCooldown <= 0) {
+      fireBenTurretShot();
     }
 
     if (selectedCharacter.id === "davy" && getCurrentMap().id === "long-john-silvers") {
@@ -4243,6 +4389,9 @@ function update(dt) {
     }
     if (selectedCharacter.id === "jakecooper" && actor.state === "flying" && actor.jakeHasTank) {
       actor.vx = Math.max(actor.vx, actor.jakeSpeed);
+    }
+    if (selectedCharacter.id === "ben" && actor.state === "flying" && actor.benHasCart) {
+      actor.vx = Math.max(actor.vx, actor.benSpeed);
     }
     if (selectedCharacter.id === "davy" && actor.state === "flying" && actor.davyHasRide) {
       actor.vx = Math.max(actor.vx, actor.davySpeed);
@@ -4684,6 +4833,13 @@ function update(dt) {
         actor.jakeSpeed = actor.jakeSpeed * 0.75;
         actor.vx = actor.vx * 0.75;
         spawnParticles(actor.x, actor.y, 12, "#cfc38b");
+      }
+
+      if (selectedCharacter.id === "ben" && actor.benSlowdownPending && actor.benHasCart) {
+        actor.benSlowdownPending = false;
+        actor.benSpeed = actor.benSpeed * 0.75;
+        actor.vx = actor.vx * 0.75;
+        spawnParticles(actor.x, actor.y, 12, "#d7d7d7");
       }
 
       if (selectedCharacter.id === "davy" && actor.davySlowdownPending && actor.davyHasRide) {
@@ -5745,6 +5901,8 @@ function getAbilityLabel(character) {
       return "jump + Trump shot";
     case "jaketank":
       return "tank shell";
+    case "benturret":
+      return "turret machine gun";
     case "jumpbomb":
       return "jump / bomb";
     case "backflip":
@@ -5939,6 +6097,17 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${modeText}  |  Space: aimable explosive shell  |  Huge blast radius`;
+    return;
+  }
+
+  if (selectedCharacter.id === "ben") {
+    const mphApprox = (actor.benSpeed / 22.4).toFixed(0);
+    const modeText = actor.benHasCart ? `Cart speed: ~${mphApprox} mph` : "On foot (cart lost)";
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${modeText}  |  Hold click/touch to fire turret  |  Reload: ${actor.abilityCooldown.toFixed(2)}s`;
+      return;
+    }
+    abilityHint.textContent = `${modeText}  |  Aim + hold click/touch = fast machine-gun turret`;
     return;
   }
 
@@ -7403,6 +7572,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "jakecooper") {
     return ["Jake Cooper.png", "characters/Jake Cooper.png"];
   }
+  if (character.id === "ben") {
+    return ["characters/Ben.png", "Ben.png"];
+  }
   if (character.id === "traviswilliams") {
     return ["characters/Travis Williams.png", "Travis Williams.png"];
   }
@@ -8369,6 +8541,85 @@ function drawJakeTank() {
   ctx.restore();
 }
 
+function drawBenCart() {
+  if (selectedCharacter.id !== "ben" || actor.state === "ready" || !actor.benHasCart) return;
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const r = actor.radius;
+
+  const cartW = r * 5.0;
+  const cartH = r * 2.5;
+  const cartX = sx - cartW / 2;
+  const cartY = sy - r * 0.55;
+
+  ctx.save();
+  if (benGolfCartImg && benGolfCartImg.complete && benGolfCartImg.naturalWidth > 10) {
+    ctx.drawImage(benGolfCartImg, cartX, cartY, cartW, cartH);
+  } else {
+    ctx.fillStyle = "#ddd";
+    ctx.fillRect(cartX, cartY + cartH * 0.35, cartW, cartH * 0.45);
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mouseWorldX = lastMouseX * scaleX + cameraX;
+  const mouseWorldY = lastMouseY * scaleY;
+  const turretX = sx + r * 0.3;
+  const turretY = sy - r * 0.65;
+  const angle = Math.atan2(mouseWorldY - turretY, mouseWorldX - actor.x);
+
+  if (benTurretImg && benTurretImg.complete && benTurretImg.naturalWidth > 10) {
+    const tw = r * 2.9;
+    const th = r * 2.1;
+    ctx.save();
+    ctx.translate(turretX, turretY);
+    ctx.rotate(angle);
+    ctx.drawImage(benTurretImg, -tw * 0.4, -th * 0.5, tw, th);
+    ctx.restore();
+  }
+
+  ctx.strokeStyle = "#2f2f2f";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(turretX, turretY);
+  ctx.lineTo(turretX + Math.cos(angle) * (r * 2.9), turretY + Math.sin(angle) * (r * 2.9));
+  ctx.stroke();
+
+  if (actor.benSpeed > 560) {
+    const alpha = Math.min(0.52, (actor.benSpeed - 560) / 2900);
+    const grd = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, r * 3.0);
+    grd.addColorStop(0, `rgba(210,210,210,${alpha})`);
+    grd.addColorStop(1, "rgba(210,210,210,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.ellipse(sx - r * 1.4, sy + r * 0.35, r * 2.5, r * 0.86, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawBenTurretShots() {
+  benTurretShots.forEach((shot) => {
+    const sx = shot.x - cameraX;
+    if (sx < -90 || sx > canvas.width + 90) return;
+    const size = shot.radius * 2.1;
+    if (benGolfBallImg && benGolfBallImg.complete && benGolfBallImg.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, shot.y);
+      ctx.rotate(shot.rotation || 0);
+      ctx.drawImage(benGolfBallImg, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#f4f4f4";
+      ctx.beginPath();
+      ctx.arc(sx, shot.y, shot.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
 function drawDavyRide() {
   if (selectedCharacter.id !== "davy" || actor.state === "ready" || !actor.davyHasRide) return;
   const sx = actor.x - cameraX;
@@ -8836,6 +9087,7 @@ function drawSceneCore() {
   drawSlingshotBands();
   drawTrajectory();
   drawKadeBMW();
+  drawBenCart();
   drawJakeTank();
   drawNathanTacoma();
   drawDavyRide();
@@ -8845,6 +9097,7 @@ function drawSceneCore() {
   drawBraydenRacket();
   drawCandyBeam();
   drawTennisBalls();
+  drawBenTurretShots();
   drawJakeTankShells();
   drawNathanTrumps();
   drawEvanBasketballs();
@@ -9358,6 +9611,30 @@ function preloadCharacterImages() {
   };
   jakeTankImg.src = jakeTankImageCandidates[0];
 
+  benGolfCartImg = new Image();
+  let benGolfCartIdx = 0;
+  benGolfCartImg.onerror = () => {
+    benGolfCartIdx += 1;
+    if (benGolfCartIdx < benGolfCartImageCandidates.length) benGolfCartImg.src = benGolfCartImageCandidates[benGolfCartIdx];
+  };
+  benGolfCartImg.src = benGolfCartImageCandidates[0];
+
+  benTurretImg = new Image();
+  let benTurretIdx = 0;
+  benTurretImg.onerror = () => {
+    benTurretIdx += 1;
+    if (benTurretIdx < benTurretImageCandidates.length) benTurretImg.src = benTurretImageCandidates[benTurretIdx];
+  };
+  benTurretImg.src = benTurretImageCandidates[0];
+
+  benGolfBallImg = new Image();
+  let benGolfBallIdx = 0;
+  benGolfBallImg.onerror = () => {
+    benGolfBallIdx += 1;
+    if (benGolfBallIdx < benGolfBallImageCandidates.length) benGolfBallImg.src = benGolfBallImageCandidates[benGolfBallIdx];
+  };
+  benGolfBallImg.src = benGolfBallImageCandidates[0];
+
   jakeTankShellImgs.length = 0;
   jakeTankShellImageCandidates.forEach((candidates) => {
     const img = new Image();
@@ -9670,6 +9947,14 @@ function beginDragAtClientPos(clientX, clientY) {
   }
 }
 
+function canBenManualFire() {
+  return selectedCharacter.id === "ben" && actor.state !== "ready" && actor.state !== "ended";
+}
+
+function stopBenTurretFire() {
+  benFireHeld = false;
+}
+
 function updateAimAndDragAtClientPos(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -9769,6 +10054,13 @@ function cancelDragLaunch() {
 }
 
 canvas.addEventListener("mousedown", (ev) => {
+  if (canBenManualFire()) {
+    ensureAudio();
+    updateAimAndDragAtClientPos(ev.clientX, ev.clientY);
+    benFireHeld = true;
+    if (actor.abilityCooldown <= 0) fireBenTurretShot();
+    return;
+  }
   beginDragAtClientPos(ev.clientX, ev.clientY);
 });
 
@@ -9777,10 +10069,12 @@ canvas.addEventListener("mousemove", (ev) => {
 });
 
 canvas.addEventListener("mouseup", () => {
+  stopBenTurretFire();
   endDragLaunch();
 });
 
 canvas.addEventListener("mouseleave", () => {
+  stopBenTurretFire();
   cancelDragLaunch();
 });
 
@@ -9788,6 +10082,13 @@ canvas.addEventListener("touchstart", (ev) => {
   if (!ev.touches.length) return;
   ev.preventDefault();
   const t = ev.touches[0];
+  if (canBenManualFire()) {
+    ensureAudio();
+    updateAimAndDragAtClientPos(t.clientX, t.clientY);
+    benFireHeld = true;
+    if (actor.abilityCooldown <= 0) fireBenTurretShot();
+    return;
+  }
   beginDragAtClientPos(t.clientX, t.clientY);
 }, { passive: false });
 
@@ -9800,6 +10101,7 @@ canvas.addEventListener("touchmove", (ev) => {
 
 canvas.addEventListener("touchend", (ev) => {
   ev.preventDefault();
+  stopBenTurretFire();
   if (ev.changedTouches && ev.changedTouches.length) {
     const t = ev.changedTouches[0];
     updateAimAndDragAtClientPos(t.clientX, t.clientY);
@@ -9809,18 +10111,22 @@ canvas.addEventListener("touchend", (ev) => {
 
 canvas.addEventListener("touchcancel", (ev) => {
   ev.preventDefault();
+  stopBenTurretFire();
   cancelDragLaunch();
 }, { passive: false });
 
 window.addEventListener("mouseup", () => {
+  stopBenTurretFire();
   endDragLaunch();
 });
 
 window.addEventListener("touchend", () => {
+  stopBenTurretFire();
   endDragLaunch();
 }, { passive: true });
 
 window.addEventListener("touchcancel", () => {
+  stopBenTurretFire();
   cancelDragLaunch();
 }, { passive: true });
 
