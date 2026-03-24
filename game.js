@@ -36,6 +36,7 @@ const leaderboardScreen = document.getElementById("leaderboardScreen");
 const characterGrid = document.getElementById("characterGrid");
 
 const toSelectBtn = document.getElementById("toSelectBtn");
+const battleModeBtn = document.getElementById("battleModeBtn");
 const headToHeadBtn = document.getElementById("headToHeadBtn");
 const privateHeadToHeadBtn = document.getElementById("privateHeadToHeadBtn");
 const headToHeadNameInput = document.getElementById("headToHeadNameInput");
@@ -265,6 +266,11 @@ const BEN_TURRET_FIRE_INTERVAL = 0.085;
 const BEN_JUMP_RESET_SPEED = JAKE_JUMP_RESET_SPEED;
 const BEN_ACCEL = JAKE_ACCEL;
 const BEN_MAX_SPEED = JAKE_MAX_SPEED;
+const BATTLE_CHANNEL = "faith-battle-open-v1";
+const BATTLE_WORLD_WIDTH = 3600;
+const BATTLE_WORLD_HEIGHT = 2200;
+const BATTLE_RESPAWN_SECONDS = 3.2;
+const BATTLE_SNAPSHOT_SECONDS = 0.08;
 const OWEN_MILKS_PER_LIFE = 5;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
 const NETWORK_QUEUE_CHANNEL = "faith-h2h-queue-v1";
@@ -1063,9 +1069,11 @@ applySavedCustomCharacters();
 
 let makerCharacterImageData = "";
 let makerItemImageData = "";
+let pendingPlayMode = "slingshot";
 
 let selectedCharacter = characters[0];
 let cameraX = 0;
+let cameraY = 0;
 let particles = [];
 let impactBursts = [];
 let screenShakeTime = 0;
@@ -1087,6 +1095,7 @@ let enemyLasers = [];
 let owenGoKarts = [];
 let owenGoKartSpawnTimer = 4 + Math.random() * 6;
 let benFireHeld = false;
+let battleFireHeld = false;
 const destroyedJanets = new Set();
 const mikeLaserCooldowns = new Map();
 const stricBossState = {
@@ -1199,6 +1208,31 @@ const actor = {
   davyJumpCooldown: 0,
 };
 
+const battleState = {
+  active: false,
+  joining: false,
+  channel: null,
+  snapshotTimer: 0,
+  lastBroadcastState: null,
+  localPlayerId: `battle-${Math.random().toString(36).slice(2, 10)}`,
+  localPlayer: null,
+  remotePlayers: new Map(),
+  projectiles: [],
+  claimedPickups: new Set(),
+  occupiedVehicles: new Map(),
+  killFeed: [],
+  weaponPickups: [],
+  ammoPickups: [],
+  vehicles: [],
+  obstacles: [],
+  spawnPoints: [],
+  stats: {
+    kills: 0,
+    deaths: 0,
+    respawns: 0,
+  },
+};
+
 const obstacles = [];
 const confetti = [];
 
@@ -1281,6 +1315,27 @@ let nathanTrumpImg = null;
 let nathanJetImg = null;
 let nathanBombImg = null;
 let nathanFlagImg = null;
+const battleWeaponImgs = new Map();
+const battleVehicleImgs = new Map();
+
+const battleWeaponImageCandidates = {
+  pistol: ["Weapons and Vechials/Pistol.png"],
+  ar: ["Weapons and Vechials/AR.png"],
+  fullautoar: ["Weapons and Vechials/Full auto AR.webp"],
+  marksman: ["Weapons and Vechials/semi auto marksman.png"],
+  shotgun: ["Weapons and Vechials/Shotgun.png"],
+  sniper: ["Weapons and Vechials/Sniper Rifle.png"],
+  rocket: ["Weapons and Vechials/Rocket Launcher.png"],
+};
+
+const battleVehicleImageCandidates = {
+  golfcart: ["Weapons and Vechials/Bens Golf cart.webp", "Weapons and Vechials/Bens Golf Cart.webp", "characters props/Bens Golf Cart.webp"],
+  tank: ["Weapons and Vechials/Jakes Tank.webp", "Jakes Tank.webp"],
+  bmw: ["Weapons and Vechials/Kade BMW.png"],
+  tacoma: ["Weapons and Vechials/Nathans Tacoma copy.png", "characters props/Nathans Tacoma.png"],
+  jet: ["Weapons and Vechials/Nathans Jet copy.png", "characters props/Nathans Jet.png"],
+  trex: ["Weapons and Vechials/Caleb Trex.webp", "characters props/Caleb Trex.webp"],
+};
 
 
 const spencerBombImageCandidates = [
@@ -1545,6 +1600,169 @@ function buildSiteAssetUrl(path) {
 function seededNoise(seed) {
   const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453123;
   return value - Math.floor(value);
+}
+
+const battleWeaponConfigs = {
+  pistol: {
+    id: "pistol",
+    name: "Pistol",
+    damage: 18,
+    fireInterval: 0.28,
+    projectileSpeed: 1350,
+    spread: 0.018,
+    pickupAmmo: 36,
+    starterAmmo: 72,
+    color: "#f6e6c8",
+  },
+  ar: {
+    id: "ar",
+    name: "AR",
+    damage: 15,
+    fireInterval: 0.13,
+    projectileSpeed: 1500,
+    spread: 0.035,
+    pickupAmmo: 50,
+    starterAmmo: 36,
+    color: "#ffd281",
+  },
+  fullautoar: {
+    id: "fullautoar",
+    name: "Full Auto AR",
+    damage: 11,
+    fireInterval: 0.075,
+    projectileSpeed: 1480,
+    spread: 0.07,
+    pickupAmmo: 60,
+    starterAmmo: 42,
+    color: "#ffb95f",
+  },
+  marksman: {
+    id: "marksman",
+    name: "Semi Auto Marksman",
+    damage: 34,
+    fireInterval: 0.42,
+    projectileSpeed: 1700,
+    spread: 0.012,
+    pickupAmmo: 22,
+    starterAmmo: 18,
+    color: "#cfe2ff",
+  },
+  shotgun: {
+    id: "shotgun",
+    name: "Shotgun",
+    damage: 11,
+    pellets: 7,
+    fireInterval: 0.8,
+    projectileSpeed: 1180,
+    spread: 0.23,
+    pickupAmmo: 18,
+    starterAmmo: 12,
+    color: "#ffe0a1",
+  },
+  sniper: {
+    id: "sniper",
+    name: "Sniper Rifle",
+    damage: 74,
+    fireInterval: 1.12,
+    projectileSpeed: 2200,
+    spread: 0.004,
+    pickupAmmo: 10,
+    starterAmmo: 6,
+    color: "#f5f5ff",
+  },
+  rocket: {
+    id: "rocket",
+    name: "Rocket Launcher",
+    damage: 96,
+    splashRadius: 128,
+    fireInterval: 1.35,
+    projectileSpeed: 820,
+    spread: 0.01,
+    pickupAmmo: 5,
+    starterAmmo: 2,
+    color: "#ff8f5c",
+  },
+};
+
+const battleVehicleConfigs = {
+  golfcart: { id: "golfcart", name: "Golf Cart", speed: 430, hpBonus: 35, radius: 42, canHover: false },
+  tank: { id: "tank", name: "Tank", speed: 290, hpBonus: 120, radius: 52, canHover: false },
+  bmw: { id: "bmw", name: "BMW", speed: 520, hpBonus: 20, radius: 38, canHover: false },
+  tacoma: { id: "tacoma", name: "Tacoma", speed: 450, hpBonus: 45, radius: 44, canHover: false },
+  jet: { id: "jet", name: "Jet", speed: 620, hpBonus: 15, radius: 40, canHover: true },
+  trex: { id: "trex", name: "T-Rex", speed: 390, hpBonus: 60, radius: 48, canHover: false },
+};
+
+function makeBattlePickupId(prefix, index) {
+  return `${prefix}-${index}`;
+}
+
+function buildBattleStatics() {
+  const spawnPoints = [
+    { x: 260, y: 260 },
+    { x: 920, y: 260 },
+    { x: 1720, y: 260 },
+    { x: 2620, y: 260 },
+    { x: 3320, y: 260 },
+    { x: 260, y: 1080 },
+    { x: 3320, y: 1080 },
+    { x: 260, y: 1920 },
+    { x: 920, y: 1920 },
+    { x: 1720, y: 1920 },
+    { x: 2620, y: 1920 },
+    { x: 3320, y: 1920 },
+  ];
+
+  const obstacles = [
+    { x: 820, y: 430, w: 210, h: 90 },
+    { x: 1450, y: 360, w: 180, h: 220 },
+    { x: 2150, y: 430, w: 240, h: 90 },
+    { x: 2740, y: 360, w: 180, h: 220 },
+    { x: 610, y: 930, w: 290, h: 120 },
+    { x: 1320, y: 980, w: 210, h: 80 },
+    { x: 2050, y: 930, w: 290, h: 120 },
+    { x: 2740, y: 980, w: 210, h: 80 },
+    { x: 820, y: 1500, w: 210, h: 90 },
+    { x: 1450, y: 1440, w: 180, h: 220 },
+    { x: 2150, y: 1500, w: 240, h: 90 },
+    { x: 2740, y: 1440, w: 180, h: 220 },
+  ];
+
+  const weaponKinds = ["ar", "fullautoar", "marksman", "shotgun", "sniper", "rocket"];
+  const weaponPickups = weaponKinds.map((weaponId, index) => ({
+    id: makeBattlePickupId("weapon", index),
+    type: "weapon",
+    weaponId,
+    x: 540 + (index % 3) * 1260,
+    y: 640 + Math.floor(index / 3) * 880,
+    radius: 28,
+  }));
+
+  const ammoPickups = [];
+  const ammoTypes = ["pistol", "ar", "fullautoar", "marksman", "shotgun", "sniper", "rocket"];
+  for (let i = 0; i < 26; i += 1) {
+    const ammoKind = ammoTypes[i % ammoTypes.length];
+    ammoPickups.push({
+      id: makeBattlePickupId("ammo", i),
+      type: "ammo",
+      ammoKind,
+      amount: battleWeaponConfigs[ammoKind].pickupAmmo,
+      x: 220 + seededNoise(600 + i) * (BATTLE_WORLD_WIDTH - 440),
+      y: 220 + seededNoise(800 + i) * (BATTLE_WORLD_HEIGHT - 440),
+      radius: 20,
+    });
+  }
+
+  const vehicleKinds = ["golfcart", "tank", "bmw", "tacoma", "jet", "trex"];
+  const vehicles = vehicleKinds.map((vehicleId, index) => ({
+    id: `vehicle-${vehicleId}`,
+    vehicleId,
+    x: 420 + (index % 3) * 1120,
+    y: 300 + Math.floor(index / 3) * 1480,
+    occupiedBy: null,
+  }));
+
+  return { spawnPoints, obstacles, weaponPickups, ammoPickups, vehicles };
 }
 
 function createBouncePad(index) {
@@ -5883,6 +6101,934 @@ function updateHeadToHeadOpponent(dt) {
     finalizeHeadToHeadIfReady();
   }
 }
+
+const battleInputState = {
+  up: false,
+  down: false,
+  left: false,
+  right: false,
+  prone: false,
+  fireHeld: false,
+  pickupHeld: false,
+};
+
+function getBattleCharacterById(id) {
+  return characters.find((c) => c.id === id) || characters[0];
+}
+
+function getBattleCharacterImage(characterId) {
+  return getBattleCharacterById(characterId)?._img || null;
+}
+
+function ensureBattleStatics() {
+  if (battleState.spawnPoints.length) return;
+  const built = buildBattleStatics();
+  battleState.spawnPoints = built.spawnPoints;
+  battleState.obstacles = built.obstacles;
+  battleState.weaponPickups = built.weaponPickups;
+  battleState.ammoPickups = built.ammoPickups;
+  battleState.vehicles = built.vehicles;
+}
+
+function createBattleInventory() {
+  return {
+    owned: { pistol: true },
+    ammo: { pistol: battleWeaponConfigs.pistol.starterAmmo },
+  };
+}
+
+function getBattleSpawnPoint(seed = Math.random()) {
+  ensureBattleStatics();
+  const index = Math.floor(seed * battleState.spawnPoints.length) % battleState.spawnPoints.length;
+  return battleState.spawnPoints[index] || { x: 260, y: 260 };
+}
+
+function createBattlePlayer(character, playerId, name) {
+  const spawn = getBattleSpawnPoint(seededNoise(Date.now() + playerId.length));
+  const massInfluence = Number.isFinite(Number(character.mass)) ? Number(character.mass) : 1;
+  const moveSpeed = Math.max(250, Math.min(360, 320 - (massInfluence - 1) * 45));
+  return {
+    id: playerId,
+    name: (name || "Player").toString().slice(0, 16),
+    characterId: character.id,
+    x: spawn.x,
+    y: spawn.y,
+    vx: 0,
+    vy: 0,
+    radius: 24,
+    baseRadius: 24,
+    baseSpeed: moveSpeed,
+    speed: moveSpeed,
+    hp: 100,
+    maxHp: 100,
+    alive: true,
+    respawnTimer: 0,
+    vehicleId: null,
+    weaponId: "pistol",
+    inventory: createBattleInventory(),
+    fireCooldown: 0,
+    aimAngle: 0,
+    prone: false,
+    jumpTimer: 0,
+    jumpCooldown: 0,
+    kills: 0,
+    deaths: 0,
+    respawns: 0,
+    updatedAt: Date.now(),
+  };
+}
+
+function battleRectCircleHit(circleX, circleY, radius, rect) {
+  const nearestX = Math.max(rect.x, Math.min(circleX, rect.x + rect.w));
+  const nearestY = Math.max(rect.y, Math.min(circleY, rect.y + rect.h));
+  const dx = circleX - nearestX;
+  const dy = circleY - nearestY;
+  return dx * dx + dy * dy <= radius * radius;
+}
+
+function battleClampPlayer(player) {
+  player.x = Math.max(player.radius, Math.min(BATTLE_WORLD_WIDTH - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(BATTLE_WORLD_HEIGHT - player.radius, player.y));
+}
+
+function battleResolveObstacleCollision(player) {
+  if (player.vehicleId && battleVehicleConfigs[player.vehicleId]?.canHover) return;
+  battleState.obstacles.forEach((rect) => {
+    if (!battleRectCircleHit(player.x, player.y, player.radius, rect)) return;
+    const centerX = rect.x + rect.w / 2;
+    const centerY = rect.y + rect.h / 2;
+    const dx = player.x - centerX;
+    const dy = player.y - centerY;
+    if (Math.abs(dx / rect.w) > Math.abs(dy / rect.h)) {
+      player.x = dx > 0 ? rect.x + rect.w + player.radius : rect.x - player.radius;
+      player.vx = 0;
+    } else {
+      player.y = dy > 0 ? rect.y + rect.h + player.radius : rect.y - player.radius;
+      player.vy = 0;
+    }
+  });
+  battleClampPlayer(player);
+}
+
+function getBattleVehicleConfig(vehicleId) {
+  return battleVehicleConfigs[vehicleId] || battleVehicleConfigs.golfcart;
+}
+
+function battleApplyVehicleStats(player) {
+  if (!player.vehicleId) {
+    player.speed = player.baseSpeed;
+    player.maxHp = 100;
+    player.baseRadius = 24;
+    player.radius = 24;
+    player.hp = Math.min(player.hp, player.maxHp);
+    return;
+  }
+  const cfg = getBattleVehicleConfig(player.vehicleId);
+  player.speed = cfg.speed;
+  player.maxHp = 100 + cfg.hpBonus;
+  player.baseRadius = cfg.radius;
+  player.radius = cfg.radius;
+  player.hp = Math.min(player.maxHp, Math.max(player.hp, 40));
+}
+
+function battleSend(event, payload) {
+  if (!battleState.channel) return;
+  battleState.channel.send({ type: "broadcast", event, payload });
+}
+
+function battleCurrentAmmo(player, weaponId = player.weaponId) {
+  return Number(player.inventory?.ammo?.[weaponId] || 0);
+}
+
+function battleConsumeAmmo(player, weaponId, amount = 1) {
+  player.inventory.ammo[weaponId] = Math.max(0, battleCurrentAmmo(player, weaponId) - amount);
+}
+
+function battleGrantAmmo(player, weaponId, amount) {
+  player.inventory.ammo[weaponId] = battleCurrentAmmo(player, weaponId) + amount;
+}
+
+function battleAddKillFeed(text) {
+  battleState.killFeed.unshift({ text, life: 4 });
+  battleState.killFeed = battleState.killFeed.slice(0, 5);
+}
+
+function battlePublishLocalState(force = false) {
+  if (!battleState.active || !battleState.localPlayer || !battleState.channel) return;
+  if (!force && battleState.snapshotTimer > 0) return;
+  const player = battleState.localPlayer;
+  battleState.snapshotTimer = BATTLE_SNAPSHOT_SECONDS;
+  battleSend("battle-state", {
+    id: player.id,
+    name: player.name,
+    characterId: player.characterId,
+    x: player.x,
+    y: player.y,
+    vx: player.vx,
+    vy: player.vy,
+    radius: player.radius,
+    hp: player.hp,
+    maxHp: player.maxHp,
+    alive: player.alive,
+    respawnTimer: player.respawnTimer,
+    weaponId: player.weaponId,
+    vehicleId: player.vehicleId,
+    prone: player.prone || false,
+    jumpTimer: player.jumpTimer || 0,
+    kills: battleState.stats.kills,
+    deaths: battleState.stats.deaths,
+    respawns: battleState.stats.respawns,
+    updatedAt: Date.now(),
+  });
+}
+
+function battleSetWeapon(player, weaponId) {
+  if (!player.inventory.owned[weaponId]) return;
+  player.weaponId = weaponId;
+}
+
+function battleCycleWeapon(player, direction = 1) {
+  const keys = Object.keys(battleWeaponConfigs).filter((key) => player.inventory.owned[key]);
+  if (!keys.length) return;
+  const index = keys.indexOf(player.weaponId);
+  const next = (index + direction + keys.length) % keys.length;
+  player.weaponId = keys[next];
+}
+
+function battleSpawnProjectiles(ownerId, weaponId, x, y, angle, shotId = `${ownerId}-${Date.now()}`, spreadMult = 1) {
+  const cfg = battleWeaponConfigs[weaponId];
+  if (!cfg) return;
+  const effectiveSpread = cfg.spread * spreadMult;
+  const pellets = cfg.pellets || 1;
+  for (let pelletIndex = 0; pelletIndex < pellets; pelletIndex += 1) {
+    const spreadSeed = seededNoise(shotId.length * 17 + pelletIndex * 13 + weaponId.length * 7);
+    const spreadOffset = pellets === 1 ? 0 : (spreadSeed - 0.5) * effectiveSpread * 2;
+    const finalAngle = angle + spreadOffset + (cfg.pellets ? (pelletIndex - (pellets - 1) / 2) * (effectiveSpread / Math.max(1, pellets - 1)) : 0);
+    battleState.projectiles.push({
+      id: `${shotId}-${pelletIndex}`,
+      ownerId,
+      weaponId,
+      x,
+      y,
+      vx: Math.cos(finalAngle) * cfg.projectileSpeed,
+      vy: Math.sin(finalAngle) * cfg.projectileSpeed,
+      angle: finalAngle,
+      radius: weaponId === "rocket" ? 16 : weaponId === "sniper" ? 6 : 5,
+      damage: cfg.damage,
+      splashRadius: cfg.splashRadius || 0,
+      life: weaponId === "rocket" ? 2.4 : 1.2,
+      color: cfg.color,
+    });
+  }
+}
+
+function battleTryFireWeapon() {
+  const player = battleState.localPlayer;
+  if (!battleState.active || !player || !player.alive) return;
+  const cfg = battleWeaponConfigs[player.weaponId];
+  if (!cfg) return;
+  if (player.fireCooldown > 0) return;
+  if (battleCurrentAmmo(player, player.weaponId) <= 0) {
+    tone(120, 0.03, "square", 0.04);
+    return;
+  }
+
+  const dx = Math.cos(player.aimAngle);
+  const dy = Math.sin(player.aimAngle);
+  const shotX = player.x + dx * (player.radius + 10);
+  const shotY = player.y + dy * (player.radius + 10);
+  const shotId = `${player.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const proneSpreadMult = player.prone ? 0.38 : 1;
+  battleSpawnProjectiles(player.id, player.weaponId, shotX, shotY, player.aimAngle, shotId, proneSpreadMult);
+  battleConsumeAmmo(player, player.weaponId, 1);
+  player.fireCooldown = cfg.fireInterval;
+  battleSend("battle-shot", {
+    ownerId: player.id,
+    weaponId: player.weaponId,
+    x: shotX,
+    y: shotY,
+    angle: player.aimAngle,
+    shotId,
+  });
+  tone(player.weaponId === "rocket" ? 180 : 420, player.weaponId === "rocket" ? 0.07 : 0.03, player.weaponId === "rocket" ? "sawtooth" : "square", 0.05);
+}
+
+function battleHandleExplosionDamage(projectile) {
+  const player = battleState.localPlayer;
+  if (!player?.alive || projectile.ownerId === player.id || !projectile.splashRadius) return;
+  const dx = player.x - projectile.x;
+  const dy = player.y - projectile.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > projectile.splashRadius + player.radius) return;
+  const scale = 1 - Math.min(1, dist / projectile.splashRadius);
+  battleApplyDamage(Math.max(22, projectile.damage * scale), projectile.ownerId, projectile.weaponId);
+}
+
+function battleApplyDamage(amount, attackerId, weaponId) {
+  const player = battleState.localPlayer;
+  if (!player || !player.alive) return;
+  player.hp = Math.max(0, player.hp - amount);
+  spawnParticles(player.x - cameraX, player.y - cameraY, 6, weaponId === "rocket" ? "#ff8f5c" : "#ffffff");
+  if (player.hp <= 0) {
+    battleKillLocalPlayer(attackerId);
+  }
+}
+
+function battleFreeVehicle(vehicleId, x, y) {
+  if (!vehicleId) return;
+  const vehicle = battleState.vehicles.find((entry) => entry.id === vehicleId);
+  if (!vehicle) return;
+  vehicle.occupiedBy = null;
+  vehicle.x = x;
+  vehicle.y = y;
+  battleState.occupiedVehicles.delete(vehicleId);
+  battleSend("battle-vehicle", { vehicleId, occupiedBy: null, x, y });
+}
+
+function battleKillLocalPlayer(attackerId) {
+  const player = battleState.localPlayer;
+  if (!player || !player.alive) return;
+  player.alive = false;
+  player.respawnTimer = BATTLE_RESPAWN_SECONDS;
+  battleState.stats.deaths += 1;
+  const killerName = attackerId === player.id ? player.name : (battleState.remotePlayers.get(attackerId)?.name || "Unknown");
+  battleAddKillFeed(`${killerName} eliminated ${player.name}`);
+  battleSend("battle-death", {
+    victimId: player.id,
+    attackerId,
+    x: player.x,
+    y: player.y,
+  });
+  battleFreeVehicle(player.vehicleId, player.x, player.y);
+  player.vehicleId = null;
+  battleApplyVehicleStats(player);
+  player.vx = 0;
+  player.vy = 0;
+  runStateLabel.textContent = `You were eliminated by ${killerName}. Respawning...`;
+}
+
+function battleRespawnLocalPlayer() {
+  const player = battleState.localPlayer;
+  if (!player) return;
+  const spawn = getBattleSpawnPoint(Math.random());
+  player.x = spawn.x;
+  player.y = spawn.y;
+  player.vx = 0;
+  player.vy = 0;
+  player.hp = player.maxHp;
+  player.alive = true;
+  player.respawnTimer = 0;
+  player.vehicleId = null;
+  player.weaponId = "pistol";
+  player.inventory = createBattleInventory();
+  player.fireCooldown = 0;
+  player.prone = false;
+  player.jumpTimer = 0;
+  player.jumpCooldown = 0;
+  battleState.stats.respawns += 1;
+  battleApplyVehicleStats(player);
+  battleSend("battle-respawn", { id: player.id, x: player.x, y: player.y });
+  runStateLabel.textContent = "Respawned into the battle.";
+}
+
+function battleTryCollectPickups() {
+  const player = battleState.localPlayer;
+  if (!player?.alive) return;
+  const allPickups = [...battleState.weaponPickups, ...battleState.ammoPickups];
+  allPickups.forEach((pickup) => {
+    if (battleState.claimedPickups.has(pickup.id)) return;
+    const dx = player.x - pickup.x;
+    const dy = player.y - pickup.y;
+    const pickupDist = (player.radius + pickup.radius + 20) ** 2;
+    if (dx * dx + dy * dy > pickupDist) return;
+    // Weapons require holding X to pick up; ammo is auto-collected on contact
+    if (pickup.type === "weapon" && !battleInputState.pickupHeld) return;
+    battleState.claimedPickups.add(pickup.id);
+    if (pickup.type === "weapon") {
+      player.inventory.owned[pickup.weaponId] = true;
+      battleGrantAmmo(player, pickup.weaponId, battleWeaponConfigs[pickup.weaponId].starterAmmo);
+      player.weaponId = pickup.weaponId;
+      battleAddKillFeed(`${player.name} picked up ${battleWeaponConfigs[pickup.weaponId].name}`);
+    } else {
+      battleGrantAmmo(player, pickup.ammoKind, pickup.amount);
+      battleAddKillFeed(`${player.name} grabbed ${battleWeaponConfigs[pickup.ammoKind].name} ammo`);
+    }
+    battleSend("battle-pickup", { pickupId: pickup.id, playerId: player.id });
+  });
+}
+
+function battleTryInteractVehicle() {
+  const player = battleState.localPlayer;
+  if (!battleState.active || !player?.alive) return;
+  if (player.vehicleId) {
+    battleFreeVehicle(player.vehicleId, player.x + 28, player.y + 28);
+    player.vehicleId = null;
+    battleApplyVehicleStats(player);
+    battlePublishLocalState(true);
+    return;
+  }
+
+  let nearest = null;
+  let nearestDist = Infinity;
+  battleState.vehicles.forEach((vehicle) => {
+    if (vehicle.occupiedBy) return;
+    const dx = player.x - vehicle.x;
+    const dy = player.y - vehicle.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 92 && dist < nearestDist) {
+      nearest = vehicle;
+      nearestDist = dist;
+    }
+  });
+  if (!nearest) return;
+  nearest.occupiedBy = player.id;
+  battleState.occupiedVehicles.set(nearest.id, player.id);
+  player.vehicleId = nearest.vehicleId;
+  battleApplyVehicleStats(player);
+  battleSend("battle-vehicle", { vehicleId: nearest.id, occupiedBy: player.id, x: nearest.x, y: nearest.y });
+  battlePublishLocalState(true);
+}
+
+function battleTriggerJump() {
+  const player = battleState.localPlayer;
+  if (!battleState.active || !player?.alive) return;
+  if (player.prone || player.vehicleId) return; // can't jump while prone or in a vehicle
+  if ((player.jumpCooldown || 0) > 0) return;
+  player.jumpTimer = 0.5;
+  player.jumpCooldown = 1.4;
+  tone(340, 0.05, "sine", 0.06);
+}
+
+function battleUpdateProjectiles(dt) {
+  const player = battleState.localPlayer;
+  battleState.projectiles.forEach((projectile) => {
+    projectile.life -= dt;
+    projectile.x += projectile.vx * dt;
+    projectile.y += projectile.vy * dt;
+
+    let shouldExplode = false;
+    if (projectile.x < 0 || projectile.y < 0 || projectile.x > BATTLE_WORLD_WIDTH || projectile.y > BATTLE_WORLD_HEIGHT) {
+      shouldExplode = true;
+    }
+
+    battleState.obstacles.forEach((rect) => {
+      if (!shouldExplode && battleRectCircleHit(projectile.x, projectile.y, projectile.radius, rect)) {
+        shouldExplode = true;
+      }
+    });
+
+    battleState.remotePlayers.forEach((remote) => {
+      if (shouldExplode || !remote.alive || projectile.ownerId === remote.id) return;
+      const dx = remote.x - projectile.x;
+      const dy = remote.y - projectile.y;
+      if (dx * dx + dy * dy <= (remote.radius + projectile.radius) ** 2) {
+        shouldExplode = true;
+      }
+    });
+
+    if (player?.alive && projectile.ownerId !== player.id) {
+      const dx = player.x - projectile.x;
+      const dy = player.y - projectile.y;
+      if (dx * dx + dy * dy <= (player.radius + projectile.radius) ** 2) {
+        if (projectile.splashRadius) {
+          shouldExplode = true;
+        } else {
+          battleApplyDamage(projectile.damage, projectile.ownerId, projectile.weaponId);
+          shouldExplode = true;
+        }
+      }
+    }
+
+    if (projectile.splashRadius && shouldExplode) {
+      battleHandleExplosionDamage(projectile);
+      spawnImpactBurst(projectile.x - cameraX, projectile.y - cameraY, 1.6);
+    }
+
+    projectile.dead = shouldExplode || projectile.life <= 0;
+  });
+
+  battleState.projectiles = battleState.projectiles.filter((projectile) => !projectile.dead);
+}
+
+function battleUpdateRemotePlayers(now) {
+  battleState.remotePlayers.forEach((player, id) => {
+    if (now - (player.updatedAt || 0) > 9000) {
+      battleState.remotePlayers.delete(id);
+    }
+  });
+}
+
+function battleUpdateLocalPlayer(dt) {
+  const player = battleState.localPlayer;
+  if (!player) return;
+
+  if (!player.alive) {
+    player.respawnTimer = Math.max(0, player.respawnTimer - dt);
+    if (player.respawnTimer <= 0) battleRespawnLocalPlayer();
+    return;
+  }
+
+  player.fireCooldown = Math.max(0, player.fireCooldown - dt);
+  if ((player.jumpTimer || 0) > 0) player.jumpTimer = Math.max(0, player.jumpTimer - dt);
+  if ((player.jumpCooldown || 0) > 0) player.jumpCooldown = Math.max(0, player.jumpCooldown - dt);
+
+  // Prone: only when on foot (not in vehicle); Shift held = prone
+  player.prone = !player.vehicleId && battleInputState.prone;
+  const proneSpeedMult = player.prone ? 0.38 : 1;
+  const jumping = (player.jumpTimer || 0) > 0;
+  const jumpSpeedBoost = jumping ? 1.3 : 1;
+
+  // Radius scales for prone (crouched profile)
+  const baseR = player.baseRadius || 24;
+  player.radius = player.prone ? Math.max(10, Math.round(baseR * 0.62)) : baseR;
+
+  const moveX = (battleInputState.right ? 1 : 0) - (battleInputState.left ? 1 : 0);
+  const moveY = (battleInputState.down ? 1 : 0) - (battleInputState.up ? 1 : 0);
+  const mag = Math.hypot(moveX, moveY) || 1;
+  const effectiveSpeed = player.speed * proneSpeedMult * jumpSpeedBoost;
+  const targetVx = (moveX !== 0 || moveY !== 0) ? (moveX / mag) * effectiveSpeed : 0;
+  const targetVy = (moveX !== 0 || moveY !== 0) ? (moveY / mag) * effectiveSpeed : 0;
+  player.vx += (targetVx - player.vx) * Math.min(1, dt * 9);
+  player.vy += (targetVy - player.vy) * Math.min(1, dt * 9);
+  player.x += player.vx * dt;
+  player.y += player.vy * dt;
+
+  // Jumping clears obstacles (player hops over cover)
+  if (jumping) {
+    battleClampPlayer(player);
+  } else {
+    battleResolveObstacleCollision(player);
+  }
+
+  // Aim angle: cursor always drives it
+  const cRect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / cRect.width;
+  const scaleY = canvas.height / cRect.height;
+  const mouseWorldX = cameraX + lastMouseX * scaleX;
+  const mouseWorldY = cameraY + lastMouseY * scaleY;
+  player.aimAngle = Math.atan2(mouseWorldY - player.y, mouseWorldX - player.x);
+
+  // E key fires (held for auto, respects fireCooldown)
+  if (battleInputState.fireHeld) battleTryFireWeapon();
+  // X key held picks up nearby weapons; ammo auto-collects
+  battleTryCollectPickups();
+}
+
+function battleUpdateVehicles() {
+  battleState.vehicles.forEach((vehicle) => {
+    if (!vehicle.occupiedBy) return;
+    if (vehicle.occupiedBy === battleState.localPlayer?.id) {
+      vehicle.x = battleState.localPlayer.x;
+      vehicle.y = battleState.localPlayer.y;
+      return;
+    }
+    const remote = battleState.remotePlayers.get(vehicle.occupiedBy);
+    if (remote) {
+      vehicle.x = remote.x;
+      vehicle.y = remote.y;
+    }
+  });
+}
+
+function updateBattleHudText() {
+  const player = battleState.localPlayer;
+  if (!player) return;
+  const weapon = battleWeaponConfigs[player.weaponId];
+  const ammo = battleCurrentAmmo(player, player.weaponId);
+  const ratio = battleState.stats.kills / Math.max(1, battleState.stats.deaths || 1);
+  const nearbyWeapon = battleState.active && battleState.localPlayer?.alive
+    ? battleState.weaponPickups.find((p) => {
+        if (battleState.claimedPickups.has(p.id)) return false;
+        const pl = battleState.localPlayer;
+        const dx = pl.x - p.x; const dy = pl.y - p.y;
+        return dx * dx + dy * dy <= (pl.radius + p.radius + 20) ** 2;
+      })
+    : null;
+  const pickupPrompt = nearbyWeapon ? ` • [Hold X] Pick up ${battleWeaponConfigs[nearbyWeapon.weaponId]?.name}` : "";
+  abilityHint.textContent = `Arrows/W/S/D=move • A=vehicle • E=fire • Space=jump • Hold Shift=prone • Hold X=pickup • Q=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
+  runStateLabel.textContent = player.alive
+    ? `Battle Mode • HP ${Math.round(player.hp)}/${player.maxHp} • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`
+    : `Respawning in ${player.respawnTimer.toFixed(1)}s • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`;
+}
+
+function updateBattleMode(dt) {
+  if (!battleState.active) return;
+  const now = Date.now();
+  battleState.snapshotTimer = Math.max(0, battleState.snapshotTimer - dt);
+  battleState.killFeed.forEach((entry) => { entry.life -= dt; });
+  battleState.killFeed = battleState.killFeed.filter((entry) => entry.life > 0);
+  battleUpdateLocalPlayer(dt);
+  battleUpdateProjectiles(dt);
+  battleUpdateVehicles();
+  battleUpdateRemotePlayers(now);
+  const player = battleState.localPlayer;
+  if (player) {
+    cameraX = Math.max(0, Math.min(BATTLE_WORLD_WIDTH - canvas.width, player.x - canvas.width / 2));
+    cameraY = Math.max(0, Math.min(BATTLE_WORLD_HEIGHT - canvas.height, player.y - canvas.height / 2));
+  }
+  updateBattleHudText();
+  battlePublishLocalState();
+}
+
+function battleHandleMessage(event, payload) {
+  if (!payload) return;
+  if (event === "battle-state") {
+    if (payload.id === battleState.localPlayerId) return;
+    const existing = battleState.remotePlayers.get(payload.id) || {};
+    battleState.remotePlayers.set(payload.id, {
+      ...existing,
+      ...payload,
+    });
+    return;
+  }
+
+  if (event === "battle-shot") {
+    if (payload.ownerId === battleState.localPlayerId) return;
+    battleSpawnProjectiles(payload.ownerId, payload.weaponId, payload.x, payload.y, payload.angle, payload.shotId);
+    return;
+  }
+
+  if (event === "battle-pickup") {
+    if (payload.pickupId) battleState.claimedPickups.add(payload.pickupId);
+    return;
+  }
+
+  if (event === "battle-vehicle") {
+    const vehicle = battleState.vehicles.find((entry) => entry.id === payload.vehicleId);
+    if (!vehicle) return;
+    vehicle.occupiedBy = payload.occupiedBy || null;
+    if (Number.isFinite(Number(payload.x))) vehicle.x = Number(payload.x);
+    if (Number.isFinite(Number(payload.y))) vehicle.y = Number(payload.y);
+    if (payload.occupiedBy) battleState.occupiedVehicles.set(vehicle.id, payload.occupiedBy);
+    else battleState.occupiedVehicles.delete(vehicle.id);
+    return;
+  }
+
+  if (event === "battle-death") {
+    if (payload.victimId === battleState.localPlayerId) return;
+    const victim = battleState.remotePlayers.get(payload.victimId);
+    if (victim) {
+      victim.alive = false;
+      victim.hp = 0;
+      victim.respawnTimer = BATTLE_RESPAWN_SECONDS;
+      victim.updatedAt = Date.now();
+    }
+    if (payload.attackerId === battleState.localPlayerId) {
+      battleState.stats.kills += 1;
+    }
+    const attackerName = payload.attackerId === battleState.localPlayerId
+      ? battleState.localPlayer?.name || "You"
+      : battleState.remotePlayers.get(payload.attackerId)?.name || "Unknown";
+    const victimName = payload.victimId === battleState.localPlayerId
+      ? battleState.localPlayer?.name || "You"
+      : victim?.name || "Player";
+    battleAddKillFeed(`${attackerName} eliminated ${victimName}`);
+    return;
+  }
+
+  if (event === "battle-respawn") {
+    if (payload.id === battleState.localPlayerId) return;
+    const existing = battleState.remotePlayers.get(payload.id);
+    if (existing) {
+      existing.alive = true;
+      existing.hp = existing.maxHp || 100;
+      existing.x = payload.x;
+      existing.y = payload.y;
+      existing.updatedAt = Date.now();
+    }
+  }
+}
+
+function cleanupBattleChannel() {
+  if (battleState.channel) {
+    networkState.client?.removeChannel(battleState.channel);
+    battleState.channel = null;
+  }
+}
+
+function leaveBattleMode() {
+  cleanupBattleChannel();
+  battleState.active = false;
+  battleState.joining = false;
+  battleState.remotePlayers.clear();
+  battleState.projectiles = [];
+  battleState.claimedPickups.clear();
+  battleState.occupiedVehicles.clear();
+  battleState.killFeed = [];
+  battleFireHeld = false;
+  battleInputState.up = false;
+  battleInputState.down = false;
+  battleInputState.left = false;
+  battleInputState.right = false;
+  battleInputState.prone = false;
+  battleInputState.fireHeld = false;
+  battleInputState.pickupHeld = false;
+  cameraY = 0;
+}
+
+function startBattleMode() {
+  if (!requireAuthenticatedAccount("join battle mode")) return;
+  ensureBattleStatics();
+  if (!ensureNetworkClient()) {
+    alert("Battle mode needs Supabase realtime available.");
+    return;
+  }
+
+  leaveBattleMode();
+  battleState.active = true;
+  battleState.joining = true;
+  battleState.stats = { kills: 0, deaths: 0, respawns: 0 };
+  battleState.localPlayer = createBattlePlayer(selectedCharacter, battleState.localPlayerId, getNetworkPlayerName());
+  battleApplyVehicleStats(battleState.localPlayer);
+  hideAllOverlays();
+  controlsPanel.classList.add("hidden");
+  launchBtn.disabled = true;
+  if (switchMapBtn) switchMapBtn.disabled = true;
+  cameraX = 0;
+  cameraY = 0;
+  runStateLabel.textContent = "Joining open battle...";
+
+  const channel = networkState.client.channel(BATTLE_CHANNEL);
+  battleState.channel = channel;
+  channel.on("broadcast", { event: "battle-state" }, ({ payload }) => battleHandleMessage("battle-state", payload));
+  channel.on("broadcast", { event: "battle-shot" }, ({ payload }) => battleHandleMessage("battle-shot", payload));
+  channel.on("broadcast", { event: "battle-pickup" }, ({ payload }) => battleHandleMessage("battle-pickup", payload));
+  channel.on("broadcast", { event: "battle-vehicle" }, ({ payload }) => battleHandleMessage("battle-vehicle", payload));
+  channel.on("broadcast", { event: "battle-death" }, ({ payload }) => battleHandleMessage("battle-death", payload));
+  channel.on("broadcast", { event: "battle-respawn" }, ({ payload }) => battleHandleMessage("battle-respawn", payload));
+
+  channel.subscribe((status) => {
+    if (status === "SUBSCRIBED") {
+      battleState.joining = false;
+      updateBattleHudText();
+      battlePublishLocalState(true);
+    }
+  });
+}
+
+function drawBattlePlayer(player, isLocal = false) {
+  if (!player) return;
+  const sx = player.x - cameraX;
+  const sy = player.y - cameraY;
+  const img = getBattleCharacterImage(player.characterId);
+  const ring = isLocal ? "#7dd3fc" : "#ffffff";
+  const prone = player.prone || false;
+  const jumping = (player.jumpTimer || 0) > 0;
+
+  ctx.save();
+  if (prone) {
+    // Flat ellipse: stretched wide, compressed tall
+    ctx.translate(sx, sy);
+    ctx.scale(1.55, 0.5);
+    ctx.beginPath();
+    ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
+    ctx.clip();
+    if (img && img.complete && img.naturalWidth > 8) {
+      ctx.drawImage(img, -player.radius, -player.radius, player.radius * 2, player.radius * 2);
+    } else {
+      ctx.fillStyle = isLocal ? "#7dd3fc" : "#d1d5db";
+      ctx.fill();
+    }
+  } else {
+    ctx.beginPath();
+    ctx.arc(sx, sy, player.radius, 0, Math.PI * 2);
+    ctx.clip();
+    if (img && img.complete && img.naturalWidth > 8) {
+      ctx.drawImage(img, sx - player.radius, sy - player.radius, player.radius * 2, player.radius * 2);
+    } else {
+      ctx.fillStyle = isLocal ? "#7dd3fc" : "#d1d5db";
+      ctx.beginPath();
+      ctx.arc(sx, sy, player.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // Ring + state indicators
+  ctx.save();
+  if (prone) {
+    ctx.translate(sx, sy);
+    ctx.scale(1.55, 0.5);
+    ctx.strokeStyle = ring;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, player.radius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+    // Prone label
+    ctx.restore();
+    ctx.fillStyle = "rgba(255,220,50,0.9)";
+    ctx.font = "bold 10px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText("PRONE", sx, sy + player.radius * 0.6);
+  } else {
+    ctx.strokeStyle = ring;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(sx, sy, player.radius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+    if (jumping) {
+      // Dashed outer ring shows jump height
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(sx, sy, player.radius + 11, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  }
+  if (prone) {
+    // restore already called inside prone branch
+  } else {
+    // nothing extra needed
+  }
+
+  // HP bar
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(sx - 30, sy - player.radius - 18, 60, 6);
+  ctx.fillStyle = player.hp > 45 ? "#4ade80" : player.hp > 20 ? "#facc15" : "#fb7185";
+  ctx.fillRect(sx - 30, sy - player.radius - 18, 60 * (Math.max(0, player.hp) / Math.max(1, player.maxHp)), 6);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 12px Trebuchet MS";
+  ctx.textAlign = "center";
+  ctx.fillText(player.name, sx, sy + player.radius + 18);
+  ctx.textAlign = "start";
+}
+
+function drawBattleMode() {
+  const player = battleState.localPlayer;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#16211a";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.save();
+  ctx.translate(-cameraX, -cameraY);
+
+  ctx.fillStyle = "#203225";
+  ctx.fillRect(0, 0, BATTLE_WORLD_WIDTH, BATTLE_WORLD_HEIGHT);
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= BATTLE_WORLD_WIDTH; x += 120) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, BATTLE_WORLD_HEIGHT);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= BATTLE_WORLD_HEIGHT; y += 120) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(BATTLE_WORLD_WIDTH, y);
+    ctx.stroke();
+  }
+
+  battleState.obstacles.forEach((rect) => {
+    ctx.fillStyle = "#42534a";
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = "#62756a";
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  });
+
+  battleState.weaponPickups.forEach((pickup) => {
+    if (battleState.claimedPickups.has(pickup.id)) return;
+    const img = battleWeaponImgs.get(pickup.weaponId);
+    const size = pickup.radius * 2;
+    if (img && img.complete && img.naturalWidth > 8) {
+      ctx.drawImage(img, pickup.x - size / 2, pickup.y - size / 2, size, size);
+    } else {
+      ctx.fillStyle = battleWeaponConfigs[pickup.weaponId].color;
+      ctx.beginPath();
+      ctx.arc(pickup.x, pickup.y, pickup.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  battleState.ammoPickups.forEach((pickup) => {
+    if (battleState.claimedPickups.has(pickup.id)) return;
+    ctx.fillStyle = "#9ca3af";
+    ctx.beginPath();
+    ctx.arc(pickup.x, pickup.y, pickup.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#111";
+    ctx.font = "bold 11px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText("AMMO", pickup.x, pickup.y + 4);
+    ctx.textAlign = "start";
+  });
+
+  battleState.vehicles.forEach((vehicle) => {
+    if (vehicle.occupiedBy) return;
+    const cfg = getBattleVehicleConfig(vehicle.vehicleId);
+    const img = battleVehicleImgs.get(vehicle.vehicleId);
+    const size = cfg.radius * 2.2;
+    if (img && img.complete && img.naturalWidth > 8) {
+      ctx.drawImage(img, vehicle.x - size / 2, vehicle.y - size / 2, size, size);
+    } else {
+      ctx.fillStyle = "#ddd";
+      ctx.fillRect(vehicle.x - size / 2, vehicle.y - size / 4, size, size / 2);
+    }
+  });
+
+  battleState.projectiles.forEach((projectile) => {
+    const img = projectile.weaponId === "rocket" ? battleWeaponImgs.get("rocket") : battleVehicleImgs.get("golfball");
+    if (projectile.weaponId === "rocket" && img && img.complete && img.naturalWidth > 8) {
+      const size = projectile.radius * 2.5;
+      ctx.drawImage(img, projectile.x - size / 2, projectile.y - size / 2, size, size);
+    } else if (projectile.weaponId !== "rocket" && battleVehicleImgs.get("golfball") && projectile.weaponId === "pistol") {
+      ctx.fillStyle = projectile.color;
+      ctx.beginPath();
+      ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = projectile.color;
+      ctx.beginPath();
+      ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  battleState.remotePlayers.forEach((remote) => {
+    if (remote.alive) drawBattlePlayer(remote, false);
+  });
+  if (player?.alive) drawBattlePlayer(player, true);
+
+  ctx.restore();
+
+  const ratio = battleState.stats.kills / Math.max(1, battleState.stats.deaths || 1);
+  const weapon = player ? battleWeaponConfigs[player.weaponId] : null;
+  const ammo = player ? battleCurrentAmmo(player, player.weaponId) : 0;
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(16, 16, 300, 108);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 20px Trebuchet MS";
+  ctx.fillText("Battle Mode", 28, 42);
+  ctx.font = "bold 14px Trebuchet MS";
+  ctx.fillText(`Players: ${battleState.remotePlayers.size + 1}`, 28, 66);
+  ctx.fillText(`Weapon: ${weapon?.name || "Pistol"}`, 28, 88);
+  ctx.fillText(`Ammo: ${ammo}`, 28, 108);
+  ctx.fillText(`K/D/R: ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`, 150, 108);
+
+  battleState.killFeed.forEach((entry, index) => {
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.7, entry.life / 4)})`;
+    ctx.fillRect(canvas.width - 340, 18 + index * 28, 320, 22);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 12px Trebuchet MS";
+    ctx.fillText(entry.text, canvas.width - 332, 34 + index * 28);
+  });
+
+  if (player && !player.alive) {
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 34px Trebuchet MS";
+    ctx.textAlign = "center";
+    ctx.fillText(`Respawning in ${player.respawnTimer.toFixed(1)}s`, canvas.width / 2, canvas.height / 2);
+    ctx.font = "bold 16px Trebuchet MS";
+    ctx.fillText("You always spawn back in with a pistol.", canvas.width / 2, canvas.height / 2 + 30);
+    ctx.textAlign = "start";
+  }
+}
 function getAbilityLabel(character) {
   switch (character.ability) {
     case "fishingrod":
@@ -9854,6 +11000,7 @@ function isTypingIntoField(target) {
 }
 
 window.addEventListener("keydown", (ev) => {
+  if (battleState.active) return; // handled by dedicated battle listeners below
   if (ev.code === "Space") {
     if (isTypingIntoField(ev.target)) return;
     ev.preventDefault();
@@ -10054,6 +11201,10 @@ function cancelDragLaunch() {
 }
 
 canvas.addEventListener("mousedown", (ev) => {
+  if (battleState.active) {
+    updateAimAndDragAtClientPos(ev.clientX, ev.clientY);
+    return;
+  }
   if (canBenManualFire()) {
     ensureAudio();
     updateAimAndDragAtClientPos(ev.clientX, ev.clientY);
@@ -10080,6 +11231,7 @@ canvas.addEventListener("mouseleave", () => {
 
 canvas.addEventListener("touchstart", (ev) => {
   if (!ev.touches.length) return;
+  if (battleState.active) return;
   ev.preventDefault();
   const t = ev.touches[0];
   if (canBenManualFire()) {
@@ -10094,7 +11246,7 @@ canvas.addEventListener("touchstart", (ev) => {
 
 canvas.addEventListener("touchmove", (ev) => {
   if (!ev.touches.length) return;
-  ev.preventDefault();
+  if (!battleState.active) ev.preventDefault();
   const t = ev.touches[0];
   updateAimAndDragAtClientPos(t.clientX, t.clientY);
 }, { passive: false });
@@ -10137,6 +11289,100 @@ bindMobileActionButton(mobilePrimaryBtn, () => {
 bindMobileActionButton(mobileSecondaryBtn, () => {
   triggerSecondaryAction();
 });
+
+// ---- Battle Mode Keyboard Controls ----
+window.addEventListener("keydown", (ev) => {
+  if (!battleState.active) return;
+  if (isTypingIntoField(ev.target)) return;
+  switch (ev.code) {
+    case "KeyW":
+    case "ArrowUp":
+      battleInputState.up = true;
+      ev.preventDefault();
+      break;
+    case "KeyS":
+    case "ArrowDown":
+      battleInputState.down = true;
+      ev.preventDefault();
+      break;
+    case "ArrowLeft":
+      battleInputState.left = true;
+      ev.preventDefault();
+      break;
+    case "KeyA":
+      // A is reserved for vehicle interact only
+      if (!ev.repeat) battleTryInteractVehicle();
+      ev.preventDefault();
+      break;
+    case "KeyD":
+    case "ArrowRight":
+      battleInputState.right = true;
+      ev.preventDefault();
+      break;
+    case "Space":
+      ev.preventDefault();
+      battleTriggerJump();
+      break;
+    case "ShiftLeft":
+    case "ShiftRight":
+      battleInputState.prone = true;
+      ev.preventDefault();
+      break;
+    case "KeyE":
+      battleInputState.fireHeld = true;
+      ev.preventDefault();
+      break;
+    case "KeyX":
+      battleInputState.pickupHeld = true;
+      ev.preventDefault();
+      break;
+    case "KeyQ": {
+      const bp = battleState.localPlayer;
+      if (bp) battleCycleWeapon(bp, 1);
+      ev.preventDefault();
+      break;
+    }
+    case "Escape":
+      leaveBattleMode();
+      showMenu();
+      break;
+    default:
+      break;
+  }
+});
+
+window.addEventListener("keyup", (ev) => {
+  if (!battleState.active) return;
+  switch (ev.code) {
+    case "KeyW": case "ArrowUp":    battleInputState.up    = false; break;
+    case "KeyS": case "ArrowDown":  battleInputState.down  = false; break;
+    case "ArrowLeft":                 battleInputState.left  = false; break;
+    case "KeyD": case "ArrowRight": battleInputState.right = false; break;
+    case "KeyE":  battleInputState.fireHeld  = false; break;
+    case "KeyX":  battleInputState.pickupHeld = false; break;
+    case "ShiftLeft":
+    case "ShiftRight":
+      battleInputState.prone = false;
+      break;
+    default: break;
+  }
+});
+
+// Touch fire in battle mode: tap canvas fires, move updates aim
+canvas.addEventListener("touchstart", (ev2) => {
+  if (!battleState.active) return;
+  if (!ev2.touches.length) return;
+  ev2.preventDefault();
+  const t2 = ev2.touches[0];
+  updateAimAndDragAtClientPos(t2.clientX, t2.clientY);
+  battleInputState.fireHeld = true;
+  battleTryFireWeapon();
+}, { passive: false, capture: true });
+
+canvas.addEventListener("touchend", (ev2) => {
+  if (!battleState.active) return;
+  battleInputState.fireHeld = false;
+}, { passive: true, capture: true });
 
 preloadCharacterImages();
 ensureAdminAccountExists();
