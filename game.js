@@ -1697,6 +1697,24 @@ function makeBattlePickupId(prefix, index) {
   return `${prefix}-${index}`;
 }
 
+function battlePointHitsObstacle(x, y, radius, obstacles) {
+  return obstacles.some((rect) => battleRectCircleHit(x, y, radius + 10, rect));
+}
+
+function battleRandomOpenPoint(radius, obstacles, margin = 180) {
+  for (let tries = 0; tries < 80; tries += 1) {
+    const x = margin + Math.random() * Math.max(40, BATTLE_WORLD_WIDTH - margin * 2);
+    const y = margin + Math.random() * Math.max(40, BATTLE_WORLD_HEIGHT - margin * 2);
+    if (!battlePointHitsObstacle(x, y, radius, obstacles)) {
+      return { x: Math.round(x), y: Math.round(y) };
+    }
+  }
+  return {
+    x: Math.round(margin + Math.random() * Math.max(40, BATTLE_WORLD_WIDTH - margin * 2)),
+    y: Math.round(margin + Math.random() * Math.max(40, BATTLE_WORLD_HEIGHT - margin * 2)),
+  };
+}
+
 function buildBattleStatics() {
   const spawnRows = [260, 1080, 1920];
   const spawnCols = 8;
@@ -1720,38 +1738,46 @@ function buildBattleStatics() {
   }
 
   const weaponKinds = ["ar", "fullautoar", "marksman", "shotgun", "sniper", "rocket"];
-  const weaponPickups = weaponKinds.map((weaponId, index) => ({
-    id: makeBattlePickupId("weapon", index),
-    type: "weapon",
-    weaponId,
-    x: Math.round(420 + (index / Math.max(1, weaponKinds.length - 1)) * (BATTLE_WORLD_WIDTH - 840)),
-    y: 620 + (index % 2) * 880,
-    radius: 28,
-  }));
+  const weaponPickups = weaponKinds.map((weaponId, index) => {
+    const pos = battleRandomOpenPoint(28, obstacles, 220);
+    return {
+      id: makeBattlePickupId("weapon", index),
+      type: "weapon",
+      weaponId,
+      x: pos.x,
+      y: pos.y,
+      radius: 28,
+    };
+  });
 
   const ammoPickups = [];
   const ammoTypes = ["pistol", "ar", "fullautoar", "marksman", "shotgun", "sniper", "rocket"];
   for (let i = 0; i < 42; i += 1) {
     const ammoKind = ammoTypes[i % ammoTypes.length];
+    const pos = battleRandomOpenPoint(20, obstacles, 180);
     ammoPickups.push({
       id: makeBattlePickupId("ammo", i),
       type: "ammo",
       ammoKind,
       amount: battleWeaponConfigs[ammoKind].pickupAmmo,
-      x: 220 + seededNoise(600 + i) * (BATTLE_WORLD_WIDTH - 440),
-      y: 220 + seededNoise(800 + i) * (BATTLE_WORLD_HEIGHT - 440),
+      x: pos.x,
+      y: pos.y,
       radius: 20,
     });
   }
 
   const vehicleKinds = ["golfcart", "tank", "bmw", "tacoma", "jet", "trex"];
-  const vehicles = vehicleKinds.map((vehicleId, index) => ({
-    id: `vehicle-${vehicleId}`,
-    vehicleId,
-    x: Math.round(360 + (index / Math.max(1, vehicleKinds.length - 1)) * (BATTLE_WORLD_WIDTH - 720)),
-    y: 310 + (index % 2) * 1500,
-    occupiedBy: null,
-  }));
+  const vehicles = vehicleKinds.map((vehicleId, index) => {
+    const radius = getBattleVehicleConfig(vehicleId).radius;
+    const pos = battleRandomOpenPoint(radius, obstacles, 240);
+    return {
+      id: `vehicle-${vehicleId}`,
+      vehicleId,
+      x: pos.x,
+      y: pos.y,
+      occupiedBy: null,
+    };
+  });
 
   return { spawnPoints, obstacles, weaponPickups, ammoPickups, vehicles };
 }
@@ -6796,13 +6822,18 @@ function leaveBattleMode() {
 
 function startBattleMode() {
   if (!requireAuthenticatedAccount("join battle mode")) return;
-  ensureBattleStatics();
   if (!ensureNetworkClient()) {
     alert("Battle mode needs Supabase realtime available.");
     return;
   }
 
   leaveBattleMode();
+  const built = buildBattleStatics();
+  battleState.spawnPoints = built.spawnPoints;
+  battleState.obstacles = built.obstacles;
+  battleState.weaponPickups = built.weaponPickups;
+  battleState.ammoPickups = built.ammoPickups;
+  battleState.vehicles = built.vehicles;
   battleState.active = true;
   battleState.joining = true;
   battleState.stats = { kills: 0, deaths: 0, respawns: 0 };
