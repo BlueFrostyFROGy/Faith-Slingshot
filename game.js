@@ -13,11 +13,15 @@ const GAME_ACCOUNT_VERIFY_RPC = "verify_game_account";
 const GAME_RANKED_UPSERT_RPC = "upsert_game_ranked_profile";
 const GAME_CHARACTER_UPSERT_RPC = "upsert_game_character";
 const GAME_CHARACTER_DELETE_RPC = "delete_game_character";
+const GAME_VIEW_COUNTER_INCREMENT_RPC = "increment_site_view_counter";
+const GAME_VIEW_COUNTER_FETCH_RPC = "get_site_view_counter";
 const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
 const SUPABASE_H2H_RANKED_TABLE = "head_to_head_rankings";
 const SUPABASE_LIVE_CHAR_TABLE = "published_characters";
+const VIEW_COUNTER_SLUG = "faith-flight-frenzy";
+const VIEW_COUNTER_REFRESH_MS = 30000;
 const ADMIN_ACCOUNT_NAME = "admin";
 const ADMIN_ACCOUNT_PASSWORD = "admin123";
 
@@ -51,6 +55,7 @@ const abilityHint = document.getElementById("abilityHint");
 const distanceValue = document.getElementById("distanceValue");
 const heightValue = document.getElementById("heightValue");
 const highScoreValue = document.getElementById("highScoreValue");
+const viewCounterValue = document.getElementById("viewCounterValue");
 const mapNameLabel = document.getElementById("mapNameLabel");
 const runStateLabel = document.getElementById("runStateLabel");
 const switchMapBtn = document.getElementById("switchMapBtn");
@@ -109,6 +114,8 @@ const makerRemoveBtn = document.getElementById("makerRemoveBtn");
 const hudTop = document.querySelector(".hud-top");
 
 let authSession = null;
+let sharedViewCount = null;
+let viewCounterRefreshTimer = null;
 let rankedCloudFetchInFlight = false;
 let rankedCloudLastFetchAt = 0;
 let authRequestInFlight = false;
@@ -6008,6 +6015,69 @@ function getRpcErrorMessage(status, data) {
   return "Request failed.";
 }
 
+function parseSharedViewCount(data) {
+  const directValue = typeof data === "number" ? data : Number(data?.view_count ?? data?.count ?? data?.views);
+  return Number.isFinite(directValue) ? Math.max(0, Math.floor(directValue)) : null;
+}
+
+function updateViewCounterUI(count = sharedViewCount, options = {}) {
+  if (!viewCounterValue) return;
+  if (Number.isFinite(count)) {
+    viewCounterValue.textContent = count.toLocaleString();
+    return;
+  }
+  if (options.loading) {
+    viewCounterValue.textContent = "…";
+    return;
+  }
+  viewCounterValue.textContent = "--";
+}
+
+async function fetchSharedViewCount() {
+  try {
+    const { ok, data } = await callSupabaseRpc(GAME_VIEW_COUNTER_FETCH_RPC, {
+      p_slug: VIEW_COUNTER_SLUG,
+    });
+    if (!ok) return false;
+    const count = parseSharedViewCount(data);
+    if (!Number.isFinite(count)) return false;
+    sharedViewCount = count;
+    updateViewCounterUI(sharedViewCount);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function recordSharedPageView() {
+  updateViewCounterUI(null, { loading: true });
+  try {
+    const { ok, data } = await callSupabaseRpc(GAME_VIEW_COUNTER_INCREMENT_RPC, {
+      p_slug: VIEW_COUNTER_SLUG,
+    });
+    if (ok) {
+      const count = parseSharedViewCount(data);
+      if (Number.isFinite(count)) {
+        sharedViewCount = count;
+        updateViewCounterUI(sharedViewCount);
+        return true;
+      }
+    }
+  } catch {
+  }
+
+  const fetched = await fetchSharedViewCount();
+  if (!fetched) updateViewCounterUI(null);
+  return fetched;
+}
+
+function startViewCounterRefresh() {
+  if (viewCounterRefreshTimer) clearInterval(viewCounterRefreshTimer);
+  viewCounterRefreshTimer = setInterval(() => {
+    fetchSharedViewCount();
+  }, VIEW_COUNTER_REFRESH_MS);
+}
+
 async function fetchCloudPublishedCharacters() {
   try {
     const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_LIVE_CHAR_TABLE}?select=id,name,initials,trait,bio,ability,mass,radius,drag,bounce,gravity_mult,launch_boost,unlock_at,image_data,item_image_data,updated_at&order=updated_at.desc&limit=300`;
@@ -9491,6 +9561,8 @@ if (authSession?.user?.id) {
   const accountName = getSessionAccountName();
   if (accountNameInput) accountNameInput.value = accountName;
 }
+recordSharedPageView();
+startViewCounterRefresh();
 fetchCloudPublishedCharacters();
 subscribeToLeaderboard();
 window.addEventListener("resize", updateViewportLayout);

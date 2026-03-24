@@ -52,6 +52,13 @@ body {
   background: #f2f6ff;
 }
 
+.view-counter-pill {
+  margin-left: auto;
+  background: #eef8ff;
+  border-color: #b9dfff;
+  color: #16476e;
+}
+
 main {
   position: relative;
   flex: 1;
@@ -443,6 +450,10 @@ canvas {
   .hud-top h1 {
     width: 100%;
     font-size: 1rem;
+  }
+
+  .view-counter-pill {
+    margin-left: 0;
   }
 
   .distance-pill,
