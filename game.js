@@ -1606,79 +1606,79 @@ const battleWeaponConfigs = {
   pistol: {
     id: "pistol",
     name: "Pistol",
-    damage: 18,
-    fireInterval: 0.28,
-    projectileSpeed: 1350,
-    spread: 0.018,
-    pickupAmmo: 36,
-    starterAmmo: 72,
+    damage: 20,
+    fireInterval: 0.26,
+    projectileSpeed: 1400,
+    spread: 0.016,
+    pickupAmmo: 30,
+    starterAmmo: 60,
     color: "#f6e6c8",
   },
   ar: {
     id: "ar",
     name: "AR",
-    damage: 15,
-    fireInterval: 0.13,
-    projectileSpeed: 1500,
-    spread: 0.035,
-    pickupAmmo: 50,
-    starterAmmo: 36,
+    damage: 17,
+    fireInterval: 0.145,
+    projectileSpeed: 1600,
+    spread: 0.024,
+    pickupAmmo: 36,
+    starterAmmo: 42,
     color: "#ffd281",
   },
   fullautoar: {
     id: "fullautoar",
     name: "Full Auto AR",
-    damage: 11,
-    fireInterval: 0.075,
-    projectileSpeed: 1480,
-    spread: 0.07,
-    pickupAmmo: 60,
-    starterAmmo: 42,
+    damage: 12,
+    fireInterval: 0.09,
+    projectileSpeed: 1540,
+    spread: 0.048,
+    pickupAmmo: 42,
+    starterAmmo: 48,
     color: "#ffb95f",
   },
   marksman: {
     id: "marksman",
     name: "Semi Auto Marksman",
-    damage: 34,
-    fireInterval: 0.42,
-    projectileSpeed: 1700,
-    spread: 0.012,
-    pickupAmmo: 22,
-    starterAmmo: 18,
+    damage: 38,
+    fireInterval: 0.46,
+    projectileSpeed: 1780,
+    spread: 0.01,
+    pickupAmmo: 18,
+    starterAmmo: 14,
     color: "#cfe2ff",
   },
   shotgun: {
     id: "shotgun",
     name: "Shotgun",
-    damage: 11,
-    pellets: 7,
-    fireInterval: 0.8,
+    damage: 10,
+    pellets: 8,
+    fireInterval: 0.86,
     projectileSpeed: 1180,
-    spread: 0.23,
-    pickupAmmo: 18,
-    starterAmmo: 12,
+    spread: 0.2,
+    pickupAmmo: 14,
+    starterAmmo: 16,
     color: "#ffe0a1",
   },
   sniper: {
     id: "sniper",
     name: "Sniper Rifle",
-    damage: 74,
-    fireInterval: 1.12,
-    projectileSpeed: 2200,
-    spread: 0.004,
-    pickupAmmo: 10,
-    starterAmmo: 6,
+    damage: 82,
+    fireInterval: 1.28,
+    projectileSpeed: 2300,
+    spread: 0.0035,
+    pickupAmmo: 7,
+    starterAmmo: 5,
     color: "#f5f5ff",
   },
   rocket: {
     id: "rocket",
     name: "Rocket Launcher",
-    damage: 96,
-    splashRadius: 128,
-    fireInterval: 1.35,
-    projectileSpeed: 820,
-    spread: 0.01,
-    pickupAmmo: 5,
+    damage: 88,
+    splashRadius: 118,
+    fireInterval: 1.52,
+    projectileSpeed: 780,
+    spread: 0.008,
+    pickupAmmo: 3,
     starterAmmo: 2,
     color: "#ff8f5c",
   },
@@ -6111,6 +6111,40 @@ function getBattleCharacterImage(characterId) {
   return getBattleCharacterById(characterId)?._img || null;
 }
 
+function battleClampValue(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getBattleCharacterTuning(character) {
+  const mass = Number.isFinite(Number(character?.mass)) ? Number(character.mass) : 1;
+  const radius = Number.isFinite(Number(character?.radius)) ? Number(character.radius) : 30;
+  const drag = Number.isFinite(Number(character?.drag)) ? Number(character.drag) : 0.08;
+  const gravityMult = Number.isFinite(Number(character?.gravityMult)) ? Number(character.gravityMult) : 1;
+  const launchBoost = Number.isFinite(Number(character?.launchBoost)) ? Number(character.launchBoost) : 1.1;
+
+  const massN = battleClampValue((mass - 0.75) / 1.0, 0, 1);
+  const radiusN = battleClampValue((radius - 24) / 18, 0, 1);
+  const dragN = battleClampValue((drag - 0.02) / 0.16, 0, 1);
+  const gravityN = battleClampValue((gravityMult - 0.88) / 0.28, 0, 1);
+  const launchN = battleClampValue((launchBoost - 1.03) / 0.22, 0, 1);
+
+  const baseHp = Math.round(battleClampValue(96 + massN * 18 + radiusN * 10 - dragN * 5, 92, 124));
+  const moveSpeed = Math.round(battleClampValue(338 - massN * 44 - radiusN * 24 + launchN * 17 + (1 - dragN) * 10, 268, 360));
+  const footRadius = Math.round(battleClampValue(22 + radiusN * 6, 21, 28));
+  const jumpBoost = battleClampValue(1.2 + launchN * 0.2 + (1 - gravityN) * 0.08 - massN * 0.08, 1.12, 1.42);
+  const jumpDuration = battleClampValue(0.4 + launchN * 0.07 + (1 - gravityN) * 0.12 - massN * 0.04, 0.36, 0.62);
+  const jumpCooldown = battleClampValue(1.12 + massN * 0.24 + gravityN * 0.18 - launchN * 0.15, 0.96, 1.5);
+
+  return {
+    baseHp,
+    moveSpeed,
+    footRadius,
+    jumpBoost,
+    jumpDuration,
+    jumpCooldown,
+  };
+}
+
 function ensureBattleStatics() {
   if (battleState.spawnPoints.length) return;
   const built = buildBattleStatics();
@@ -6136,8 +6170,7 @@ function getBattleSpawnPoint(seed = Math.random()) {
 
 function createBattlePlayer(character, playerId, name) {
   const spawn = getBattleSpawnPoint(seededNoise(Date.now() + playerId.length));
-  const massInfluence = Number.isFinite(Number(character.mass)) ? Number(character.mass) : 1;
-  const moveSpeed = Math.max(250, Math.min(360, 320 - (massInfluence - 1) * 45));
+  const tuning = getBattleCharacterTuning(character);
   return {
     id: playerId,
     name: (name || "Player").toString().slice(0, 16),
@@ -6146,12 +6179,16 @@ function createBattlePlayer(character, playerId, name) {
     y: spawn.y,
     vx: 0,
     vy: 0,
-    radius: 24,
-    baseRadius: 24,
-    baseSpeed: moveSpeed,
-    speed: moveSpeed,
-    hp: 100,
-    maxHp: 100,
+    radius: tuning.footRadius,
+    baseRadius: tuning.footRadius,
+    baseSpeed: tuning.moveSpeed,
+    speed: tuning.moveSpeed,
+    hp: tuning.baseHp,
+    maxHp: tuning.baseHp,
+    baseMaxHp: tuning.baseHp,
+    jumpBoost: tuning.jumpBoost,
+    jumpDuration: tuning.jumpDuration,
+    jumpCooldownDuration: tuning.jumpCooldown,
     alive: true,
     respawnTimer: 0,
     vehicleId: null,
@@ -6206,18 +6243,18 @@ function getBattleVehicleConfig(vehicleId) {
 }
 
 function battleApplyVehicleStats(player) {
+  const baseMaxHp = Number.isFinite(Number(player.baseMaxHp)) ? Number(player.baseMaxHp) : 100;
+  const baseRadius = Number.isFinite(Number(player.baseRadius)) ? Number(player.baseRadius) : 24;
   if (!player.vehicleId) {
     player.speed = player.baseSpeed;
-    player.maxHp = 100;
-    player.baseRadius = 24;
-    player.radius = 24;
+    player.maxHp = baseMaxHp;
+    player.radius = baseRadius;
     player.hp = Math.min(player.hp, player.maxHp);
     return;
   }
   const cfg = getBattleVehicleConfig(player.vehicleId);
   player.speed = cfg.speed;
-  player.maxHp = 100 + cfg.hpBonus;
-  player.baseRadius = cfg.radius;
+  player.maxHp = baseMaxHp + cfg.hpBonus;
   player.radius = cfg.radius;
   player.hp = Math.min(player.maxHp, Math.max(player.hp, 40));
 }
@@ -6485,8 +6522,8 @@ function battleTriggerJump() {
   if (!battleState.active || !player?.alive) return;
   if (player.prone || player.vehicleId) return; // can't jump while prone or in a vehicle
   if ((player.jumpCooldown || 0) > 0) return;
-  player.jumpTimer = 0.5;
-  player.jumpCooldown = 1.4;
+  player.jumpTimer = Number(player.jumpDuration) || 0.5;
+  player.jumpCooldown = Number(player.jumpCooldownDuration) || 1.4;
   tone(340, 0.05, "sine", 0.06);
 }
 
@@ -6567,7 +6604,7 @@ function battleUpdateLocalPlayer(dt) {
   player.prone = !player.vehicleId && battleInputState.prone;
   const proneSpeedMult = player.prone ? 0.38 : 1;
   const jumping = (player.jumpTimer || 0) > 0;
-  const jumpSpeedBoost = jumping ? 1.3 : 1;
+  const jumpSpeedBoost = jumping ? (Number(player.jumpBoost) || 1.3) : 1;
 
   // Radius scales for prone (crouched profile)
   const baseR = player.baseRadius || 24;
