@@ -256,6 +256,11 @@ const SAM_BENCH_VISIBLE_SECONDS = 8;
 const SAM_SWIM_ACTIVE_SECONDS = 4.0;
 const SAM_JUMP_REGEN_SECONDS = 5.2;
 const EVAN_BASKETBALL_COOLDOWN = 5;
+const JAKE_TANK_COOLDOWN = 0.85;
+const JAKE_JUMP_RESET_SPEED = 110;
+const JAKE_ACCEL = 255;
+const JAKE_MAX_SPEED = 4600;
+const JAKE_EXPLOSION_RADIUS = 290;
 const OWEN_MILKS_PER_LIFE = 5;
 const STRIC_WOODS_BOSS_TRIGGER_M = 10000;
 const NETWORK_QUEUE_CHANNEL = "faith-h2h-queue-v1";
@@ -381,6 +386,22 @@ const characters = [
     launchBoost: 1.16,
     unlockAt: 0,
     ability: "trumpjump",
+  },
+  {
+    id: "jakecooper",
+    name: "Jake Cooper",
+    trait: "Aimable tank cannon",
+    bio: "Drives a tank like Nathan's Tacoma. Space fires an aimable explosive shell with a giant blast. Lose the tank on impact with Hugh.",
+    imageBase: "Jake Cooper",
+    initials: "JC",
+    mass: 1.62,
+    radius: 34,
+    drag: 0.03,
+    bounce: 0.52,
+    gravityMult: 0.97,
+    launchBoost: 1.14,
+    unlockAt: 0,
+    ability: "jaketank",
   },
   {
     id: "nate",
@@ -1038,6 +1059,7 @@ let lastMouseY = canvas.height / 2;
 let bombs = [];
 let tennisBalls = [];
 let evanBasketballs = [];
+let jakeTankShells = [];
 let nathanTrumps = [];
 let nathanAirstrikeBombs = [];
 let enemyLasers = [];
@@ -1139,6 +1161,9 @@ const actor = {
   nathanJetX: 0,
   nathanJetY: 0,
   nathanFlagTimer: 0,
+  jakeHasTank: true,
+  jakeSpeed: JAKE_JUMP_RESET_SPEED,
+  jakeSlowdownPending: false,
   davyHasRide: true,
   davySpeed: DAVY_JUMP_RESET_SPEED,
   davySlowdownPending: false,
@@ -1219,6 +1244,8 @@ let owenGoKartImg = null;
 let samDumbbellImg = null;
 let samBenchPressImg = null;
 let evanBasketballImg = null;
+let jakeTankImg = null;
+const jakeTankShellImgs = [];
 let nathanTacomaImg = null;
 let nathanGasImg = null;
 let travisCraddleImg = null;
@@ -1359,6 +1386,22 @@ const samBenchPressImageCandidates = [
 const evanBasketballImageCandidates = [
   "characters props/Evans Basketball.png",
   "Evans Basketball.png",
+];
+
+const jakeTankImageCandidates = [
+  "Jakes Tank.webp",
+  "characters props/Jakes Tank.webp",
+];
+
+const jakeTankShellImageCandidates = [
+  [
+    "Tank Projectale.png",
+    "characters props/Tank Projectale.png",
+  ],
+  [
+    "Tank Projectiale.png",
+    "characters props/Tank Projectiale.png",
+  ],
 ];
 
 const nathanTacomaImageCandidates = [
@@ -1789,6 +1832,73 @@ function updateEvanBasketballs(dt) {
   });
 
   evanBasketballs = evanBasketballs.filter((ball) => ball.life > 0);
+}
+
+function explodeJakeTankShell(shell, impactX = shell.x, impactY = shell.y) {
+  if (shell.exploded) return;
+  shell.exploded = true;
+  shell.life = -1;
+
+  const nearbyHughs = getFatalObstaclesInRange(impactX - JAKE_EXPLOSION_RADIUS, impactX + JAKE_EXPLOSION_RADIUS);
+  nearbyHughs.forEach((hugh) => {
+    const hy = terrainY(hugh.x) - hugh.yOffset;
+    const centerX = hugh.x + hugh.w * 0.5;
+    const centerY = hy + hugh.h * 0.5;
+    const dx = centerX - impactX;
+    const dy = centerY - impactY;
+    const blast = JAKE_EXPLOSION_RADIUS + Math.max(hugh.w, hugh.h) * 0.45;
+    if (dx * dx + dy * dy <= blast * blast) {
+      destroyedJanets.add(hugh.index);
+    }
+  });
+
+  spawnImpactBurst(impactX, impactY, 4.8);
+  impactBursts.push({
+    x: impactX,
+    y: impactY,
+    life: 0.52,
+    maxLife: 0.52,
+    radius: 36,
+    maxRadius: 250,
+  });
+  spawnParticles(impactX, impactY, 52, "#ffb067");
+  spawnParticles(impactX, impactY, 40, "#ff5d1f");
+  spawnParticles(impactX, impactY, 26, "#333333");
+  startScreenShake(24, 0.5);
+  tone(110, 0.11, "sawtooth", 0.11);
+  tone(75, 0.12, "triangle", 0.09);
+}
+
+function updateJakeTankShells(dt) {
+  jakeTankShells.forEach((shell) => {
+    shell.life -= dt;
+    shell.vy += world.gravity * 0.44 * dt;
+    shell.x += shell.vx * dt;
+    shell.y += shell.vy * dt;
+    shell.rotation += (shell.vx * 0.0024) * dt * 60;
+
+    const nearbyHughs = getFatalObstaclesInRange(shell.x - 180, shell.x + 180);
+    let hit = false;
+    for (const hugh of nearbyHughs) {
+      const hy = terrainY(hugh.x) - hugh.yOffset;
+      const nearestX = Math.max(hugh.x, Math.min(shell.x, hugh.x + hugh.w));
+      const nearestY = Math.max(hy, Math.min(shell.y, hy + hugh.h));
+      const dx = shell.x - nearestX;
+      const dy = shell.y - nearestY;
+      if (dx * dx + dy * dy <= shell.radius * shell.radius) {
+        hit = true;
+        break;
+      }
+    }
+
+    const ground = terrainY(shell.x);
+    if (shell.y + shell.radius >= ground || hit || shell.life <= 0) {
+      const impactY = Math.min(shell.y, ground - shell.radius * 0.2);
+      explodeJakeTankShell(shell, shell.x, impactY);
+    }
+  });
+
+  jakeTankShells = jakeTankShells.filter((shell) => shell.life > 0);
 }
 
 function updateNathanTrumps(dt) {
@@ -2570,6 +2680,9 @@ function resetActor() {
   actor.nathanJetX = world.launchX - 920;
   actor.nathanJetY = terrainY(world.launchX) - 390;
   actor.nathanFlagTimer = 0;
+  actor.jakeHasTank = true;
+  actor.jakeSpeed = JAKE_JUMP_RESET_SPEED;
+  actor.jakeSlowdownPending = false;
   actor.davyHasRide = true;
   actor.davySpeed = DAVY_JUMP_RESET_SPEED;
   actor.davySlowdownPending = false;
@@ -2585,6 +2698,7 @@ function resetActor() {
   bombs.length = 0;
   tennisBalls.length = 0;
   evanBasketballs.length = 0;
+  jakeTankShells.length = 0;
   nathanTrumps.length = 0;
   nathanAirstrikeBombs.length = 0;
   enemyLasers.length = 0;
@@ -3131,6 +3245,8 @@ function useAbility() {
     actor.abilityCooldown = 1.1;
   } else if (selectedCharacter.id === "samhallet") {
     actor.abilityCooldown = 0.25;
+  } else if (selectedCharacter.id === "jakecooper") {
+    actor.abilityCooldown = JAKE_TANK_COOLDOWN;
   } else if (selectedCharacter.id === "nathan") {
     actor.abilityCooldown = 0.7;
   } else if (selectedCharacter.id === "evan" || selectedCharacter.id === "cael") {
@@ -3237,6 +3353,41 @@ function useAbility() {
       tone(520, 0.06, "square", 0.08);
       tone(700, 0.05, "triangle", 0.06);
       spawnParticles(actor.x, actor.y, 20, "#ffd8a6");
+      break;
+    }
+    case "jaketank": {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const mouseWorldX = lastMouseX * scaleX + cameraX;
+      const mouseWorldY = lastMouseY * scaleY;
+      const dx = mouseWorldX - actor.x;
+      const dy = mouseWorldY - actor.y;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const dirX = dx / dist;
+      const dirY = dy / dist;
+
+      jakeTankShells.push({
+        x: actor.x + dirX * (actor.radius + 18),
+        y: actor.y + dirY * (actor.radius + 10),
+        vx: dirX * 980 + actor.vx * 0.38,
+        vy: dirY * 980 + actor.vy * 0.2,
+        life: 2.8,
+        radius: 18,
+        rotation: Math.atan2(dirY, dirX),
+        variant: jakeTankShells.length % Math.max(1, jakeTankShellImgs.length),
+        exploded: false,
+      });
+
+      actor.vy -= 430;
+      actor.vx += 120;
+      actor.jakeSlowdownPending = actor.jakeHasTank;
+
+      tone(160, 0.1, "sawtooth", 0.11);
+      tone(260, 0.06, "triangle", 0.07);
+      spawnParticles(actor.x, actor.y, 22, "#ffd8a6");
+      spawnParticles(actor.x, actor.y, 10, "#444444");
+      startScreenShake(10, 0.22);
       break;
     }
     case "davytruck": {
@@ -3736,6 +3887,24 @@ function collideRect(rect) {
         runStateLabel.textContent = "Nathan lost the Tacoma but keeps running!";
         return;
       }
+      if (selectedCharacter.id === "jakecooper" && actor.jakeHasTank) {
+        actor.jakeHasTank = false;
+        actor.jakeSlowdownPending = false;
+        actor.radius = CALEB_ON_FOOT_RADIUS;
+        actor.drag = CALEB_ON_FOOT_DRAG;
+        actor.bounce = CALEB_ON_FOOT_BOUNCE;
+        actor.gravityMult = CALEB_ON_FOOT_GRAVITY;
+        actor.vx = Math.max(actor.vx * 0.78, 250);
+        actor.vy = Math.min(actor.vy - 130, -130);
+        destroyedJanets.add(rect.index);
+        spawnParticles(actor.x, actor.y, 38, "#c7d5a2");
+        spawnParticles(actor.x, actor.y, 18, "#ffffff");
+        tone(150, 0.08, "square", 0.09);
+        tone(100, 0.09, "triangle", 0.08);
+        startScreenShake(16, 0.28);
+        runStateLabel.textContent = "Jake lost the tank but keeps running!";
+        return;
+      }
       if (selectedCharacter.id === "davy" && actor.davyHasRide) {
         actor.davyHasRide = false;
         actor.davySlowdownPending = false;
@@ -3844,6 +4013,7 @@ function update(dt) {
   updateBombs(dt);
   updateTennisBalls(dt);
   updateEvanBasketballs(dt);
+  updateJakeTankShells(dt);
   updateNathanTrumps(dt);
   updateNathanAirstrike(dt);
   updateConfetti(dt);
@@ -3936,6 +4106,9 @@ function update(dt) {
 
     if (selectedCharacter.id === "nathan" && actor.state === "flying" && actor.nathanHasTruck) {
       actor.nathanSpeed = Math.min(NATHAN_MAX_SPEED, actor.nathanSpeed + NATHAN_ACCEL * dt);
+    }
+    if (selectedCharacter.id === "jakecooper" && actor.state === "flying" && actor.jakeHasTank) {
+      actor.jakeSpeed = Math.min(JAKE_MAX_SPEED, actor.jakeSpeed + JAKE_ACCEL * dt);
     }
     if (selectedCharacter.id === "davy" && actor.state === "flying" && actor.davyHasRide) {
       actor.davySpeed = Math.min(DAVY_MAX_SPEED, actor.davySpeed + DAVY_ACCEL * dt);
@@ -4067,6 +4240,9 @@ function update(dt) {
     if (selectedCharacter.id === "nathan" && actor.state === "flying" && actor.nathanHasTruck) {
       // Tacoma momentum keeps climbing unless reset by jump landing
       actor.vx = Math.max(actor.vx, actor.nathanSpeed);
+    }
+    if (selectedCharacter.id === "jakecooper" && actor.state === "flying" && actor.jakeHasTank) {
+      actor.vx = Math.max(actor.vx, actor.jakeSpeed);
     }
     if (selectedCharacter.id === "davy" && actor.state === "flying" && actor.davyHasRide) {
       actor.vx = Math.max(actor.vx, actor.davySpeed);
@@ -4501,6 +4677,13 @@ function update(dt) {
         actor.nathanSpeed = actor.nathanSpeed * 0.75;
         actor.vx = actor.vx * 0.75;
         spawnParticles(actor.x, actor.y, 12, "#c7e3ff");
+      }
+
+      if (selectedCharacter.id === "jakecooper" && actor.jakeSlowdownPending && actor.jakeHasTank) {
+        actor.jakeSlowdownPending = false;
+        actor.jakeSpeed = actor.jakeSpeed * 0.75;
+        actor.vx = actor.vx * 0.75;
+        spawnParticles(actor.x, actor.y, 12, "#cfc38b");
       }
 
       if (selectedCharacter.id === "davy" && actor.davySlowdownPending && actor.davyHasRide) {
@@ -5560,6 +5743,8 @@ function getAbilityLabel(character) {
       return "blink warp + auto phase";
     case "trumpjump":
       return "jump + Trump shot";
+    case "jaketank":
+      return "tank shell";
     case "jumpbomb":
       return "jump / bomb";
     case "backflip":
@@ -5743,6 +5928,17 @@ function updateAbilityHint() {
       return;
     }
     abilityHint.textContent = `${gasText}  |  ${modeText}  |  Space: jump + aimable Trump shot  |  ${strikeText}`;
+    return;
+  }
+
+  if (selectedCharacter.id === "jakecooper") {
+    const mphApprox = (actor.jakeSpeed / 22.4).toFixed(0);
+    const modeText = actor.jakeHasTank ? `Tank speed: ~${mphApprox} mph` : "On foot (tank lost)";
+    if (actor.abilityCooldown > 0) {
+      abilityHint.textContent = `${modeText}  |  Reload: ${actor.abilityCooldown.toFixed(1)}s  |  Space: aimable tank shell`;
+      return;
+    }
+    abilityHint.textContent = `${modeText}  |  Space: aimable explosive shell  |  Huge blast radius`;
     return;
   }
 
@@ -7204,6 +7400,9 @@ function getCharacterImageCandidates(character) {
   if (character.id === "nathan") {
     return ["characters/Nathan.png", "Nathan.png"];
   }
+  if (character.id === "jakecooper") {
+    return ["Jake Cooper.png", "characters/Jake Cooper.png"];
+  }
   if (character.id === "traviswilliams") {
     return ["characters/Travis Williams.png", "Travis Williams.png"];
   }
@@ -8121,6 +8320,55 @@ function drawNathanTacoma() {
   ctx.restore();
 }
 
+function drawJakeTank() {
+  if (selectedCharacter.id !== "jakecooper" || actor.state === "ready" || !actor.jakeHasTank) return;
+  const sx = actor.x - cameraX;
+  const sy = actor.y;
+  const r = actor.radius;
+
+  const tankW = r * 5.2;
+  const tankH = r * 2.8;
+  const tankX = sx - tankW / 2;
+  const tankY = sy - r * 0.7;
+
+  ctx.save();
+  if (jakeTankImg && jakeTankImg.complete && jakeTankImg.naturalWidth > 10) {
+    ctx.drawImage(jakeTankImg, tankX, tankY, tankW, tankH);
+  } else {
+    ctx.fillStyle = "#55614c";
+    ctx.fillRect(tankX, tankY + tankH * 0.34, tankW, tankH * 0.4);
+    ctx.fillStyle = "#6f7c61";
+    ctx.fillRect(tankX + tankW * 0.2, tankY + tankH * 0.04, tankW * 0.45, tankH * 0.38);
+  }
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mouseWorldX = lastMouseX * scaleX + cameraX;
+  const mouseWorldY = lastMouseY * scaleY;
+  const angle = Math.atan2(mouseWorldY - sy, mouseWorldX - actor.x);
+  const barrelLen = r * 2.7;
+  ctx.globalAlpha = 0.72;
+  ctx.strokeStyle = "#2f342b";
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(sx + Math.cos(angle) * (r * 0.5), sy - r * 0.3 + Math.sin(angle) * (r * 0.5));
+  ctx.lineTo(sx + Math.cos(angle) * barrelLen, sy - r * 0.3 + Math.sin(angle) * barrelLen);
+  ctx.stroke();
+
+  if (actor.jakeSpeed > 560) {
+    const alpha = Math.min(0.52, (actor.jakeSpeed - 560) / 2900);
+    const grd = ctx.createRadialGradient(sx, sy, r * 0.3, sx, sy, r * 3.0);
+    grd.addColorStop(0, `rgba(210,200,130,${alpha})`);
+    grd.addColorStop(1, "rgba(210,200,130,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.ellipse(sx - r * 1.4, sy + r * 0.35, r * 2.5, r * 0.86, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawDavyRide() {
   if (selectedCharacter.id !== "davy" || actor.state === "ready" || !actor.davyHasRide) return;
   const sx = actor.x - cameraX;
@@ -8237,6 +8485,27 @@ function drawNathanTrumps() {
       ctx.fillStyle = "#ffd8a6";
       ctx.beginPath();
       ctx.arc(sx, shot.y, shot.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function drawJakeTankShells() {
+  jakeTankShells.forEach((shell) => {
+    const sx = shell.x - cameraX;
+    if (sx < -120 || sx > canvas.width + 120) return;
+    const size = shell.radius * 2.2;
+    const img = jakeTankShellImgs[shell.variant % Math.max(1, jakeTankShellImgs.length)] || null;
+    if (img && img.complete && img.naturalWidth > 8) {
+      ctx.save();
+      ctx.translate(sx, shell.y);
+      ctx.rotate(shell.rotation || 0);
+      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#3a3a3a";
+      ctx.beginPath();
+      ctx.arc(sx, shell.y, shell.radius, 0, Math.PI * 2);
       ctx.fill();
     }
   });
@@ -8567,6 +8836,7 @@ function drawSceneCore() {
   drawSlingshotBands();
   drawTrajectory();
   drawKadeBMW();
+  drawJakeTank();
   drawNathanTacoma();
   drawDavyRide();
   drawCalebTrex();
@@ -8575,6 +8845,7 @@ function drawSceneCore() {
   drawBraydenRacket();
   drawCandyBeam();
   drawTennisBalls();
+  drawJakeTankShells();
   drawNathanTrumps();
   drawEvanBasketballs();
   drawBombs();
@@ -9078,6 +9349,26 @@ function preloadCharacterImages() {
     if (evanBasketballIdx < evanBasketballImageCandidates.length) evanBasketballImg.src = evanBasketballImageCandidates[evanBasketballIdx];
   };
   evanBasketballImg.src = evanBasketballImageCandidates[0];
+
+  jakeTankImg = new Image();
+  let jakeTankIdx = 0;
+  jakeTankImg.onerror = () => {
+    jakeTankIdx += 1;
+    if (jakeTankIdx < jakeTankImageCandidates.length) jakeTankImg.src = jakeTankImageCandidates[jakeTankIdx];
+  };
+  jakeTankImg.src = jakeTankImageCandidates[0];
+
+  jakeTankShellImgs.length = 0;
+  jakeTankShellImageCandidates.forEach((candidates) => {
+    const img = new Image();
+    let idx = 0;
+    img.onerror = () => {
+      idx += 1;
+      if (idx < candidates.length) img.src = candidates[idx];
+    };
+    img.src = candidates[0];
+    jakeTankShellImgs.push(img);
+  });
 
   nathanTacomaImg = new Image();
   let nathanTacomaIdx = 0;
