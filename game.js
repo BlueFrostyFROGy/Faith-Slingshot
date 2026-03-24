@@ -267,7 +267,7 @@ const BEN_JUMP_RESET_SPEED = JAKE_JUMP_RESET_SPEED;
 const BEN_ACCEL = JAKE_ACCEL;
 const BEN_MAX_SPEED = JAKE_MAX_SPEED;
 const BATTLE_CHANNEL = "faith-battle-open-v1";
-const BATTLE_WORLD_WIDTH = 3600;
+const BATTLE_WORLD_WIDTH = 7200;
 const BATTLE_WORLD_HEIGHT = 2200;
 const BATTLE_RESPAWN_SECONDS = 3.2;
 const BATTLE_SNAPSHOT_SECONDS = 0.08;
@@ -1698,49 +1698,40 @@ function makeBattlePickupId(prefix, index) {
 }
 
 function buildBattleStatics() {
-  const spawnPoints = [
-    { x: 260, y: 260 },
-    { x: 920, y: 260 },
-    { x: 1720, y: 260 },
-    { x: 2620, y: 260 },
-    { x: 3320, y: 260 },
-    { x: 260, y: 1080 },
-    { x: 3320, y: 1080 },
-    { x: 260, y: 1920 },
-    { x: 920, y: 1920 },
-    { x: 1720, y: 1920 },
-    { x: 2620, y: 1920 },
-    { x: 3320, y: 1920 },
-  ];
+  const spawnRows = [260, 1080, 1920];
+  const spawnCols = 8;
+  const spawnStepX = (BATTLE_WORLD_WIDTH - 520) / Math.max(1, spawnCols - 1);
+  const spawnPoints = [];
+  spawnRows.forEach((y) => {
+    for (let i = 0; i < spawnCols; i += 1) {
+      spawnPoints.push({ x: Math.round(260 + i * spawnStepX), y });
+    }
+  });
 
-  const obstacles = [
-    { x: 820, y: 430, w: 210, h: 90 },
-    { x: 1450, y: 360, w: 180, h: 220 },
-    { x: 2150, y: 430, w: 240, h: 90 },
-    { x: 2740, y: 360, w: 180, h: 220 },
-    { x: 610, y: 930, w: 290, h: 120 },
-    { x: 1320, y: 980, w: 210, h: 80 },
-    { x: 2050, y: 930, w: 290, h: 120 },
-    { x: 2740, y: 980, w: 210, h: 80 },
-    { x: 820, y: 1500, w: 210, h: 90 },
-    { x: 1450, y: 1440, w: 180, h: 220 },
-    { x: 2150, y: 1500, w: 240, h: 90 },
-    { x: 2740, y: 1440, w: 180, h: 220 },
-  ];
+  const obstacles = [];
+  const obstacleCols = 7;
+  const obstacleStepX = (BATTLE_WORLD_WIDTH - 1300) / Math.max(1, obstacleCols - 1);
+  for (let i = 0; i < obstacleCols; i += 1) {
+    const baseX = Math.round(650 + i * obstacleStepX);
+    const wobble = Math.round((seededNoise(910 + i) - 0.5) * 120);
+    obstacles.push({ x: baseX + wobble, y: 380, w: 200, h: 200 });
+    obstacles.push({ x: baseX - 90, y: 930, w: 280, h: 120 });
+    obstacles.push({ x: baseX + wobble, y: 1450, w: 220, h: 180 });
+  }
 
   const weaponKinds = ["ar", "fullautoar", "marksman", "shotgun", "sniper", "rocket"];
   const weaponPickups = weaponKinds.map((weaponId, index) => ({
     id: makeBattlePickupId("weapon", index),
     type: "weapon",
     weaponId,
-    x: 540 + (index % 3) * 1260,
-    y: 640 + Math.floor(index / 3) * 880,
+    x: Math.round(420 + (index / Math.max(1, weaponKinds.length - 1)) * (BATTLE_WORLD_WIDTH - 840)),
+    y: 620 + (index % 2) * 880,
     radius: 28,
   }));
 
   const ammoPickups = [];
   const ammoTypes = ["pistol", "ar", "fullautoar", "marksman", "shotgun", "sniper", "rocket"];
-  for (let i = 0; i < 26; i += 1) {
+  for (let i = 0; i < 42; i += 1) {
     const ammoKind = ammoTypes[i % ammoTypes.length];
     ammoPickups.push({
       id: makeBattlePickupId("ammo", i),
@@ -1757,8 +1748,8 @@ function buildBattleStatics() {
   const vehicles = vehicleKinds.map((vehicleId, index) => ({
     id: `vehicle-${vehicleId}`,
     vehicleId,
-    x: 420 + (index % 3) * 1120,
-    y: 300 + Math.floor(index / 3) * 1480,
+    x: Math.round(360 + (index / Math.max(1, vehicleKinds.length - 1)) * (BATTLE_WORLD_WIDTH - 720)),
+    y: 310 + (index % 2) * 1500,
     occupiedBy: null,
   }));
 
@@ -6806,6 +6797,51 @@ function startBattleMode() {
   });
 }
 
+function drawBattleMapSegment(mapId, startX, width, height) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(startX, 0, width, height);
+  ctx.clip();
+
+  if (mapId === "town-square") {
+    if (townSquareMapImg && townSquareMapImg.complete && townSquareMapImg.naturalWidth > 8) {
+      const drawH = height + 80;
+      const drawW = drawH * (townSquareMapImg.naturalWidth / townSquareMapImg.naturalHeight);
+      const parallax = cameraX * 0.18;
+      const offset = ((parallax % drawW) + drawW) % drawW;
+      for (let x = startX - offset - drawW; x < startX + width + drawW; x += drawW) {
+        ctx.drawImage(townSquareMapImg, x, -40, drawW, drawH);
+      }
+    } else {
+      ctx.fillStyle = "#2d3f2f";
+      ctx.fillRect(startX, 0, width, height);
+    }
+  } else if (mapId === "long-john-silvers") {
+    if (longJohnSilversMapImg && longJohnSilversMapImg.complete && longJohnSilversMapImg.naturalWidth > 8) {
+      const drawH = height + 40;
+      const drawW = drawH * (longJohnSilversMapImg.naturalWidth / longJohnSilversMapImg.naturalHeight);
+      const parallax = cameraX * 0.14;
+      const offset = ((parallax % drawW) + drawW) % drawW;
+      for (let x = startX - offset - drawW; x < startX + width + drawW; x += drawW) {
+        ctx.drawImage(longJohnSilversMapImg, x, -20, drawW, drawH);
+      }
+    } else {
+      ctx.fillStyle = "#243a47";
+      ctx.fillRect(startX, 0, width, height);
+    }
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, 0, height);
+    grad.addColorStop(0, "#90d9ff");
+    grad.addColorStop(1, "#dbf6ff");
+    ctx.fillStyle = grad;
+    ctx.fillRect(startX, 0, width, height);
+    ctx.fillStyle = "#78bf6e";
+    ctx.fillRect(startX, height * 0.72, width, height * 0.28);
+  }
+
+  ctx.restore();
+}
+
 function drawBattlePlayer(player, isLocal = false) {
   if (!player) return;
   const sx = player.x - cameraX;
@@ -6906,8 +6942,20 @@ function drawBattleMode() {
   ctx.save();
   ctx.translate(-cameraX, -cameraY);
 
-  ctx.fillStyle = "#203225";
-  ctx.fillRect(0, 0, BATTLE_WORLD_WIDTH, BATTLE_WORLD_HEIGHT);
+  const segmentWidth = 1200;
+  const mapCycle = maps.length ? maps : [{ id: "campus" }];
+  for (let sx = 0; sx < BATTLE_WORLD_WIDTH; sx += segmentWidth) {
+    const segIndex = Math.floor(sx / segmentWidth);
+    const mapId = mapCycle[segIndex % mapCycle.length].id;
+    drawBattleMapSegment(mapId, sx, Math.min(segmentWidth, BATTLE_WORLD_WIDTH - sx), BATTLE_WORLD_HEIGHT);
+    ctx.strokeStyle = "rgba(255,255,255,0.14)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx, 0);
+    ctx.lineTo(sx, BATTLE_WORLD_HEIGHT);
+    ctx.stroke();
+  }
+
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
   ctx.lineWidth = 1;
   for (let x = 0; x <= BATTLE_WORLD_WIDTH; x += 120) {
@@ -10896,6 +10944,16 @@ powerSlider.addEventListener("input", () => {
 toSelectBtn.addEventListener("click", () => {
   if (!requireAuthenticatedAccount("play")) return;
   showCharacterSelect();
+});
+battleModeBtn?.addEventListener("click", () => {
+  try {
+    startBattleMode();
+  } catch (err) {
+    console.error("Battle mode failed to start", err);
+    leaveBattleMode();
+    showMenu();
+    alert("Battle mode hit an error while starting. It has been reset.");
+  }
 });
 headToHeadBtn?.addEventListener("click", beginHeadToHeadSearch);
 privateHeadToHeadBtn?.addEventListener("click", () => beginHeadToHeadSearch({ requirePrivate: true }));
