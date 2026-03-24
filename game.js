@@ -6469,7 +6469,7 @@ function battleTryCollectPickups() {
     const dy = player.y - pickup.y;
     const pickupDist = (player.radius + pickup.radius + 20) ** 2;
     if (dx * dx + dy * dy > pickupDist) return;
-    // Weapons require holding X to pick up; ammo is auto-collected on contact
+    // Weapons require holding C to pick up; ammo is auto-collected on contact
     if (pickup.type === "weapon" && !battleInputState.pickupHeld) return;
     battleState.claimedPickups.add(pickup.id);
     if (pickup.type === "weapon") {
@@ -6638,7 +6638,7 @@ function battleUpdateLocalPlayer(dt) {
 
   // E key fires (held for auto, respects fireCooldown)
   if (battleInputState.fireHeld) battleTryFireWeapon();
-  // X key held picks up nearby weapons; ammo auto-collects
+  // C key held picks up nearby weapons; ammo auto-collects
   battleTryCollectPickups();
 }
 
@@ -6672,8 +6672,8 @@ function updateBattleHudText() {
         return dx * dx + dy * dy <= (pl.radius + p.radius + 20) ** 2;
       })
     : null;
-  const pickupPrompt = nearbyWeapon ? ` • [Hold X] Pick up ${battleWeaponConfigs[nearbyWeapon.weaponId]?.name}` : "";
-  abilityHint.textContent = `Arrows/W/S/D=move • A=vehicle • E=fire • Space=jump • Hold Shift=prone • Hold X=pickup • Q=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
+  const pickupPrompt = nearbyWeapon ? ` • [Hold C] Pick up ${battleWeaponConfigs[nearbyWeapon.weaponId]?.name}` : "";
+  abilityHint.textContent = `WASD=move • X=vehicle • E=fire • Space=jump • Hold Shift=prone • Hold C=pickup • Q=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
   runStateLabel.textContent = player.alive
     ? `Battle Mode • HP ${Math.round(player.hp)}/${player.maxHp} • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`
     : `Respawning in ${player.respawnTimer.toFixed(1)}s • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`;
@@ -10411,6 +10411,11 @@ function drawHeadToHeadSplit() {
 }
 
 function draw() {
+  if (battleState.active) {
+    drawBattleMode();
+    return;
+  }
+
   if (headToHeadState.active && headToHeadState.opponentActor) {
     drawHeadToHeadSplit();
     return;
@@ -10428,15 +10433,19 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.033, (now - last) / 1000);
   last = now;
-  updateHeadToHeadMatchmaking(dt);
-  if (headToHeadState.active && headToHeadState.liveNetwork) {
-    networkState.snapshotTimer -= dt;
-    if (networkState.snapshotTimer <= 0) {
-      networkState.snapshotTimer = NETWORK_SNAPSHOT_SECONDS;
-      sendLiveNetworkSnapshot();
+  if (battleState.active) {
+    updateBattleMode(dt);
+  } else {
+    updateHeadToHeadMatchmaking(dt);
+    if (headToHeadState.active && headToHeadState.liveNetwork) {
+      networkState.snapshotTimer -= dt;
+      if (networkState.snapshotTimer <= 0) {
+        networkState.snapshotTimer = NETWORK_SNAPSHOT_SECONDS;
+        sendLiveNetworkSnapshot();
+      }
     }
+    update(dt);
   }
-  update(dt);
   updateMobileControls();
   draw();
   requestAnimationFrame(frame);
@@ -11391,26 +11400,23 @@ window.addEventListener("keydown", (ev) => {
   if (isTypingIntoField(ev.target)) return;
   switch (ev.code) {
     case "KeyW":
-    case "ArrowUp":
       battleInputState.up = true;
       ev.preventDefault();
       break;
     case "KeyS":
-    case "ArrowDown":
       battleInputState.down = true;
       ev.preventDefault();
       break;
-    case "ArrowLeft":
+    case "KeyA":
       battleInputState.left = true;
       ev.preventDefault();
       break;
-    case "KeyA":
-      // A is reserved for vehicle interact only
+    case "KeyX":
+      // X is reserved for vehicle interact
       if (!ev.repeat) battleTryInteractVehicle();
       ev.preventDefault();
       break;
     case "KeyD":
-    case "ArrowRight":
       battleInputState.right = true;
       ev.preventDefault();
       break;
@@ -11427,7 +11433,7 @@ window.addEventListener("keydown", (ev) => {
       battleInputState.fireHeld = true;
       ev.preventDefault();
       break;
-    case "KeyX":
+    case "KeyC":
       battleInputState.pickupHeld = true;
       ev.preventDefault();
       break;
@@ -11449,12 +11455,12 @@ window.addEventListener("keydown", (ev) => {
 window.addEventListener("keyup", (ev) => {
   if (!battleState.active) return;
   switch (ev.code) {
-    case "KeyW": case "ArrowUp":    battleInputState.up    = false; break;
-    case "KeyS": case "ArrowDown":  battleInputState.down  = false; break;
-    case "ArrowLeft":                 battleInputState.left  = false; break;
-    case "KeyD": case "ArrowRight": battleInputState.right = false; break;
+    case "KeyW": battleInputState.up = false; break;
+    case "KeyS": battleInputState.down = false; break;
+    case "KeyA": battleInputState.left = false; break;
+    case "KeyD": battleInputState.right = false; break;
     case "KeyE":  battleInputState.fireHeld  = false; break;
-    case "KeyX":  battleInputState.pickupHeld = false; break;
+    case "KeyC":  battleInputState.pickupHeld = false; break;
     case "ShiftLeft":
     case "ShiftRight":
       battleInputState.prone = false;
