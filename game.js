@@ -1685,12 +1685,12 @@ const battleWeaponConfigs = {
 };
 
 const battleVehicleConfigs = {
-  golfcart: { id: "golfcart", name: "Golf Cart", speed: 430, hpBonus: 35, radius: 42, canHover: false },
-  tank: { id: "tank", name: "Tank", speed: 290, hpBonus: 120, radius: 52, canHover: false },
-  bmw: { id: "bmw", name: "BMW", speed: 520, hpBonus: 20, radius: 38, canHover: false },
-  tacoma: { id: "tacoma", name: "Tacoma", speed: 450, hpBonus: 45, radius: 44, canHover: false },
-  jet: { id: "jet", name: "Jet", speed: 620, hpBonus: 15, radius: 40, canHover: true },
-  trex: { id: "trex", name: "T-Rex", speed: 390, hpBonus: 60, radius: 48, canHover: false },
+  golfcart: { id: "golfcart", name: "Golf Cart", speed: 430, hpBonus: 35, vehicleHp: 95, radius: 42, canHover: false },
+  tank: { id: "tank", name: "Tank", speed: 290, hpBonus: 120, vehicleHp: 180, radius: 52, canHover: false },
+  bmw: { id: "bmw", name: "BMW", speed: 520, hpBonus: 20, vehicleHp: 85, radius: 38, canHover: false },
+  tacoma: { id: "tacoma", name: "Tacoma", speed: 450, hpBonus: 45, vehicleHp: 110, radius: 44, canHover: false },
+  jet: { id: "jet", name: "Jet", speed: 620, hpBonus: 15, vehicleHp: 80, radius: 40, canHover: true },
+  trex: { id: "trex", name: "T-Rex", speed: 390, hpBonus: 60, vehicleHp: 130, radius: 48, canHover: false },
 };
 
 function makeBattlePickupId(prefix, index) {
@@ -1713,6 +1713,47 @@ function battleRandomOpenPoint(radius, obstacles, margin = 180) {
     x: Math.round(margin + Math.random() * Math.max(40, BATTLE_WORLD_WIDTH - margin * 2)),
     y: Math.round(margin + Math.random() * Math.max(40, BATTLE_WORLD_HEIGHT - margin * 2)),
   };
+}
+
+function battleRandomNearbyOpenPoint(cx, cy, radius, obstacles, minDist = 120, maxDist = 360) {
+  for (let tries = 0; tries < 60; tries += 1) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = minDist + Math.random() * (maxDist - minDist);
+    const x = battleClampValue(cx + Math.cos(ang) * dist, radius + 20, BATTLE_WORLD_WIDTH - radius - 20);
+    const y = battleClampValue(cy + Math.sin(ang) * dist, radius + 20, BATTLE_WORLD_HEIGHT - radius - 20);
+    if (!battlePointHitsObstacle(x, y, radius, obstacles)) {
+      return { x: Math.round(x), y: Math.round(y) };
+    }
+  }
+  return battleRandomOpenPoint(radius, obstacles, 160);
+}
+
+function battleEnsureNearbySpawns(player) {
+  if (!player) return;
+  const obstacles = battleState.obstacles || [];
+
+  if (battleState.weaponPickups.length) {
+    const nearbyWeapon = battleState.weaponPickups[0];
+    const p = battleRandomNearbyOpenPoint(player.x, player.y, nearbyWeapon.radius || 28, obstacles, 120, 300);
+    nearbyWeapon.x = p.x;
+    nearbyWeapon.y = p.y;
+  }
+
+  const nearbyAmmo = battleState.ammoPickups.slice(0, 3);
+  nearbyAmmo.forEach((ammo, idx) => {
+    const p = battleRandomNearbyOpenPoint(player.x, player.y, ammo.radius || 20, obstacles, 140 + idx * 40, 320 + idx * 45);
+    ammo.x = p.x;
+    ammo.y = p.y;
+  });
+
+  if (battleState.vehicles.length) {
+    const vehicle = battleState.vehicles[0];
+    const vr = getBattleVehicleConfig(vehicle.vehicleId).radius || 40;
+    const p = battleRandomNearbyOpenPoint(player.x, player.y, vr, obstacles, 170, 360);
+    vehicle.x = p.x;
+    vehicle.y = p.y;
+    vehicle.occupiedBy = null;
+  }
 }
 
 function buildBattleStatics() {
@@ -6218,6 +6259,9 @@ function createBattlePlayer(character, playerId, name) {
     alive: true,
     respawnTimer: 0,
     vehicleId: null,
+    occupiedVehicleId: null,
+    vehicleHp: 0,
+    vehicleMaxHp: 0,
     weaponId: "pistol",
     inventory: createBattleInventory(),
     fireCooldown: 0,
@@ -6275,6 +6319,8 @@ function battleApplyVehicleStats(player) {
     player.speed = player.baseSpeed;
     player.maxHp = baseMaxHp;
     player.radius = baseRadius;
+    player.vehicleHp = 0;
+    player.vehicleMaxHp = 0;
     player.hp = Math.min(player.hp, player.maxHp);
     return;
   }
@@ -6282,6 +6328,12 @@ function battleApplyVehicleStats(player) {
   player.speed = cfg.speed;
   player.maxHp = baseMaxHp + cfg.hpBonus;
   player.radius = cfg.radius;
+  player.vehicleMaxHp = Number.isFinite(Number(cfg.vehicleHp)) ? Number(cfg.vehicleHp) : Math.max(80, cfg.hpBonus + 60);
+  if (!Number.isFinite(Number(player.vehicleHp)) || player.vehicleHp <= 0) {
+    player.vehicleHp = player.vehicleMaxHp;
+  } else {
+    player.vehicleHp = Math.min(player.vehicleHp, player.vehicleMaxHp);
+  }
   player.hp = Math.min(player.maxHp, Math.max(player.hp, 40));
 }
 
@@ -6421,6 +6473,22 @@ function battleHandleExplosionDamage(projectile) {
 function battleApplyDamage(amount, attackerId, weaponId) {
   const player = battleState.localPlayer;
   if (!player || !player.alive) return;
+
+  if (player.vehicleId && (player.vehicleHp || 0) > 0) {
+    player.vehicleHp = Math.max(0, player.vehicleHp - amount);
+    spawnParticles(player.x - cameraX, player.y - cameraY, 8, "#9ca3af");
+    if (player.vehicleHp <= 0) {
+      battleAddKillFeed(`${player.name}'s ${getBattleVehicleConfig(player.vehicleId).name} was destroyed`);
+      battleFreeVehicle(player.occupiedVehicleId, player.x + 42, player.y + 24);
+      player.vehicleId = null;
+      player.occupiedVehicleId = null;
+      battleApplyVehicleStats(player);
+      player.hp = Math.max(25, player.hp - amount * 0.35);
+      if (player.hp <= 0) battleKillLocalPlayer(attackerId);
+    }
+    return;
+  }
+
   player.hp = Math.max(0, player.hp - amount);
   spawnParticles(player.x - cameraX, player.y - cameraY, 6, weaponId === "rocket" ? "#ff8f5c" : "#ffffff");
   if (player.hp <= 0) {
@@ -6453,8 +6521,9 @@ function battleKillLocalPlayer(attackerId) {
     x: player.x,
     y: player.y,
   });
-  battleFreeVehicle(player.vehicleId, player.x, player.y);
+  battleFreeVehicle(player.occupiedVehicleId, player.x, player.y);
   player.vehicleId = null;
+  player.occupiedVehicleId = null;
   battleApplyVehicleStats(player);
   player.vx = 0;
   player.vy = 0;
@@ -6473,6 +6542,7 @@ function battleRespawnLocalPlayer() {
   player.alive = true;
   player.respawnTimer = 0;
   player.vehicleId = null;
+  player.occupiedVehicleId = null;
   player.weaponId = "pistol";
   player.inventory = createBattleInventory();
   player.fireCooldown = 0;
@@ -6515,8 +6585,9 @@ function battleTryInteractVehicle() {
   const player = battleState.localPlayer;
   if (!battleState.active || !player?.alive) return;
   if (player.vehicleId) {
-    battleFreeVehicle(player.vehicleId, player.x + 28, player.y + 28);
+    battleFreeVehicle(player.occupiedVehicleId, player.x + 28, player.y + 28);
     player.vehicleId = null;
+    player.occupiedVehicleId = null;
     battleApplyVehicleStats(player);
     battlePublishLocalState(true);
     return;
@@ -6538,6 +6609,8 @@ function battleTryInteractVehicle() {
   nearest.occupiedBy = player.id;
   battleState.occupiedVehicles.set(nearest.id, player.id);
   player.vehicleId = nearest.vehicleId;
+  player.occupiedVehicleId = nearest.id;
+  player.vehicleHp = 0;
   battleApplyVehicleStats(player);
   battleSend("battle-vehicle", { vehicleId: nearest.id, occupiedBy: player.id, x: nearest.x, y: nearest.y });
   battlePublishLocalState(true);
@@ -6822,6 +6895,9 @@ function leaveBattleMode() {
 
 function startBattleMode() {
   if (!requireAuthenticatedAccount("join battle mode")) return;
+  if (!isUnlocked(selectedCharacter)) {
+    selectedCharacter = characters.find((c) => isUnlocked(c)) || characters[0];
+  }
   if (!ensureNetworkClient()) {
     alert("Battle mode needs Supabase realtime available.");
     return;
@@ -6838,6 +6914,7 @@ function startBattleMode() {
   battleState.joining = true;
   battleState.stats = { kills: 0, deaths: 0, respawns: 0 };
   battleState.localPlayer = createBattlePlayer(selectedCharacter, battleState.localPlayerId, getNetworkPlayerName());
+  battleEnsureNearbySpawns(battleState.localPlayer);
   battleApplyVehicleStats(battleState.localPlayer);
   hideAllOverlays();
   controlsPanel.classList.add("hidden");
@@ -6997,6 +7074,13 @@ function drawBattlePlayer(player, isLocal = false) {
   ctx.font = "bold 12px Trebuchet MS";
   ctx.textAlign = "center";
   ctx.fillText(player.name, sx, sy + player.radius + 18);
+  if ((player.vehicleMaxHp || 0) > 0) {
+    ctx.fillStyle = "rgba(0,0,0,0.56)";
+    ctx.fillRect(sx - 28, sy - player.radius - 28, 56, 5);
+    ctx.fillStyle = "#60a5fa";
+    const ratio = Math.max(0, Math.min(1, (player.vehicleHp || 0) / Math.max(1, player.vehicleMaxHp || 1)));
+    ctx.fillRect(sx - 28, sy - player.radius - 28, 56 * ratio, 5);
+  }
   ctx.textAlign = "start";
 }
 
