@@ -1226,6 +1226,7 @@ const battleState = {
   vehicles: [],
   obstacles: [],
   spawnPoints: [],
+  bots: [],
   stats: {
     kills: 0,
     deaths: 0,
@@ -1715,7 +1716,7 @@ const battleVehicleConfigs = {
   bmw: { id: "bmw", name: "BMW", speed: 520, hpBonus: 20, vehicleHp: 85, radius: 38, canHover: false, contactKill: true },
   tacoma: { id: "tacoma", name: "Tacoma", speed: 450, hpBonus: 45, vehicleHp: 110, radius: 44, canHover: false, contactKill: true },
   jet: { id: "jet", name: "Jet", speed: 620, hpBonus: 15, vehicleHp: 80, radius: 40, canHover: true, isBomber: true },
-  trex: { id: "trex", name: "T-Rex", speed: 390, hpBonus: 60, vehicleHp: 130, radius: 48, canHover: false },
+  trex: { id: "trex", name: "T-Rex", speed: 390, hpBonus: 60, vehicleHp: 130, radius: 48, canHover: false, isBiter: true },
 };
 
 function makeBattlePickupId(prefix, index) {
@@ -6539,20 +6540,69 @@ function battleCheckVehicleContactKills() {
   if (!cfg.contactKill) return;
   const speed = Math.hypot(player.vx || 0, player.vy || 0);
   if (speed < 90) return;
-  battleState.remotePlayers.forEach((remote) => {
-    if (!remote.alive) return;
-    const dx = player.x - remote.x;
-    const dy = player.y - remote.y;
-    if (dx * dx + dy * dy <= (player.radius + (remote.radius || 26) + 8) ** 2) {
+  const hitEnemy = (ex, ey, er, name, onKill) => {
+    const dx = player.x - ex;
+    const dy = player.y - ey;
+    if (dx * dx + dy * dy <= (player.radius + er + 8) ** 2) {
       const dmg = Math.min(180, 55 + speed * 0.2);
-      battleSend("battle-damage", { victimId: remote.id, attackerId: player.id, amount: dmg, weaponId: "vehicle-contact" });
-      spawnParticles(player.x - cameraX, player.y - cameraY, 14, "#ff4444");
-      battleAddKillFeed(`${player.name}'s ${cfg.name} rammed ${remote.name}!`);
-      const bounce = Math.atan2(player.y - remote.y, player.x - remote.x);
+      battleAddKillFeed(`${player.name}'s ${cfg.name} rammed ${name}!`);
+      const bounce = Math.atan2(player.y - ey, player.x - ex);
       player.vx = Math.cos(bounce) * 260;
       player.vy = Math.sin(bounce) * 260;
+      return dmg;
+    }
+    return 0;
+  };
+  battleState.remotePlayers.forEach((remote) => {
+    if (!remote.alive) return;
+    const dmg = hitEnemy(remote.x, remote.y, remote.radius || 26, remote.name, null);
+    if (dmg > 0) battleSend("battle-damage", { victimId: remote.id, attackerId: player.id, amount: dmg, weaponId: "vehicle-contact" });
+  });
+  (battleState.bots || []).forEach((bot) => {
+    if (!bot.alive) return;
+    const dmg = hitEnemy(bot.x, bot.y, bot.radius || 24, bot.name, null);
+    if (dmg > 0) {
+      bot.hp = Math.max(0, bot.hp - dmg);
+      if (bot.hp <= 0 && bot.alive) {
+        bot.alive = false;
+        bot.respawnTimer = BATTLE_RESPAWN_SECONDS;
+        battleState.stats.kills += 1;
+        battleAddKillFeed(`You eliminated ${bot.name}`);
+      }
     }
   });
+}
+
+function battleTryTrexBite() {
+  const player = battleState.localPlayer;
+  if (!player || !player.alive || (player.fireCooldown || 0) > 0) return;
+  player.fireCooldown = 1.8;
+  const biteRange = 115;
+  const biteDamage = 62;
+  let hit = false;
+  battleState.remotePlayers.forEach((remote) => {
+    if (!remote.alive) return;
+    if (Math.hypot(remote.x - player.x, remote.y - player.y) <= biteRange + (remote.radius || 24)) {
+      battleSend("battle-damage", { victimId: remote.id, attackerId: player.id, amount: biteDamage, weaponId: "trex-bite" });
+      battleAddKillFeed(`${player.name}'s T-Rex bit ${remote.name}!`);
+      hit = true;
+    }
+  });
+  (battleState.bots || []).forEach((bot) => {
+    if (!bot.alive) return;
+    if (Math.hypot(bot.x - player.x, bot.y - player.y) <= biteRange + (bot.radius || 24)) {
+      bot.hp = Math.max(0, bot.hp - biteDamage);
+      battleAddKillFeed(`${player.name}'s T-Rex bit ${bot.name}!`);
+      hit = true;
+      if (bot.hp <= 0 && bot.alive) {
+        bot.alive = false;
+        bot.respawnTimer = BATTLE_RESPAWN_SECONDS;
+        battleState.stats.kills += 1;
+        battleAddKillFeed(`You eliminated ${bot.name}`);
+      }
+    }
+  });
+  tone(hit ? 180 : 260, hit ? 0.10 : 0.04, "sawtooth", hit ? 0.12 : 0.05);
 }
 
 function battleTryFireWeapon() {
@@ -6565,7 +6615,8 @@ function battleTryFireWeapon() {
     if (vCfg.isBomber) { battleTryDropBomb(); return; }
     if (vCfg.isArtillery) { battleTryFireTankShell(); return; }
     if (vCfg.isTurret) { battleTryFireTurret(); return; }
-    return; // contactKill and trex don't fire
+    if (vCfg.isBiter) { battleTryTrexBite(); return; }
+    return; // contactKill vehicles: BMW, Tacoma
   }
 
   const cfg = battleWeaponConfigs[player.weaponId];
@@ -6789,6 +6840,24 @@ function battleUpdateProjectiles(dt) {
         shouldExplode = true;
       }
     });
+    // Projectile vs AI bots
+    (battleState.bots || []).forEach((bot) => {
+      if (shouldExplode || !bot.alive || projectile.ownerId === bot.id) return;
+      const bdx = bot.x - projectile.x;
+      const bdy = bot.y - projectile.y;
+      if (bdx * bdx + bdy * bdy <= (bot.radius + projectile.radius) ** 2) {
+        bot.hp = Math.max(0, bot.hp - projectile.damage);
+        if (bot.hp <= 0 && bot.alive) {
+          bot.alive = false;
+          bot.respawnTimer = BATTLE_RESPAWN_SECONDS;
+          if (projectile.ownerId === battleState.localPlayerId) {
+            battleState.stats.kills += 1;
+            battleAddKillFeed(`You eliminated ${bot.name}`);
+          }
+        }
+        shouldExplode = true;
+      }
+    });
 
     if (player?.alive && projectile.ownerId !== player.id) {
       const dx = player.x - projectile.x;
@@ -6913,14 +6982,117 @@ function updateBattleHudText() {
   if (player.vehicleId) {
     const vCfg = getBattleVehicleConfig(player.vehicleId);
     if (vCfg.isBomber) vehicleHint = " • E=drop bomb";
-    else if (vCfg.isArtillery) vehicleHint = " • E=fire shell";
-    else if (vCfg.isTurret) vehicleHint = " • E=turret fire";
-    else if (vCfg.contactKill) vehicleHint = " • RAM enemies to kill";
+    else if (vCfg.isArtillery) vehicleHint = " • E=fire shell (tank)";
+    else if (vCfg.isTurret) vehicleHint = " • Hold E=turret";
+    else if (vCfg.isBiter) vehicleHint = " • E=T-Rex BITE";
+    else if (vCfg.contactKill) vehicleHint = " • Ram to kill";
   }
   abilityHint.textContent = `WASD=move • X=vehicle • E=fire${vehicleHint} • Space=jump • Shift=prone • Hold C=pickup • Q/Y=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
   runStateLabel.textContent = player.alive
     ? `Battle Mode • HP ${Math.round(player.hp)}/${player.maxHp} • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`
     : `Respawning in ${player.respawnTimer.toFixed(1)}s • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`;
+}
+
+// ---- AI Bot System ----
+const BATTLE_BOT_CHAR_IDS = ["ben","jakecooper","kaderess","calebparker","traviswilliams","spencer","eli","reed","matteo","lincolnjames","brayden","myer","jackson"];
+const BATTLE_BOT_NAMES = ["Shadow","Rex","Blaze","Viper","Ghost","Storm","Hunter","Phantom","Titan","Fury"];
+
+function createBattleBot(botIndex) {
+  const charId = BATTLE_BOT_CHAR_IDS[Math.floor(Math.random() * BATTLE_BOT_CHAR_IDS.length)];
+  const character = getBattleCharacterById(charId);
+  const spawn = getBattleSpawnPoint(Math.random());
+  const tuning = getBattleCharacterTuning(character);
+  const weaponChoices = ["pistol","ar","shotgun","marksman"];
+  const wId = weaponChoices[Math.floor(Math.random() * weaponChoices.length)];
+  return {
+    id: `bot-${botIndex}`,
+    name: BATTLE_BOT_NAMES[botIndex % BATTLE_BOT_NAMES.length],
+    characterId: charId,
+    x: spawn.x, y: spawn.y, vx: 0, vy: 0,
+    radius: tuning.footRadius, baseRadius: tuning.footRadius,
+    baseSpeed: tuning.moveSpeed, speed: tuning.moveSpeed,
+    hp: tuning.baseHp, maxHp: tuning.baseHp, baseMaxHp: tuning.baseHp,
+    jumpBoost: tuning.jumpBoost, jumpDuration: tuning.jumpDuration, jumpCooldownDuration: tuning.jumpCooldown,
+    alive: true, respawnTimer: 0,
+    vehicleId: null, occupiedVehicleId: null, vehicleHp: 0, vehicleMaxHp: 0,
+    weaponId: wId,
+    inventory: { owned: { pistol: true, ar: true, shotgun: true, marksman: true }, ammo: { pistol: 9999, ar: 9999, shotgun: 9999, marksman: 9999 } },
+    fireCooldown: Math.random() * 2,
+    aimAngle: 0, prone: false, jumpTimer: 0, jumpCooldown: 0,
+    kills: 0, deaths: 0, isBot: true,
+    aiPatrolTarget: null, aiPatrolTimer: 0,
+    botIndex,
+  };
+}
+
+function respawnBattleBot(bot) {
+  const spawn = getBattleSpawnPoint(Math.random());
+  bot.x = spawn.x; bot.y = spawn.y; bot.vx = 0; bot.vy = 0;
+  bot.hp = bot.maxHp; bot.alive = true; bot.respawnTimer = 0;
+  bot.vehicleId = null; bot.occupiedVehicleId = null;
+  bot.fireCooldown = 1 + Math.random() * 2;
+  bot.aiPatrolTarget = null; bot.aiPatrolTimer = 0;
+  const choices = ["pistol","ar","shotgun","marksman"];
+  bot.weaponId = choices[Math.floor(Math.random() * choices.length)];
+}
+
+function updateBattleBot(bot, dt, localPlayer) {
+  if (!bot.alive) {
+    bot.respawnTimer = Math.max(0, bot.respawnTimer - dt);
+    if (bot.respawnTimer <= 0) respawnBattleBot(bot);
+    return;
+  }
+  bot.fireCooldown = Math.max(0, bot.fireCooldown - dt);
+  bot.aiPatrolTimer = Math.max(0, bot.aiPatrolTimer - dt);
+
+  const SIGHT = 560; const SHOOT = 420;
+  const target = localPlayer?.alive ? localPlayer : null;
+  const dToPlayer = target ? Math.hypot(target.x - bot.x, target.y - bot.y) : Infinity;
+  let moveX = 0, moveY = 0;
+
+  if (target && dToPlayer < SIGHT) {
+    bot.aimAngle = Math.atan2(target.y - bot.y, target.x - bot.x);
+    const ideal = 200;
+    if (dToPlayer > ideal + 60) { moveX = (target.x - bot.x) / dToPlayer; moveY = (target.y - bot.y) / dToPlayer; }
+    else if (dToPlayer < ideal - 60) { moveX = -(target.x - bot.x) / dToPlayer; moveY = -(target.y - bot.y) / dToPlayer; }
+    else { moveX = -(target.y - bot.y) / dToPlayer; moveY = (target.x - bot.x) / dToPlayer; }
+    if (dToPlayer < SHOOT && bot.fireCooldown <= 0) {
+      const cfg = battleWeaponConfigs[bot.weaponId] || battleWeaponConfigs.pistol;
+      const inaccuracy = 0.14 + (dToPlayer / SHOOT) * 0.18;
+      const ang = bot.aimAngle + (Math.random() - 0.5) * inaccuracy;
+      const ox = bot.x + Math.cos(ang) * (bot.radius + 10);
+      const oy = bot.y + Math.sin(ang) * (bot.radius + 10);
+      battleState.projectiles.push({
+        id: `${bot.id}-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,
+        ownerId: bot.id, weaponId: bot.weaponId,
+        x: ox, y: oy,
+        vx: Math.cos(ang) * cfg.projectileSpeed, vy: Math.sin(ang) * cfg.projectileSpeed,
+        angle: ang, radius: 5, damage: cfg.damage, splashRadius: cfg.splashRadius || 0,
+        life: 1.2, color: cfg.color,
+      });
+      bot.fireCooldown = cfg.fireInterval * (1.1 + Math.random() * 0.8);
+    }
+  } else {
+    if (!bot.aiPatrolTarget || bot.aiPatrolTimer <= 0) {
+      bot.aiPatrolTarget = battleRandomOpenPoint(bot.radius, battleState.obstacles || [], 200);
+      bot.aiPatrolTimer = 3 + Math.random() * 5;
+    }
+    const pdx = bot.aiPatrolTarget.x - bot.x; const pdy = bot.aiPatrolTarget.y - bot.y;
+    const pd = Math.hypot(pdx, pdy);
+    if (pd > 55) { moveX = pdx / pd; moveY = pdy / pd; bot.aimAngle = Math.atan2(pdy, pdx); }
+    else bot.aiPatrolTimer = 0;
+  }
+
+  const spd = bot.baseSpeed * 0.65;
+  bot.vx += (moveX * spd - bot.vx) * Math.min(1, dt * 7);
+  bot.vy += (moveY * spd - bot.vy) * Math.min(1, dt * 7);
+  bot.x += bot.vx * dt; bot.y += bot.vy * dt;
+  battleResolveObstacleCollision(bot);
+}
+
+function updateBattleBots(dt) {
+  const local = battleState.localPlayer;
+  (battleState.bots || []).forEach((bot) => updateBattleBot(bot, dt, local));
 }
 
 function updateBattleMode(dt) {
@@ -6933,6 +7105,7 @@ function updateBattleMode(dt) {
   battleUpdateProjectiles(dt);
   battleUpdateVehicles();
   battleCheckVehicleContactKills();
+  updateBattleBots(dt);
   battleUpdateRemotePlayers(now);
   const player = battleState.localPlayer;
   if (player) {
@@ -7034,6 +7207,7 @@ function leaveBattleMode() {
   battleState.claimedPickups.clear();
   battleState.occupiedVehicles.clear();
   battleState.killFeed = [];
+  battleState.bots = [];
   battleFireHeld = false;
   battleInputState.up = false;
   battleInputState.down = false;
@@ -7068,6 +7242,12 @@ function startBattleMode() {
   battleState.localPlayer = createBattlePlayer(selectedCharacter, battleState.localPlayerId, getNetworkPlayerName());
   battleEnsureNearbySpawns(battleState.localPlayer);
   battleApplyVehicleStats(battleState.localPlayer);
+  // Spawn 5 AI bots with staggered spawn delays
+  battleState.bots = Array.from({ length: 5 }, (_, i) => {
+    const bot = createBattleBot(i);
+    bot.fireCooldown = 2 + i * 0.8; // stagger initial fire
+    return bot;
+  });
   hideAllOverlays();
   controlsPanel.classList.add("hidden");
   launchBtn.disabled = true;
@@ -7142,150 +7322,127 @@ function drawBattleMapSegment(mapId, startX, width, height) {
 
 function drawBattlePlayer(player, isLocal = false) {
   if (!player) return;
-  const sx = player.x - cameraX;
-  const sy = player.y - cameraY;
+  const px = player.x;
+  const py = player.y;
   const ring = isLocal ? "#7dd3fc" : "#ffffff";
   const prone = player.prone || false;
   const jumping = (player.jumpTimer || 0) > 0;
   const inVehicle = !!player.vehicleId;
+  const vCfg = inVehicle ? getBattleVehicleConfig(player.vehicleId) : null;
+  const baseR = player.baseRadius || 26;
+  const charHidden = inVehicle && (vCfg.id === "bmw" || vCfg.id === "tacoma" || vCfg.id === "jet" || vCfg.id === "tank");
 
-  // Subtle hitbox ghost circle (always)
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(sx, sy, player.radius, 0, Math.PI * 2);
-  ctx.strokeStyle = isLocal ? "rgba(125,211,252,0.35)" : "rgba(255,255,255,0.2)";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.restore();
-
-  if (inVehicle) {
-    // Draw vehicle image centered on player when occupied
-    const vCfg = getBattleVehicleConfig(player.vehicleId);
-    const vImg = battleVehicleImgs.get(player.vehicleId);
-    const vSize = vCfg.radius * 2.8;
-    if (vImg && vImg.complete && vImg.naturalWidth > 8) {
-      ctx.drawImage(vImg, sx - vSize / 2, sy - vSize / 2, vSize, vSize);
-    } else {
-      ctx.fillStyle = isLocal ? "#93c5fd" : "#9ca3af";
-      ctx.fillRect(sx - vSize / 2, sy - vSize / 4, vSize, vSize / 2);
-    }
-    // Ring around vehicle
-    ctx.strokeStyle = ring;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(sx, sy, player.radius + 3, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (prone) {
-    // Prone: squash the character flat
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.scale(1.6, 0.48);
+  if (!charHidden) {
     const charImg = getBattleCharacterImage(player.characterId);
-    ctx.beginPath();
-    ctx.arc(0, 0, player.radius, 0, Math.PI * 2);
-    ctx.clip();
-    if (charImg && charImg.complete && charImg.naturalWidth > 8) {
-      ctx.drawImage(charImg, -player.radius, -player.radius, player.radius * 2, player.radius * 2);
-    } else {
-      ctx.fillStyle = isLocal ? "#7dd3fc" : "#d1d5db";
-      ctx.fill();
-    }
-    ctx.restore();
-    // Ring (squashed)
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.scale(1.6, 0.48);
-    ctx.strokeStyle = ring;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, player.radius + 2, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-    ctx.fillStyle = "rgba(255,220,50,0.9)";
-    ctx.font = "bold 10px Trebuchet MS";
-    ctx.textAlign = "center";
-    ctx.fillText("PRONE", sx, sy + player.radius * 0.55);
-    ctx.textAlign = "start";
-  } else {
-    // Standing: draw as portrait rectangle (no circle clip)
-    const charImg = getBattleCharacterImage(player.characterId);
-    const drawW = player.radius * 2.4;
-    const drawH = player.radius * 3.4;
-    if (charImg && charImg.complete && charImg.naturalWidth > 8) {
-      ctx.drawImage(charImg, sx - drawW / 2, sy - drawH * 0.6, drawW, drawH);
-    } else {
-      ctx.fillStyle = isLocal ? "#7dd3fc" : "#d1d5db";
-      ctx.beginPath();
-      ctx.arc(sx, sy, player.radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // Ring indicator
-    ctx.strokeStyle = ring;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(sx, sy, player.radius + 2, 0, Math.PI * 2);
-    ctx.stroke();
-    if (jumping) {
-      ctx.strokeStyle = "rgba(255,255,255,0.5)";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.arc(sx, sy, player.radius + 12, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-
-    // Draw held weapon image rotated to aim direction
-    const wImg = player.weaponId ? battleWeaponImgs.get(player.weaponId) : null;
-    const wCfg = player.weaponId ? battleWeaponConfigs[player.weaponId] : null;
-    if (wImg && wImg.complete && wImg.naturalWidth > 8) {
-      const wAngle = player.aimAngle || 0;
-      const wDist = player.radius + 16;
-      const wx = sx + Math.cos(wAngle) * wDist;
-      const wy = sy + Math.sin(wAngle) * wDist;
-      const wW = 38;
-      const wH = 22;
+    if (prone && !inVehicle) {
       ctx.save();
-      ctx.translate(wx, wy);
-      ctx.rotate(wAngle);
-      if (Math.abs(wAngle) > Math.PI / 2) ctx.scale(1, -1);
-      ctx.drawImage(wImg, -wW / 2, -wH / 2, wW, wH);
-      ctx.restore();
-    } else if (wCfg) {
-      const wAngle = player.aimAngle || 0;
-      const wx = sx + Math.cos(wAngle) * (player.radius + 14);
-      const wy = sy + Math.sin(wAngle) * (player.radius + 14);
-      ctx.fillStyle = wCfg.color;
+      ctx.translate(px, py);
+      ctx.scale(1.6, 0.45);
       ctx.beginPath();
-      ctx.arc(wx, wy, 7, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.arc(0, 0, baseR, 0, Math.PI * 2);
+      ctx.clip();
+      if (charImg && charImg.complete && charImg.naturalWidth > 8) {
+        ctx.drawImage(charImg, -baseR, -baseR, baseR * 2, baseR * 2);
+      } else {
+        ctx.fillStyle = isLocal ? "#2563eb" : "#6b7280";
+        ctx.fill();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.scale(1.6, 0.45);
+      ctx.strokeStyle = ring;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, baseR + 2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = "rgba(255,220,50,0.9)";
+      ctx.font = "bold 10px Trebuchet MS";
+      ctx.textAlign = "center";
+      ctx.fillText("PRONE", px, py + baseR * 0.5);
+      ctx.textAlign = "start";
+    } else if (inVehicle && vCfg.id === "trex") {
+      const cW = baseR * 2.2;
+      const cH = baseR * 3.0;
+      if (charImg && charImg.complete && charImg.naturalWidth > 8) {
+        ctx.drawImage(charImg, px - cW / 2, py - 88 - cH * 0.1, cW, cH);
+      } else {
+        ctx.fillStyle = isLocal ? "#2563eb" : "#6b7280";
+        ctx.fillRect(px - cW / 2, py - 88 - cH * 0.1, cW, cH);
+      }
+    } else if (inVehicle && vCfg.id === "golfcart") {
+      const cW = baseR * 2.1;
+      const cH = baseR * 3.0;
+      if (charImg && charImg.complete && charImg.naturalWidth > 8) {
+        ctx.drawImage(charImg, px - cW / 2, py - cH * 0.8, cW, cH);
+      } else {
+        ctx.fillStyle = isLocal ? "#2563eb" : "#6b7280";
+        ctx.fillRect(px - cW / 2, py - cH * 0.8, cW, cH);
+      }
+    } else if (!inVehicle) {
+      const dW = baseR * 3.4;
+      const dH = baseR * 5.0;
+      if (charImg && charImg.complete && charImg.naturalWidth > 8) {
+        ctx.drawImage(charImg, px - dW / 2, py - dH * 0.7, dW, dH);
+      } else {
+        ctx.fillStyle = isLocal ? "#2563eb" : "#6b7280";
+        ctx.fillRect(px - dW / 2, py - dH * 0.7, dW, dH);
+      }
+
+      const wImg = player.weaponId ? battleWeaponImgs.get(player.weaponId) : null;
+      const wCfg = player.weaponId ? battleWeaponConfigs[player.weaponId] : null;
+      if (wImg && wImg.complete && wImg.naturalWidth > 8) {
+        const wa = player.aimAngle || 0;
+        const wx = px + Math.cos(wa) * (baseR + 18);
+        const wy = py + Math.sin(wa) * (baseR + 18);
+        ctx.save();
+        ctx.translate(wx, wy);
+        ctx.rotate(wa);
+        if (Math.abs(wa) > Math.PI / 2) ctx.scale(1, -1);
+        ctx.drawImage(wImg, -22, -13, 44, 26);
+        ctx.restore();
+      } else if (wCfg) {
+        const wa = player.aimAngle || 0;
+        ctx.fillStyle = wCfg.color;
+        ctx.fillRect(px + Math.cos(wa) * (baseR + 12) - 9, py + Math.sin(wa) * (baseR + 12) - 5, 18, 10);
+      }
+    }
+
+    if (!inVehicle || vCfg.id === "golfcart" || vCfg.id === "trex") {
+      ctx.strokeStyle = ring;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(px, py, baseR + 3, 0, Math.PI * 2);
+      ctx.stroke();
+      if (jumping && !inVehicle) {
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(px, py, baseR + 16, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
   }
 
-  // === HUD bars above player ===
-  const barY = sy - player.radius - (inVehicle ? getBattleVehicleConfig(player.vehicleId).radius * 0.4 : 20);
-
-  // Vehicle HP bar (blue)
+  const hbR = player.radius;
+  const barTopY = py - hbR - (inVehicle ? 32 : 22);
   if ((player.vehicleMaxHp || 0) > 0) {
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(sx - 30, barY - 10, 60, 5);
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillRect(px - 32, barTopY - 9, 64, 6);
     ctx.fillStyle = "#60a5fa";
-    const vRatio = Math.max(0, Math.min(1, (player.vehicleHp || 0) / Math.max(1, player.vehicleMaxHp)));
-    ctx.fillRect(sx - 30, barY - 10, 60 * vRatio, 5);
+    ctx.fillRect(px - 32, barTopY - 9, 64 * Math.max(0, Math.min(1, (player.vehicleHp || 0) / player.vehicleMaxHp)), 6);
   }
-
-  // Player HP bar (green→yellow→red)
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(sx - 30, barY, 60, 6);
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.fillRect(px - 32, barTopY, 64, 7);
   ctx.fillStyle = player.hp > 45 ? "#4ade80" : player.hp > 20 ? "#facc15" : "#fb7185";
-  ctx.fillRect(sx - 30, barY, 60 * (Math.max(0, player.hp) / Math.max(1, player.maxHp)), 6);
-
-  // Name label
+  ctx.fillRect(px - 32, barTopY, 64 * (Math.max(0, player.hp) / Math.max(1, player.maxHp)), 7);
   ctx.fillStyle = "#fff";
-  ctx.font = "bold 12px Trebuchet MS";
+  ctx.font = "bold 13px Trebuchet MS";
   ctx.textAlign = "center";
-  const labelY = sy + player.radius + (inVehicle ? getBattleVehicleConfig(player.vehicleId).radius * 0.5 : 18);
-  ctx.fillText(player.name, sx, labelY);
+  ctx.fillText(player.name, px, py + hbR + (inVehicle ? 28 : 22));
   ctx.textAlign = "start";
 }
 
@@ -7338,15 +7495,19 @@ function drawBattleMode() {
   battleState.weaponPickups.forEach((pickup) => {
     if (battleState.claimedPickups.has(pickup.id)) return;
     const img = battleWeaponImgs.get(pickup.weaponId);
-    const size = pickup.radius * 2;
+    const size = 64; // fixed size — big enough to see
     if (img && img.complete && img.naturalWidth > 8) {
       ctx.drawImage(img, pickup.x - size / 2, pickup.y - size / 2, size, size);
     } else {
       ctx.fillStyle = battleWeaponConfigs[pickup.weaponId].color;
       ctx.beginPath();
-      ctx.arc(pickup.x, pickup.y, pickup.radius, 0, Math.PI * 2);
+      ctx.arc(pickup.x, pickup.y, 28, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.font = "bold 10px Trebuchet MS"; ctx.textAlign = "center";
+    ctx.fillText(battleWeaponConfigs[pickup.weaponId].name, pickup.x, pickup.y + 38);
+    ctx.textAlign = "start";
   });
 
   battleState.ammoPickups.forEach((pickup) => {
@@ -7362,16 +7523,23 @@ function drawBattleMode() {
     ctx.textAlign = "start";
   });
 
+  // Normalized vehicle widths (px) — jet and T-Rex are bigger than cars/truck
+  const VDISPLAY = { golfcart: 118, tank: 158, bmw: 132, tacoma: 148, jet: 182, trex: 176 };
   battleState.vehicles.forEach((vehicle) => {
-    if (vehicle.occupiedBy) return;
+    // Always draw — position is synced with rider by battleUpdateVehicles
     const cfg = getBattleVehicleConfig(vehicle.vehicleId);
     const img = battleVehicleImgs.get(vehicle.vehicleId);
-    const size = cfg.radius * 2.2;
+    const vW = VDISPLAY[vehicle.vehicleId] || cfg.radius * 3;
     if (img && img.complete && img.naturalWidth > 8) {
-      ctx.drawImage(img, vehicle.x - size / 2, vehicle.y - size / 2, size, size);
+      ctx.drawImage(img, vehicle.x - vW / 2, vehicle.y - vW / 2, vW, vW);
     } else {
-      ctx.fillStyle = "#ddd";
-      ctx.fillRect(vehicle.x - size / 2, vehicle.y - size / 4, size, size / 2);
+      ctx.fillStyle = vehicle.occupiedBy ? "#93c5fd" : "#d1d5db";
+      ctx.fillRect(vehicle.x - vW / 2, vehicle.y - vW / 4, vW, vW / 2);
+    }
+    if (!vehicle.occupiedBy) {
+      ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.font = "11px Trebuchet MS"; ctx.textAlign = "center";
+      ctx.fillText(`[X] ${cfg.name}`, vehicle.x, vehicle.y + vW / 2 + 15);
+      ctx.textAlign = "start";
     }
   });
 
@@ -7396,6 +7564,7 @@ function drawBattleMode() {
   battleState.remotePlayers.forEach((remote) => {
     if (remote.alive) drawBattlePlayer(remote, false);
   });
+  (battleState.bots || []).forEach((bot) => { if (bot.alive) drawBattlePlayer(bot, false); });
   if (player?.alive) drawBattlePlayer(player, true);
 
   ctx.restore();
@@ -7409,7 +7578,8 @@ function drawBattleMode() {
   ctx.font = "bold 20px Trebuchet MS";
   ctx.fillText("Battle Mode", 28, 42);
   ctx.font = "bold 14px Trebuchet MS";
-  ctx.fillText(`Players: ${battleState.remotePlayers.size + 1}`, 28, 66);
+  const botAlive = (battleState.bots || []).filter((b) => b.alive).length;
+  ctx.fillText(`Players: ${battleState.remotePlayers.size + 1}  AI: ${botAlive}/5`, 28, 66);
   ctx.fillText(`Weapon: ${weapon?.name || "Pistol"}`, 28, 88);
   ctx.fillText(`Ammo: ${ammo}`, 28, 108);
   ctx.fillText(`K/D/R: ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`, 150, 108);
