@@ -5,6 +5,7 @@ const LOCAL_ACCOUNTS_KEY = "faith-flight-local-accounts";
 const CUSTOM_CHARACTERS_KEY = "faith-flight-custom-characters";
 const PROFILE_PICTURES_KEY = "faith-flight-profile-pictures";
 const H2H_RANKINGS_KEY = "faith-flight-h2h-rankings";
+const BATTLE_ACCOUNT_STATS_KEY = "faith-flight-battle-account-stats";
 const MAX_LEADERBOARD_ENTRIES = 10;
 const CLOUD_LEADERBOARD_FETCH_LIMIT = 200;
 const AUTH_ACCOUNT_DOMAIN = "faithflightgame.com";
@@ -1226,6 +1227,8 @@ const battleState = {
   vehicles: [],
   obstacles: [],
   spawnPoints: [],
+  accountPersistTimer: 0,
+  accountSync: { lastKills: 0, lastDeaths: 0 },
   bots: [],
   stats: {
     kills: 0,
@@ -1320,13 +1323,13 @@ const battleWeaponImgs = new Map();
 const battleVehicleImgs = new Map();
 
 const battleWeaponImageCandidates = {
-  pistol: ["Weapons and Vechials/Pistol.png"],
-  ar: ["Weapons and Vechials/AR.png"],
-  fullautoar: ["Weapons and Vechials/Full auto AR.webp"],
-  marksman: ["Weapons and Vechials/semi auto marksman.png"],
-  shotgun: ["Weapons and Vechials/Shotgun.png"],
-  sniper: ["Weapons and Vechials/Sniper Rifle.png"],
-  rocket: ["Weapons and Vechials/Rocket Launcher.png"],
+  pistol: ["Weapons/Pistol.png", "Weapons and Vechials/Pistol.png"],
+  ar: ["Weapons/AR.png", "Weapons and Vechials/AR.png"],
+  fullautoar: ["Weapons/Full auto AR.webp", "Weapons and Vechials/Full auto AR.webp"],
+  marksman: ["Weapons/semi auto marksman.png", "Weapons and Vechials/semi auto marksman.png"],
+  shotgun: ["Weapons/Shotgun.png", "Weapons and Vechials/Shotgun.png"],
+  sniper: ["Weapons/Sniper Rifle.png", "Weapons and Vechials/Sniper Rifle.png"],
+  rocket: ["Weapons/Rocket Launcher.png", "Weapons and Vechials/Rocket Launcher.png"],
 };
 
 const battleVehicleImageCandidates = {
@@ -6295,6 +6298,7 @@ function createBattlePlayer(character, playerId, name) {
     prone: false,
     jumpTimer: 0,
     jumpCooldown: 0,
+    regenDelay: 0,
     kills: 0,
     deaths: 0,
     respawns: 0,
@@ -6664,6 +6668,7 @@ function battleApplyDamage(amount, attackerId, weaponId) {
 
   if (player.vehicleId && (player.vehicleHp || 0) > 0) {
     player.vehicleHp = Math.max(0, player.vehicleHp - amount);
+    player.regenDelay = 4;
     spawnParticles(player.x - cameraX, player.y - cameraY, 8, "#9ca3af");
     if (player.vehicleHp <= 0) {
       battleAddKillFeed(`${player.name}'s ${getBattleVehicleConfig(player.vehicleId).name} was destroyed`);
@@ -6678,6 +6683,7 @@ function battleApplyDamage(amount, attackerId, weaponId) {
   }
 
   player.hp = Math.max(0, player.hp - amount);
+  player.regenDelay = 4;
   spawnParticles(player.x - cameraX, player.y - cameraY, 6, weaponId === "rocket" ? "#ff8f5c" : "#ffffff");
   if (player.hp <= 0) {
     battleKillLocalPlayer(attackerId);
@@ -6737,24 +6743,25 @@ function battleRespawnLocalPlayer() {
   player.prone = false;
   player.jumpTimer = 0;
   player.jumpCooldown = 0;
+  player.regenDelay = 0;
   battleState.stats.respawns += 1;
   battleApplyVehicleStats(player);
   battleSend("battle-respawn", { id: player.id, x: player.x, y: player.y });
   runStateLabel.textContent = "Respawned into the battle.";
 }
 
-function battleTryCollectPickups() {
+function battleTryCollectPickups(forceWeaponPickup = false) {
   const player = battleState.localPlayer;
-  if (!player?.alive) return;
+  if (!player?.alive) return false;
   const allPickups = [...battleState.weaponPickups, ...battleState.ammoPickups];
+  let collectedAny = false;
   allPickups.forEach((pickup) => {
     if (battleState.claimedPickups.has(pickup.id)) return;
     const dx = player.x - pickup.x;
     const dy = player.y - pickup.y;
     const pickupDist = (player.radius + pickup.radius + 20) ** 2;
     if (dx * dx + dy * dy > pickupDist) return;
-    // Weapons require holding C to pick up; ammo is auto-collected on contact
-    if (pickup.type === "weapon" && !battleInputState.pickupHeld) return;
+    if (pickup.type === "weapon" && !(forceWeaponPickup || battleInputState.pickupHeld)) return;
     battleState.claimedPickups.add(pickup.id);
     if (pickup.type === "weapon") {
       player.inventory.owned[pickup.weaponId] = true;
@@ -6765,8 +6772,17 @@ function battleTryCollectPickups() {
       battleGrantAmmo(player, pickup.ammoKind, pickup.amount);
       battleAddKillFeed(`${player.name} grabbed ${battleWeaponConfigs[pickup.ammoKind].name} ammo`);
     }
+    collectedAny = true;
     battleSend("battle-pickup", { pickupId: pickup.id, playerId: player.id });
   });
+  return collectedAny;
+}
+
+function battleTryQuickInteract() {
+  const collected = battleTryCollectPickups(true);
+  if (!collected) {
+    battleTryInteractVehicle();
+  }
 }
 
 function battleTryInteractVehicle() {
@@ -6904,6 +6920,10 @@ function battleUpdateLocalPlayer(dt) {
   player.fireCooldown = Math.max(0, player.fireCooldown - dt);
   if ((player.jumpTimer || 0) > 0) player.jumpTimer = Math.max(0, player.jumpTimer - dt);
   if ((player.jumpCooldown || 0) > 0) player.jumpCooldown = Math.max(0, player.jumpCooldown - dt);
+  player.regenDelay = Math.max(0, Number(player.regenDelay || 0) - dt);
+  if (player.regenDelay <= 0 && player.hp < player.maxHp) {
+    player.hp = Math.min(player.maxHp, player.hp + dt * 3.25);
+  }
 
   // Prone: only when on foot (not in vehicle); Shift held = prone
   player.prone = !player.vehicleId && battleInputState.prone;
@@ -6943,7 +6963,7 @@ function battleUpdateLocalPlayer(dt) {
 
   // Space key fires (held for auto, respects fireCooldown)
   if (battleInputState.fireHeld) battleTryFireWeapon();
-  // C key held picks up nearby weapons; ammo auto-collects
+  // Ammo auto-collects; weapons can be picked with X tap (or hold C fallback)
   battleTryCollectPickups();
 }
 
@@ -6969,6 +6989,7 @@ function updateBattleHudText() {
   const weapon = battleWeaponConfigs[player.weaponId];
   const ammo = battleCurrentAmmo(player, player.weaponId);
   const ratio = battleState.stats.kills / Math.max(1, battleState.stats.deaths || 1);
+  const lifetime = getBattleAccountSummary();
   const nearbyWeapon = battleState.active && battleState.localPlayer?.alive
     ? battleState.weaponPickups.find((p) => {
         if (battleState.claimedPickups.has(p.id)) return false;
@@ -6977,20 +6998,20 @@ function updateBattleHudText() {
         return dx * dx + dy * dy <= (pl.radius + p.radius + 20) ** 2;
       })
     : null;
-  const pickupPrompt = nearbyWeapon ? ` • [Hold C] Pick up ${battleWeaponConfigs[nearbyWeapon.weaponId]?.name}` : "";
+  const pickupPrompt = nearbyWeapon ? ` • [X] Pick up ${battleWeaponConfigs[nearbyWeapon.weaponId]?.name}` : "";
   let vehicleHint = "";
   if (player.vehicleId) {
     const vCfg = getBattleVehicleConfig(player.vehicleId);
-    if (vCfg.isBomber) vehicleHint = " • E=drop bomb";
-    else if (vCfg.isArtillery) vehicleHint = " • E=fire shell (tank)";
-    else if (vCfg.isTurret) vehicleHint = " • Hold E=turret";
-    else if (vCfg.isBiter) vehicleHint = " • E=T-Rex BITE";
+    if (vCfg.isBomber) vehicleHint = " • Space=drop bomb";
+    else if (vCfg.isArtillery) vehicleHint = " • Space=fire shell (tank)";
+    else if (vCfg.isTurret) vehicleHint = " • Hold Space=turret";
+    else if (vCfg.isBiter) vehicleHint = " • Space=T-Rex BITE";
     else if (vCfg.contactKill) vehicleHint = " • Ram to kill";
   }
-  abilityHint.textContent = `WASD=move • X=vehicle • Space=fire${vehicleHint} • E=jump • Shift=prone • Hold C=pickup • Q/Y=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
+  abilityHint.textContent = `WASD=move • X=pickup/vehicle • Space=fire${vehicleHint} • E=jump • Shift=prone • Q/Y=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
   runStateLabel.textContent = player.alive
-    ? `Battle Mode • HP ${Math.round(player.hp)}/${player.maxHp} • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`
-    : `Respawning in ${player.respawnTimer.toFixed(1)}s • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`;
+    ? `Battle Mode • HP ${Math.round(player.hp)}/${player.maxHp} • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)} • Lifetime KDR ${lifetime.lifetimeKdr.toFixed(2)}`
+    : `Respawning in ${player.respawnTimer.toFixed(1)}s • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)} • Lifetime KDR ${lifetime.lifetimeKdr.toFixed(2)}`;
 }
 
 // ---- AI Bot System ----
@@ -7101,6 +7122,11 @@ function updateBattleMode(dt) {
   battleState.snapshotTimer = Math.max(0, battleState.snapshotTimer - dt);
   battleState.killFeed.forEach((entry) => { entry.life -= dt; });
   battleState.killFeed = battleState.killFeed.filter((entry) => entry.life > 0);
+  battleState.accountPersistTimer = Math.max(0, (battleState.accountPersistTimer || 0) - dt);
+  if (battleState.accountPersistTimer <= 0) {
+    battlePersistAccountProgress(false);
+    battleState.accountPersistTimer = 1.0;
+  }
   battleUpdateLocalPlayer(dt);
   battleUpdateProjectiles(dt);
   battleUpdateVehicles();
@@ -7199,6 +7225,9 @@ function cleanupBattleChannel() {
 }
 
 function leaveBattleMode() {
+  if (battleState.active && battleState.localPlayer) {
+    battlePersistAccountProgress(true);
+  }
   cleanupBattleChannel();
   battleState.active = false;
   battleState.joining = false;
@@ -7207,6 +7236,8 @@ function leaveBattleMode() {
   battleState.claimedPickups.clear();
   battleState.occupiedVehicles.clear();
   battleState.killFeed = [];
+  battleState.accountPersistTimer = 0;
+  battleState.accountSync = { lastKills: 0, lastDeaths: 0 };
   battleState.bots = [];
   battleFireHeld = false;
   battleInputState.up = false;
@@ -7238,6 +7269,8 @@ function startBattleMode() {
   battleState.vehicles = built.vehicles;
   battleState.active = true;
   battleState.joining = true;
+  battleState.accountPersistTimer = 0.6;
+  battleState.accountSync = { lastKills: 0, lastDeaths: 0 };
   battleState.stats = { kills: 0, deaths: 0, respawns: 0 };
   battleState.localPlayer = createBattlePlayer(selectedCharacter, battleState.localPlayerId, getNetworkPlayerName());
   battleEnsureNearbySpawns(battleState.localPlayer);
@@ -7400,7 +7433,7 @@ function drawBattlePlayer(player, isLocal = false) {
         ctx.translate(wx, wy);
         ctx.rotate(wa);
         if (Math.abs(wa) > Math.PI / 2) ctx.scale(1, -1);
-        ctx.drawImage(wImg, -22, -13, 44, 26);
+        ctx.drawImage(wImg, -28, -17, 56, 34);
         ctx.restore();
       } else if (wCfg) {
         const wa = player.aimAngle || 0;
@@ -7495,9 +7528,12 @@ function drawBattleMode() {
   battleState.weaponPickups.forEach((pickup) => {
     if (battleState.claimedPickups.has(pickup.id)) return;
     const img = battleWeaponImgs.get(pickup.weaponId);
-    const size = 64; // fixed size — big enough to see
+    const size = 78;
     if (img && img.complete && img.naturalWidth > 8) {
-      ctx.drawImage(img, pickup.x - size / 2, pickup.y - size / 2, size, size);
+      ctx.save();
+      ctx.translate(pickup.x, pickup.y);
+      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+      ctx.restore();
     } else {
       ctx.fillStyle = battleWeaponConfigs[pickup.weaponId].color;
       ctx.beginPath();
@@ -8044,6 +8080,119 @@ function saveLeaderboard(scores) {
     }));
   localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(normalized));
   window.sharedLeaderboardCache = normalized;
+}
+
+function loadBattleAccountStatsStore() {
+  try {
+    const raw = localStorage.getItem(BATTLE_ACCOUNT_STATS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveBattleAccountStatsStore(store) {
+  localStorage.setItem(BATTLE_ACCOUNT_STATS_KEY, JSON.stringify(store || {}));
+}
+
+function getBattleAccountKey() {
+  const account = (getSessionAccountName() || "guest").toString().trim().toLowerCase();
+  return account || "guest";
+}
+
+function ensureBattleAccountStats() {
+  const store = loadBattleAccountStatsStore();
+  const key = getBattleAccountKey();
+  if (!store[key]) {
+    store[key] = {
+      lifetimeKills: 0,
+      lifetimeDeaths: 0,
+      bestKdr: 0,
+      mostKillsSingleMatch: 0,
+      records: [],
+    };
+  }
+  const s = store[key];
+  if (!Array.isArray(s.records)) s.records = [];
+  s.lifetimeKills = Number.isFinite(Number(s.lifetimeKills)) ? Number(s.lifetimeKills) : 0;
+  s.lifetimeDeaths = Number.isFinite(Number(s.lifetimeDeaths)) ? Number(s.lifetimeDeaths) : 0;
+  s.bestKdr = Number.isFinite(Number(s.bestKdr)) ? Number(s.bestKdr) : 0;
+  s.mostKillsSingleMatch = Number.isFinite(Number(s.mostKillsSingleMatch)) ? Number(s.mostKillsSingleMatch) : 0;
+  saveBattleAccountStatsStore(store);
+  return s;
+}
+
+function getBattleAccountSummary() {
+  const store = loadBattleAccountStatsStore();
+  const key = getBattleAccountKey();
+  const s = store[key];
+  if (!s) {
+    return {
+      lifetimeKills: 0,
+      lifetimeDeaths: 0,
+      lifetimeKdr: 0,
+      bestKdr: 0,
+      mostKillsSingleMatch: 0,
+      records: [],
+    };
+  }
+  const lk = Number(s.lifetimeKills) || 0;
+  const ld = Number(s.lifetimeDeaths) || 0;
+  return {
+    lifetimeKills: lk,
+    lifetimeDeaths: ld,
+    lifetimeKdr: lk / Math.max(1, ld),
+    bestKdr: Number(s.bestKdr) || 0,
+    mostKillsSingleMatch: Number(s.mostKillsSingleMatch) || 0,
+    records: Array.isArray(s.records) ? s.records : [],
+  };
+}
+
+function battlePersistAccountProgress(finalize = false) {
+  if (!battleState.localPlayer) return;
+  const store = loadBattleAccountStatsStore();
+  const key = getBattleAccountKey();
+  if (!store[key]) {
+    store[key] = {
+      lifetimeKills: 0,
+      lifetimeDeaths: 0,
+      bestKdr: 0,
+      mostKillsSingleMatch: 0,
+      records: [],
+    };
+  }
+  const stats = store[key];
+  if (!Array.isArray(stats.records)) stats.records = [];
+
+  const currentKills = Number(battleState.stats?.kills || 0);
+  const currentDeaths = Number(battleState.stats?.deaths || 0);
+  const deltaKills = Math.max(0, currentKills - Number(battleState.accountSync?.lastKills || 0));
+  const deltaDeaths = Math.max(0, currentDeaths - Number(battleState.accountSync?.lastDeaths || 0));
+
+  stats.lifetimeKills = Number(stats.lifetimeKills || 0) + deltaKills;
+  stats.lifetimeDeaths = Number(stats.lifetimeDeaths || 0) + deltaDeaths;
+  stats.mostKillsSingleMatch = Math.max(Number(stats.mostKillsSingleMatch || 0), currentKills);
+  const currentKdr = currentKills / Math.max(1, currentDeaths);
+  stats.bestKdr = Math.max(Number(stats.bestKdr || 0), Number(currentKdr.toFixed(2)));
+
+  if (finalize) {
+    stats.records.unshift({
+      mapId: maps[currentMapIndex]?.id || "",
+      mapName: maps[currentMapIndex]?.name || "",
+      characterId: battleState.localPlayer.characterId || "",
+      characterName: getBattleCharacterById(battleState.localPlayer.characterId)?.name || "",
+      kills: currentKills,
+      deaths: currentDeaths,
+      kdr: Number(currentKdr.toFixed(2)),
+      date: new Date().toLocaleDateString(),
+    });
+    stats.records = stats.records.slice(0, 250);
+  }
+
+  battleState.accountSync.lastKills = currentKills;
+  battleState.accountSync.lastDeaths = currentDeaths;
+  saveBattleAccountStatsStore(store);
 }
 
 function getAuthToken() {
@@ -9172,11 +9321,78 @@ function renderRankedLeaderboard() {
   });
 }
 
+function sumBattleRecords(records) {
+  const safe = Array.isArray(records) ? records : [];
+  const kills = safe.reduce((acc, r) => acc + (Number(r.kills) || 0), 0);
+  const deaths = safe.reduce((acc, r) => acc + (Number(r.deaths) || 0), 0);
+  return {
+    kills,
+    deaths,
+    kdr: kills / Math.max(1, deaths),
+  };
+}
+
+function renderBattleLeaderboardColumns() {
+  const summary = getBattleAccountSummary();
+  const records = summary.records || [];
+  const mapRecords = records.filter((r) => (r.mapId || "") === (leaderboardRunMapId || ""));
+  const charRecords = records.filter((r) => (r.characterId || "") === (leaderboardRunCharacterId || ""));
+  const thisMap = sumBattleRecords(mapRecords);
+  const thisChar = sumBattleRecords(charRecords);
+  const all = {
+    kills: summary.lifetimeKills,
+    deaths: summary.lifetimeDeaths,
+    kdr: summary.lifetimeKdr,
+  };
+
+  const wrap = document.createElement("div");
+  wrap.style.display = "grid";
+  wrap.style.gridTemplateColumns = "repeat(5, minmax(120px, 1fr))";
+  wrap.style.gap = "8px";
+  wrap.style.padding = "10px 8px 12px";
+  wrap.style.borderBottom = "1px solid #dbe4ff";
+  wrap.style.marginBottom = "6px";
+
+  const mkBox = (label, value, sub = "") => {
+    const box = document.createElement("div");
+    box.style.background = "#f5f8ff";
+    box.style.border = "1px solid #d6e0ff";
+    box.style.borderRadius = "10px";
+    box.style.padding = "8px";
+    const l = document.createElement("div");
+    l.textContent = label;
+    l.style.fontSize = "0.72rem";
+    l.style.color = "#5b6ea6";
+    l.style.fontWeight = "700";
+    const v = document.createElement("div");
+    v.textContent = value;
+    v.style.fontSize = "1rem";
+    v.style.color = "#1f3fbf";
+    v.style.fontWeight = "800";
+    const s = document.createElement("div");
+    s.textContent = sub;
+    s.style.fontSize = "0.7rem";
+    s.style.color = "#6b7280";
+    box.appendChild(l);
+    box.appendChild(v);
+    if (sub) box.appendChild(s);
+    return box;
+  };
+
+  wrap.appendChild(mkBox("This Map", thisMap.kdr.toFixed(2), `${thisMap.kills}/${thisMap.deaths} K/D`));
+  wrap.appendChild(mkBox("This Character", thisChar.kdr.toFixed(2), `${thisChar.kills}/${thisChar.deaths} K/D`));
+  wrap.appendChild(mkBox("All Time", all.kdr.toFixed(2), `${all.kills}/${all.deaths} K/D`));
+  wrap.appendChild(mkBox("Most Kills", String(summary.mostKillsSingleMatch || 0), "single match"));
+  wrap.appendChild(mkBox("Best KDR", (summary.bestKdr || 0).toFixed(2), "single match"));
+  return wrap;
+}
+
 function displayLeaderboard() {
   const scores = getLeaderboardScoresForView();
   updateLeaderboardModeUI();
   renderRankedLeaderboard();
   leaderboardList.innerHTML = "";
+  leaderboardList.appendChild(renderBattleLeaderboardColumns());
   if (scores.length === 0) {
     leaderboardList.innerHTML = leaderboardViewMode === "character"
       ? "<p>No scores yet for this character.</p>"
@@ -11901,8 +12117,7 @@ window.addEventListener("keydown", (ev) => {
       ev.preventDefault();
       break;
     case "KeyX":
-      // X is reserved for vehicle interact
-      if (!ev.repeat) battleTryInteractVehicle();
+      if (!ev.repeat) battleTryQuickInteract();
       ev.preventDefault();
       break;
     case "KeyD":
@@ -11924,6 +12139,7 @@ window.addEventListener("keydown", (ev) => {
       battleTriggerJump();
       break;
     case "KeyC":
+      // optional fallback: hold C to pick without tapping X
       battleInputState.pickupHeld = true;
       ev.preventDefault();
       break;
