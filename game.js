@@ -12,6 +12,7 @@ const AUTH_ACCOUNT_DOMAIN = "faithflightgame.com";
 const GAME_ACCOUNT_CREATE_RPC = "create_game_account";
 const GAME_ACCOUNT_VERIFY_RPC = "verify_game_account";
 const GAME_RANKED_UPSERT_RPC = "upsert_game_ranked_profile";
+const GAME_BATTLE_STATS_UPSERT_RPC = "upsert_game_battle_stats";
 const GAME_CHARACTER_UPSERT_RPC = "upsert_game_character";
 const GAME_CHARACTER_DELETE_RPC = "delete_game_character";
 const GAME_VIEW_COUNTER_INCREMENT_RPC = "increment_site_view_counter";
@@ -20,6 +21,7 @@ const SUPABASE_URL = "https://ntbmkktrjwxcfrgohnha.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im50Ym1ra3Ryand4Y2ZyZ29obmhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTc1OTYsImV4cCI6MjA4ODc5MzU5Nn0.hLKErva9m7LTWX9g9X8TCAzSgAWaL6SVlxR6H5KIHrM";
 const SUPABASE_LEADERBOARD_TABLE = "leaderboard_scores";
 const SUPABASE_H2H_RANKED_TABLE = "head_to_head_rankings";
+const SUPABASE_BATTLE_STATS_TABLE = "battle_player_stats";
 const SUPABASE_LIVE_CHAR_TABLE = "published_characters";
 const VIEW_COUNTER_SLUG = "faith-flight-frenzy";
 const VIEW_COUNTER_REFRESH_MS = 30000;
@@ -77,6 +79,8 @@ const leaderboardTitle = document.getElementById("leaderboardTitle");
 const leaderboardCharBtn = document.getElementById("leaderboardCharBtn");
 const leaderboardMapBtn = document.getElementById("leaderboardMapBtn");
 const leaderboardAllBtn = document.getElementById("leaderboardAllBtn");
+const leaderboardKillsBtn = document.getElementById("leaderboardKillsBtn");
+const leaderboardKdrBtn = document.getElementById("leaderboardKdrBtn");
 const accountEmailInput = document.getElementById("accountEmailInput");
 const accountNameInput = accountEmailInput;
 const accountPasswordInput = document.getElementById("accountPasswordInput");
@@ -1228,6 +1232,8 @@ const battleState = {
   obstacles: [],
   spawnPoints: [],
   accountPersistTimer: 0,
+  cloudSyncTimer: 0,
+  cloudSyncInFlight: false,
   accountSync: { lastKills: 0, lastDeaths: 0 },
   bots: [],
   stats: {
@@ -1364,6 +1370,19 @@ function loadBattleImages() {
     img.src = candidates[0];
     battleVehicleImgs.set(vehicleId, img);
   });
+}
+
+function drawBattleImageFitted(img, centerX, centerY, maxWidth, maxHeight, angle = 0) {
+  if (!img || !img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) return false;
+  const ratio = Math.min(maxWidth / img.naturalWidth, maxHeight / img.naturalHeight);
+  const drawW = Math.max(8, img.naturalWidth * ratio);
+  const drawH = Math.max(8, img.naturalHeight * ratio);
+  ctx.save();
+  ctx.translate(centerX, centerY);
+  if (angle) ctx.rotate(angle);
+  ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+  ctx.restore();
+  return true;
 }
 
 
@@ -7120,6 +7139,7 @@ function updateBattleMode(dt) {
   if (!battleState.active) return;
   const now = Date.now();
   battleState.snapshotTimer = Math.max(0, battleState.snapshotTimer - dt);
+  battleState.cloudSyncTimer = Math.max(0, (battleState.cloudSyncTimer || 0) - dt);
   battleState.killFeed.forEach((entry) => { entry.life -= dt; });
   battleState.killFeed = battleState.killFeed.filter((entry) => entry.life > 0);
   battleState.accountPersistTimer = Math.max(0, (battleState.accountPersistTimer || 0) - dt);
@@ -7237,6 +7257,8 @@ function leaveBattleMode() {
   battleState.occupiedVehicles.clear();
   battleState.killFeed = [];
   battleState.accountPersistTimer = 0;
+  battleState.cloudSyncTimer = 0;
+  battleState.cloudSyncInFlight = false;
   battleState.accountSync = { lastKills: 0, lastDeaths: 0 };
   battleState.bots = [];
   battleFireHeld = false;
@@ -7270,6 +7292,8 @@ function startBattleMode() {
   battleState.active = true;
   battleState.joining = true;
   battleState.accountPersistTimer = 0.6;
+  battleState.cloudSyncTimer = 2;
+  battleState.cloudSyncInFlight = false;
   battleState.accountSync = { lastKills: 0, lastDeaths: 0 };
   battleState.stats = { kills: 0, deaths: 0, respawns: 0 };
   battleState.localPlayer = createBattlePlayer(selectedCharacter, battleState.localPlayerId, getNetworkPlayerName());
@@ -7433,7 +7457,7 @@ function drawBattlePlayer(player, isLocal = false) {
         ctx.translate(wx, wy);
         ctx.rotate(wa);
         if (Math.abs(wa) > Math.PI / 2) ctx.scale(1, -1);
-        ctx.drawImage(wImg, -28, -17, 56, 34);
+        drawBattleImageFitted(wImg, 0, 0, 66, 34, 0);
         ctx.restore();
       } else if (wCfg) {
         const wa = player.aimAngle || 0;
@@ -7528,12 +7552,8 @@ function drawBattleMode() {
   battleState.weaponPickups.forEach((pickup) => {
     if (battleState.claimedPickups.has(pickup.id)) return;
     const img = battleWeaponImgs.get(pickup.weaponId);
-    const size = 78;
     if (img && img.complete && img.naturalWidth > 8) {
-      ctx.save();
-      ctx.translate(pickup.x, pickup.y);
-      ctx.drawImage(img, -size / 2, -size / 2, size, size);
-      ctx.restore();
+      drawBattleImageFitted(img, pickup.x, pickup.y, 102, 60, 0);
     } else {
       ctx.fillStyle = battleWeaponConfigs[pickup.weaponId].color;
       ctx.beginPath();
@@ -7582,12 +7602,14 @@ function drawBattleMode() {
   battleState.projectiles.forEach((projectile) => {
     const img = battleWeaponImgs.get(projectile.weaponId);
     if (img && img.complete && img.naturalWidth > 8) {
-      const size = projectile.weaponId === "rocket" ? 34 : 18;
-      ctx.save();
-      ctx.translate(projectile.x, projectile.y);
-      ctx.rotate(projectile.angle || 0);
-      ctx.drawImage(img, -size / 2, -size / 2, size, size);
-      ctx.restore();
+      drawBattleImageFitted(
+        img,
+        projectile.x,
+        projectile.y,
+        projectile.weaponId === "rocket" ? 46 : 22,
+        projectile.weaponId === "rocket" ? 20 : 12,
+        projectile.angle || 0,
+      );
     } else {
       ctx.fillStyle = projectile.color;
       ctx.beginPath();
@@ -8193,6 +8215,98 @@ function battlePersistAccountProgress(finalize = false) {
   battleState.accountSync.lastKills = currentKills;
   battleState.accountSync.lastDeaths = currentDeaths;
   saveBattleAccountStatsStore(store);
+  if (finalize || (battleState.cloudSyncTimer || 0) <= 0) {
+    battleState.cloudSyncTimer = finalize ? 0 : 8;
+    pushCloudBattleStats();
+  }
+}
+
+function normalizeBattleStatsRow(row) {
+  if (!row || typeof row !== "object") return null;
+  const lifetimeKills = Number(row.lifetime_kills ?? row.lifetimeKills ?? 0);
+  const lifetimeDeaths = Number(row.lifetime_deaths ?? row.lifetimeDeaths ?? 0);
+  const bestKdr = Number(row.best_kdr ?? row.bestKdr ?? 0);
+  const mostKillsSingleMatch = Number(row.most_kills_single_match ?? row.mostKillsSingleMatch ?? 0);
+  const displayName = (row.display_name || row.displayName || row.account_name || row.accountName || "Player").toString().slice(0, 16);
+  if (!Number.isFinite(lifetimeKills) || !Number.isFinite(lifetimeDeaths)) return null;
+  return {
+    accountName: (row.account_name || row.accountName || "").toString(),
+    displayName,
+    lifetimeKills,
+    lifetimeDeaths,
+    lifetimeKdr: lifetimeKills / Math.max(1, lifetimeDeaths),
+    bestKdr: Number.isFinite(bestKdr) ? bestKdr : 0,
+    mostKillsSingleMatch: Number.isFinite(mostKillsSingleMatch) ? mostKillsSingleMatch : 0,
+    updatedAt: row.updated_at || row.updatedAt || "",
+  };
+}
+
+function getLocalBattleStatsRows() {
+  const store = loadBattleAccountStatsStore();
+  return Object.entries(store).map(([accountName, stats]) => normalizeBattleStatsRow({
+    account_name: accountName,
+    display_name: accountName,
+    lifetime_kills: stats?.lifetimeKills || 0,
+    lifetime_deaths: stats?.lifetimeDeaths || 0,
+    best_kdr: stats?.bestKdr || 0,
+    most_kills_single_match: stats?.mostKillsSingleMatch || 0,
+  })).filter(Boolean);
+}
+
+function getBattleStatsRows() {
+  if (Array.isArray(window.sharedBattleStatsCache) && window.sharedBattleStatsCache.length) {
+    return window.sharedBattleStatsCache;
+  }
+  return getLocalBattleStatsRows();
+}
+
+async function fetchCloudBattleStats() {
+  try {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_BATTLE_STATS_TABLE}?select=account_name,display_name,lifetime_kills,lifetime_deaths,best_kdr,most_kills_single_match,updated_at`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!Array.isArray(data)) return false;
+    window.sharedBattleStatsCache = data.map(normalizeBattleStatsRow).filter(Boolean);
+    return true;
+  } catch (e) {
+    console.error("fetchCloudBattleStats error:", e);
+    return false;
+  }
+}
+
+async function pushCloudBattleStats() {
+  if (battleState.cloudSyncInFlight) return false;
+  const accountName = getSessionAccountName();
+  const passwordHash = getLocalSessionPasswordHash();
+  if (!accountName || !passwordHash) return false;
+  const summary = getBattleAccountSummary();
+  battleState.cloudSyncInFlight = true;
+  try {
+    const { ok, data } = await callSupabaseRpc(GAME_BATTLE_STATS_UPSERT_RPC, {
+      p_account_name: accountName,
+      p_password_hash: passwordHash,
+      p_display_name: getNetworkPlayerName(),
+      p_lifetime_kills: Number(summary.lifetimeKills || 0),
+      p_lifetime_deaths: Number(summary.lifetimeDeaths || 0),
+      p_best_kdr: Number((summary.bestKdr || 0).toFixed(2)),
+      p_most_kills_single_match: Number(summary.mostKillsSingleMatch || 0),
+    });
+    if (!ok || data?.ok === false) return false;
+    await fetchCloudBattleStats();
+    return true;
+  } catch (e) {
+    console.error("pushCloudBattleStats error:", e);
+    return false;
+  } finally {
+    battleState.cloudSyncInFlight = false;
+  }
 }
 
 function getAuthToken() {
@@ -9214,12 +9328,13 @@ async function pushCloudLeaderboardEntry(playerName, travelledMeters) {
 }
 
 function subscribeToLeaderboard() {
-  fetchCloudLeaderboard().then(() => displayLeaderboard());
+  Promise.all([fetchCloudLeaderboard(), fetchCloudBattleStats()]).then(() => displayLeaderboard());
   if (window.leaderboardPollTimer) {
     clearInterval(window.leaderboardPollTimer);
   }
   window.leaderboardPollTimer = setInterval(() => {
-    fetchCloudLeaderboard();
+    fetchCloudLeaderboard().then(() => displayLeaderboard());
+    fetchCloudBattleStats().then(() => displayLeaderboard());
   }, 12000);
 }
 
@@ -9235,7 +9350,20 @@ function getLeaderboardScoresForView() {
       .filter((s) => s.mapId === leaderboardRunMapId)
       .slice(0, MAX_LEADERBOARD_ENTRIES);
   }
+  if (leaderboardViewMode === "kills" || leaderboardViewMode === "kdr") {
+    return [];
+  }
   return allScores.slice(0, MAX_LEADERBOARD_ENTRIES);
+}
+
+function getBattleStatsLeaderboardRows(mode) {
+  const rows = getBattleStatsRows().slice();
+  if (mode === "kills") {
+    rows.sort((a, b) => (b.lifetimeKills - a.lifetimeKills) || (a.lifetimeDeaths - b.lifetimeDeaths));
+  } else {
+    rows.sort((a, b) => (b.bestKdr - a.bestKdr) || (b.lifetimeKills - a.lifetimeKills));
+  }
+  return rows.slice(0, MAX_LEADERBOARD_ENTRIES);
 }
 
 function updateLeaderboardModeUI() {
@@ -9246,16 +9374,22 @@ function updateLeaderboardModeUI() {
       leaderboardTitle.textContent = `${charLabel} Leaderboard`;
     } else if (leaderboardViewMode === "map") {
       leaderboardTitle.textContent = `${mapLabel} Leaderboard`;
+    } else if (leaderboardViewMode === "kills") {
+      leaderboardTitle.textContent = "Most Kills Leaderboard";
+    } else if (leaderboardViewMode === "kdr") {
+      leaderboardTitle.textContent = "Best KDR Leaderboard";
     } else {
       leaderboardTitle.textContent = "All-Time Leaderboard";
     }
   }
-  [leaderboardCharBtn, leaderboardMapBtn, leaderboardAllBtn].forEach(btn => {
+  [leaderboardCharBtn, leaderboardMapBtn, leaderboardAllBtn, leaderboardKillsBtn, leaderboardKdrBtn].forEach(btn => {
     if (btn) btn.classList.remove("lb-tab-active");
   });
   if (leaderboardViewMode === "character" && leaderboardCharBtn) leaderboardCharBtn.classList.add("lb-tab-active");
   if (leaderboardViewMode === "map" && leaderboardMapBtn) leaderboardMapBtn.classList.add("lb-tab-active");
   if (leaderboardViewMode === "all" && leaderboardAllBtn) leaderboardAllBtn.classList.add("lb-tab-active");
+  if (leaderboardViewMode === "kills" && leaderboardKillsBtn) leaderboardKillsBtn.classList.add("lb-tab-active");
+  if (leaderboardViewMode === "kdr" && leaderboardKdrBtn) leaderboardKdrBtn.classList.add("lb-tab-active");
 }
 
 function getRankedLeaderboardEntries(limit = 10) {
@@ -9393,14 +9527,61 @@ function displayLeaderboard() {
   renderRankedLeaderboard();
   leaderboardList.innerHTML = "";
   leaderboardList.appendChild(renderBattleLeaderboardColumns());
-  if (scores.length === 0) {
-    leaderboardList.innerHTML = leaderboardViewMode === "character"
-      ? "<p>No scores yet for this character.</p>"
-      : leaderboardViewMode === "map"
-      ? "<p>No scores yet for this map.</p>"
-      : "<p>No scores yet. Be the first!</p>";
+
+  if (leaderboardViewMode === "kills" || leaderboardViewMode === "kdr") {
+    const rows = getBattleStatsLeaderboardRows(leaderboardViewMode);
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "No battle stats synced yet.";
+      empty.style.margin = "12px";
+      leaderboardList.appendChild(empty);
+      return;
+    }
+    rows.forEach((row, idx) => {
+      const entry = document.createElement("div");
+      entry.style.padding = "10px 12px";
+      entry.style.display = "flex";
+      entry.style.justifyContent = "space-between";
+      entry.style.alignItems = "center";
+      entry.style.borderBottom = "1px solid #e0e0ff";
+      entry.style.fontSize = "0.95rem";
+      const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
+      const left = document.createElement("div");
+      left.style.display = "flex";
+      left.style.flexDirection = "column";
+      const title = document.createElement("span");
+      title.textContent = `${medal} ${idx + 1}. ${row.displayName}`;
+      const sub = document.createElement("span");
+      sub.textContent = `${row.lifetimeKills}/${row.lifetimeDeaths} K/D`;
+      sub.style.fontSize = "0.75rem";
+      sub.style.color = "#888";
+      left.appendChild(title);
+      left.appendChild(sub);
+      const right = document.createElement("span");
+      right.textContent = leaderboardViewMode === "kills"
+        ? `${row.lifetimeKills} kills`
+        : `${row.bestKdr.toFixed(2)} KDR`;
+      right.style.color = idx < 3 ? "#5f7bff" : "#666";
+      right.style.fontWeight = "700";
+      entry.appendChild(left);
+      entry.appendChild(right);
+      leaderboardList.appendChild(entry);
+    });
     return;
   }
+
+  if (scores.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = leaderboardViewMode === "character"
+      ? "No scores yet for this character."
+      : leaderboardViewMode === "map"
+      ? "No scores yet for this map."
+      : "No scores yet. Be the first!";
+    empty.style.margin = "12px";
+    leaderboardList.appendChild(empty);
+    return;
+  }
+
   scores.forEach((score, idx) => {
     const entry = document.createElement("div");
     entry.style.padding = "10px 12px";
@@ -9410,7 +9591,7 @@ function displayLeaderboard() {
     entry.style.borderBottom = "1px solid #e0e0ff";
     entry.style.fontSize = "0.95rem";
     entry.style.fontWeight = idx < 3 ? "600" : "400";
-    
+
     const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : "";
     const nameCol = document.createElement("div");
     nameCol.style.display = "flex";
@@ -9426,13 +9607,13 @@ function displayLeaderboard() {
       subLabel.style.fontWeight = "400";
       nameCol.appendChild(subLabel);
     }
-    
+
     const distSpan = document.createElement("span");
     distSpan.textContent = `${score.distance}m`;
     distSpan.style.color = idx < 3 ? "#5f7bff" : "#666";
     distSpan.style.fontWeight = "700";
     distSpan.style.flexShrink = "0";
-    
+
     entry.appendChild(nameCol);
     entry.appendChild(distSpan);
     leaderboardList.appendChild(entry);
@@ -9468,7 +9649,7 @@ function showLeaderboardScreen(distance) {
   headToHeadState.localWonLastMatch = false;
   
   fetchCloudHeadToHeadRankings(true).then(() => renderRankedLeaderboard());
-  fetchCloudLeaderboard().then(() => displayLeaderboard());
+  Promise.all([fetchCloudLeaderboard(), fetchCloudBattleStats()]).then(() => displayLeaderboard());
 }
 
 function getCharacterImageCandidates(character) {
@@ -12256,6 +12437,18 @@ if (leaderboardMapBtn) {
 if (leaderboardAllBtn) {
   leaderboardAllBtn.addEventListener("click", () => {
     leaderboardViewMode = "all";
+    displayLeaderboard();
+  });
+}
+if (leaderboardKillsBtn) {
+  leaderboardKillsBtn.addEventListener("click", () => {
+    leaderboardViewMode = "kills";
+    displayLeaderboard();
+  });
+}
+if (leaderboardKdrBtn) {
+  leaderboardKdrBtn.addEventListener("click", () => {
+    leaderboardViewMode = "kdr";
     displayLeaderboard();
   });
 }
