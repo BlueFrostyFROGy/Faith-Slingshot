@@ -6941,7 +6941,7 @@ function battleUpdateLocalPlayer(dt) {
   const mouseWorldY = cameraY + lastMouseY * scaleY;
   player.aimAngle = Math.atan2(mouseWorldY - player.y, mouseWorldX - player.x);
 
-  // E key fires (held for auto, respects fireCooldown)
+  // Space key fires (held for auto, respects fireCooldown)
   if (battleInputState.fireHeld) battleTryFireWeapon();
   // C key held picks up nearby weapons; ammo auto-collects
   battleTryCollectPickups();
@@ -6987,7 +6987,7 @@ function updateBattleHudText() {
     else if (vCfg.isBiter) vehicleHint = " • E=T-Rex BITE";
     else if (vCfg.contactKill) vehicleHint = " • Ram to kill";
   }
-  abilityHint.textContent = `WASD=move • X=vehicle • E=fire${vehicleHint} • Space=jump • Shift=prone • Hold C=pickup • Q/Y=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
+  abilityHint.textContent = `WASD=move • X=vehicle • Space=fire${vehicleHint} • E=jump • Shift=prone • Hold C=pickup • Q/Y=cycle • ${weapon?.name || "Pistol"} (${ammo})${pickupPrompt}`;
   runStateLabel.textContent = player.alive
     ? `Battle Mode • HP ${Math.round(player.hp)}/${player.maxHp} • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`
     : `Respawning in ${player.respawnTimer.toFixed(1)}s • K/D/R ${battleState.stats.kills}/${battleState.stats.deaths}/${ratio.toFixed(2)}`;
@@ -7363,8 +7363,8 @@ function drawBattlePlayer(player, isLocal = false) {
       ctx.fillText("PRONE", px, py + baseR * 0.5);
       ctx.textAlign = "start";
     } else if (inVehicle && vCfg.id === "trex") {
-      const cW = baseR * 2.2;
-      const cH = baseR * 3.0;
+      const cW = baseR * 1.6;
+      const cH = baseR * 2.3;
       if (charImg && charImg.complete && charImg.naturalWidth > 8) {
         ctx.drawImage(charImg, px - cW / 2, py - 88 - cH * 0.1, cW, cH);
       } else {
@@ -7372,8 +7372,8 @@ function drawBattlePlayer(player, isLocal = false) {
         ctx.fillRect(px - cW / 2, py - 88 - cH * 0.1, cW, cH);
       }
     } else if (inVehicle && vCfg.id === "golfcart") {
-      const cW = baseR * 2.1;
-      const cH = baseR * 3.0;
+      const cW = baseR * 1.5;
+      const cH = baseR * 2.2;
       if (charImg && charImg.complete && charImg.naturalWidth > 8) {
         ctx.drawImage(charImg, px - cW / 2, py - cH * 0.8, cW, cH);
       } else {
@@ -7381,8 +7381,8 @@ function drawBattlePlayer(player, isLocal = false) {
         ctx.fillRect(px - cW / 2, py - cH * 0.8, cW, cH);
       }
     } else if (!inVehicle) {
-      const dW = baseR * 3.4;
-      const dH = baseR * 5.0;
+      const dW = baseR * 2.2;
+      const dH = baseR * 3.4;
       if (charImg && charImg.complete && charImg.naturalWidth > 8) {
         ctx.drawImage(charImg, px - dW / 2, py - dH * 0.7, dW, dH);
       } else {
@@ -7524,7 +7524,7 @@ function drawBattleMode() {
   });
 
   // Normalized vehicle widths (px) — jet and T-Rex are bigger than cars/truck
-  const VDISPLAY = { golfcart: 118, tank: 158, bmw: 132, tacoma: 148, jet: 182, trex: 176 };
+  const VDISPLAY = { golfcart: 150, tank: 210, bmw: 180, tacoma: 198, jet: 250, trex: 235 };
   battleState.vehicles.forEach((vehicle) => {
     // Always draw — position is synced with rider by battleUpdateVehicles
     const cfg = getBattleVehicleConfig(vehicle.vehicleId);
@@ -7544,15 +7544,14 @@ function drawBattleMode() {
   });
 
   battleState.projectiles.forEach((projectile) => {
-    const img = projectile.weaponId === "rocket" ? battleWeaponImgs.get("rocket") : battleVehicleImgs.get("golfball");
-    if (projectile.weaponId === "rocket" && img && img.complete && img.naturalWidth > 8) {
-      const size = projectile.radius * 2.5;
-      ctx.drawImage(img, projectile.x - size / 2, projectile.y - size / 2, size, size);
-    } else if (projectile.weaponId !== "rocket" && battleVehicleImgs.get("golfball") && projectile.weaponId === "pistol") {
-      ctx.fillStyle = projectile.color;
-      ctx.beginPath();
-      ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
-      ctx.fill();
+    const img = battleWeaponImgs.get(projectile.weaponId);
+    if (img && img.complete && img.naturalWidth > 8) {
+      const size = projectile.weaponId === "rocket" ? 34 : 18;
+      ctx.save();
+      ctx.translate(projectile.x, projectile.y);
+      ctx.rotate(projectile.angle || 0);
+      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+      ctx.restore();
     } else {
       ctx.fillStyle = projectile.color;
       ctx.beginPath();
@@ -11911,8 +11910,9 @@ window.addEventListener("keydown", (ev) => {
       ev.preventDefault();
       break;
     case "Space":
+      battleInputState.fireHeld = true;
+      battleTryFireWeapon();
       ev.preventDefault();
-      battleTriggerJump();
       break;
     case "ShiftLeft":
     case "ShiftRight":
@@ -11920,8 +11920,8 @@ window.addEventListener("keydown", (ev) => {
       ev.preventDefault();
       break;
     case "KeyE":
-      battleInputState.fireHeld = true;
       ev.preventDefault();
+      battleTriggerJump();
       break;
     case "KeyC":
       battleInputState.pickupHeld = true;
@@ -11950,7 +11950,7 @@ window.addEventListener("keyup", (ev) => {
     case "KeyS": battleInputState.down = false; break;
     case "KeyA": battleInputState.left = false; break;
     case "KeyD": battleInputState.right = false; break;
-    case "KeyE":  battleInputState.fireHeld  = false; break;
+    case "Space": battleInputState.fireHeld = false; break;
     case "KeyC":  battleInputState.pickupHeld = false; break;
     case "ShiftLeft":
     case "ShiftRight":
